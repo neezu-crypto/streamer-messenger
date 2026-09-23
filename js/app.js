@@ -18,6 +18,15 @@ function avatarUrl(soopId) {
   return `https://stimg.sooplive.com/LOGO/${id.slice(0, 2)}/${id}/${id}.jpg`;
 }
 
+function renderStreamerAvatar(host, src, nickname) {
+  host.replaceChildren();
+  const fallback = String(nickname || '✦').slice(0, 1);
+  if (!src) { host.textContent = fallback; return; }
+  const img = document.createElement('img'); img.src = src; img.alt = '';
+  img.addEventListener('error', () => { host.replaceChildren(); host.textContent = fallback; }, { once: true });
+  host.appendChild(img);
+}
+
 function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 function closeDialog(id) { const dialog = document.getElementById(id); if (dialog && dialog.open) dialog.close(); }
 
@@ -54,8 +63,7 @@ function renderRooms() {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'room-card';
     const top = document.createElement('div'); top.className = 'room-card-top';
     const avatar = document.createElement('div'); avatar.className = 'room-avatar';
-    if (room.streamerAvatarUrl) { const image = document.createElement('img'); image.src = room.streamerAvatarUrl; image.alt = ''; avatar.appendChild(image); }
-    else avatar.textContent = (room.streamerNickname || '✦').slice(0, 1);
+    renderStreamerAvatar(avatar, room.streamerAvatarUrl, room.streamerNickname);
     const identity = document.createElement('div'); identity.className = 'room-identity';
     const name = document.createElement('strong'); name.textContent = room.streamerNickname || '스트리머';
     const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : '스트리머 인증 완료';
@@ -110,9 +118,7 @@ async function openChat(room, isOwner) {
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
   $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`;
   const src = room.streamerAvatarUrl || avatarUrl(room.streamerSoopId);
-  $('#chat-avatar').replaceChildren();
-  if (src) { const img = document.createElement('img'); img.src = src; img.alt = ''; $('#chat-avatar').appendChild(img); }
-  else $('#chat-avatar').textContent = (room.streamerNickname || '✦').slice(0, 1);
+  renderStreamerAvatar($('#chat-avatar'), src, room.streamerNickname);
   renderRoomState(room);
   clearSubscriptions();
   state.galleryImages.clear(); state.imageUrls.clear();
@@ -728,10 +734,28 @@ function handleSession(event) {
   syncHeader();
   if (state.session && state.session.trusted) {
     $('#profile-button').title = '공개 프로필 설정';
-    if (state.room && !state.isOwner) { /* 현재 방 유지 */ }
+    if (state.isOwner && state.room && state.session.ownRoom && state.session.ownRoom.roomId === state.room.roomId) {
+      state.room = state.session.ownRoom;
+      renderStreamerAvatar($('#chat-avatar'), state.room.streamerAvatarUrl || avatarUrl(state.room.streamerSoopId), state.room.streamerNickname);
+      renderRoomState(state.room);
+    }
   }
 }
 
+let lastFocusSessionRefresh = 0;
+let focusSessionRefreshPromise = null;
+async function refreshSessionOnReturn() {
+  if (document.visibilityState !== 'visible' || !api().auth.currentUser || Date.now() - lastFocusSessionRefresh < 5000) return;
+  if (focusSessionRefreshPromise) return focusSessionRefreshPromise;
+  lastFocusSessionRefresh = Date.now();
+  focusSessionRefreshPromise = api().refreshSession(api().auth.currentUser)
+    .catch((error) => console.warn('복귀 시 프로필을 새로고침하지 못했습니다.', error))
+    .finally(() => { focusSessionRefreshPromise = null; });
+  return focusSessionRefreshPromise;
+}
+
 document.addEventListener('messenger-session', handleSession);
+window.addEventListener('focus', refreshSessionOnReturn);
+document.addEventListener('visibilitychange', refreshSessionOnReturn);
 bindEvents();
 api().waitForSession().then(() => { state.session = api().state.session; syncHeader(); loadRooms(); });

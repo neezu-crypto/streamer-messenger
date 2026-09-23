@@ -113,6 +113,19 @@ async function streamerAvatar(uid) {
   return p.avatarUrl || '';
 }
 
+async function syncOwnerRoomAvatar(roomId, uid, avatarUrl, meta) {
+  if (!meta || meta.ownerUid !== uid) return meta;
+  const nextAvatarUrl = String(avatarUrl || '');
+  if (String(meta.streamerAvatarUrl || '') === nextAvatarUrl) return meta;
+  const updatedAt = now();
+  const updatedMeta = { ...meta, streamerAvatarUrl: nextAvatarUrl, updatedAt };
+  await db().ref().update({
+    [`${ROOT}/rooms/${roomId}/meta`]: updatedMeta,
+    [`${ROOT}/publicRooms/${roomId}`]: publicRoom(updatedMeta),
+  });
+  return updatedMeta;
+}
+
 function publicRoom(meta) {
   return {
     roomId: meta.roomId,
@@ -144,7 +157,10 @@ const messengerGetSession = onCall(async (request) => {
   let ownRoom = null;
   if (p.streamer && p.streamer.soopId) {
     const snap = await roomRef(p.streamer.soopId).child('meta').get();
-    if (snap.exists() && snap.val().ownerUid === p.uid) ownRoom = publicRoom(snap.val());
+    if (snap.exists() && snap.val().ownerUid === p.uid) {
+      const meta = await syncOwnerRoomAvatar(p.streamer.soopId, p.uid, profile && profile.avatarUrl, snap.val());
+      ownRoom = publicRoom(meta);
+    }
   }
   return { uid: p.uid, trusted: p.trusted, isRealAccount: p.real, isAdmin: p.admin, isVerifiedStreamer: !!p.streamer, streamer: p.streamer, profile, ownRoom };
 });
@@ -158,7 +174,8 @@ const messengerGetRoomState = onCall(async (request) => {
     roomRef(roomId).child(`applications/${p.uid}`).get(), roomRef(roomId).child(`blocked/${p.uid}`).get(),
   ]);
   if (!metaSnap.exists()) throw new HttpsError('not-found', '채팅방을 찾을 수 없습니다.');
-  const meta = metaSnap.val() || {};
+  let meta = metaSnap.val() || {};
+  if (meta.ownerUid === p.uid) meta = await syncOwnerRoomAvatar(roomId, p.uid, (await profileFor(p.uid)).avatarUrl, meta);
   return { room: publicRoom(meta), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
 });
 
@@ -177,7 +194,8 @@ const messengerEnsureRoom = onCall(async (request) => {
     await writeAudit(p.uid, 'room.create', roomId);
     return { room: publicRoom(meta), created: true };
   }
-  return { room: publicRoom(current.val()), created: false };
+  const meta = await syncOwnerRoomAvatar(roomId, p.uid, await streamerAvatar(p.uid), current.val());
+  return { room: publicRoom(meta), created: false };
 });
 
 const messengerUpdateRoom = onCall(async (request) => {
