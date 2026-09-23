@@ -1,0 +1,5 @@
+.DS_Store
+.firebase/
+*.log
+functions/node_modules/
+node_modules/
