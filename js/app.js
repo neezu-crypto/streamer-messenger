@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), messages: [], unsubscribers: [], applicationPollTimer: null, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), messages: [], unsubscribers: [], applicationPollTimer: null, messageSending: false, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -501,19 +501,19 @@ function setReply(message) {
 }
 
 async function sendMessage(kind = 'text', galleryImageId = '') {
-  if (!state.room) return;
+  if (!state.room || state.messageSending) return;
   const text = $('#message-input').value.trim();
   if (kind === 'text' && !text) return;
   const audience = state.isOwner ? $('#message-audience').value : 'direct';
   const recipientUid = state.isOwner ? (audience === 'direct' ? $('#direct-recipient').value : '') : '';
   if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return; }
-  const button = $('#send-message'); button.disabled = true;
+  const button = $('#send-message'); state.messageSending = true; button.disabled = true;
   try {
     await call('messengerSendMessage', { roomId: state.room.roomId, kind, text, galleryImageId, recipientUid, replyToId: state.currentReply && state.currentReply.id, replyToUid: state.currentReply && state.currentReply.senderUid });
-    if (kind === 'text') $('#message-input').value = '';
+    if (kind === 'text' && $('#message-input').value.trim() === text) $('#message-input').value = '';
     state.currentReply = null; $('#replying-to').hidden = true;
   } catch (error) { showError(error); }
-  finally { button.disabled = false; }
+  finally { state.messageSending = false; button.disabled = false; }
 }
 
 async function openImagePicker() {
@@ -731,7 +731,10 @@ function bindEvents() {
   $('#open-image-picker').addEventListener('click', openImagePicker);
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
   $('#send-message').addEventListener('click', () => sendMessage('text'));
-  $('#message-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage('text'); } });
+  $('#message-input').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault(); sendMessage('text');
+  });
   $('#cancel-reply').addEventListener('click', () => { state.currentReply = null; $('#replying-to').hidden = true; });
   $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
   $('#room-menu-button').addEventListener('click', openReportDialog);
