@@ -397,13 +397,14 @@ async function exportConversation(format) {
 }
 
 function renderMessage(message) {
-  const mine = message.senderUid === state.session.uid;
-  const row = document.createElement('article'); row.className = `message-row ${mine ? 'mine' : 'other'}${message.senderRole === 'streamer' ? ' streamer' : ''}`;
+  const isMine = message.senderUid === state.session.uid;
+  const isStreamerMessage = message.senderRole === 'streamer';
+  const row = document.createElement('article'); row.className = `message-row ${isStreamerMessage ? 'streamer' : 'fan-message'}${isMine ? ' own' : ''}`;
   const avatar = document.createElement('div'); avatar.className = 'message-avatar';
   if (message.senderAvatarUrl) { const img = document.createElement('img'); img.src = message.senderAvatarUrl; img.alt = ''; avatar.appendChild(img); }
   else avatar.textContent = (message.senderName || '✦').slice(0, 1);
   const stack = document.createElement('div'); stack.className = 'message-stack';
-  if (!mine) { const name = document.createElement('p'); name.className = 'message-name'; name.textContent = message.senderName || '스트리머'; stack.appendChild(name); }
+  if (!isMine) { const name = document.createElement('p'); name.className = 'message-name'; name.textContent = message.senderName || (isStreamerMessage ? '스트리머' : '팬'); stack.appendChild(name); }
   const bubble = document.createElement('div'); bubble.className = 'message-bubble';
   if (message.kind === 'image') {
     const img = document.createElement('img'); img.className = 'message-image'; img.alt = '스트리머 갤러리 이미지'; img.loading = 'lazy'; img.src = '';
