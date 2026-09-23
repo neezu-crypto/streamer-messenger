@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], messages: [], unsubscribers: [], galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set() };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], messages: [], unsubscribers: [], galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -492,19 +492,70 @@ async function openOwnRoom() {
     syncHeader();
     const room = result.room;
     await openChat(room, true);
-    if (result.created) openDialog('room-settings-dialog');
+    if (result.created) { prepareRoomSettings(); openDialog('room-settings-dialog'); }
   } catch (error) { showError(error); }
 }
 
 async function saveRoomSettings() {
   const visibility = $('#room-visibility').value;
-  const password = $('#room-password').value;
+  if ($('#save-room-settings').dataset.saved === 'true') {
+    closeDialog('room-settings-dialog'); $('#save-room-settings').dataset.saved = 'false'; return;
+  }
   try {
-    const passwordChanged = visibility === 'private' && password.length > 0;
-    const memberPolicy = passwordChanged ? $('#room-member-policy').value : 'keep';
-    const result = await call('messengerUpdateRoom', { roomId: state.room.roomId, visibility, password, locked: $('#room-locked').checked, memberPolicy });
-    state.room = result.room; renderRoomState(state.room); closeDialog('room-settings-dialog'); $('#room-password').value = '';
+    const result = await call('messengerUpdateRoom', { roomId: state.room.roomId, visibility, regeneratePassword: state.regenerateRoomPassword, locked: $('#room-locked').checked, memberPolicy: $('#room-member-policy').value });
+    state.room = result.room; state.regenerateRoomPassword = false; renderRoomState(state.room);
+    if (result.generatedPassword) {
+      $('#generated-room-password').value = result.generatedPassword;
+      $('#generated-password-wrap').hidden = false;
+      $('#room-password-copy-status').textContent = '비밀번호를 복사해 팬에게 전달하세요. 이 창을 닫으면 다시 확인할 수 없습니다.';
+      $('#room-password-copy-status').hidden = false;
+      $('#room-visibility').disabled = true; $('#room-locked').disabled = true; $('#room-member-policy').disabled = true; $('#regenerate-room-password').disabled = true;
+      $('#save-room-settings').textContent = '완료'; $('#save-room-settings').dataset.saved = 'true';
+      updateRoomPasswordControls();
+    } else {
+      $('#save-room-settings').textContent = '설정 저장'; $('#save-room-settings').dataset.saved = 'false';
+      closeDialog('room-settings-dialog');
+    }
   } catch (error) { showError(error); }
+}
+
+function updateRoomPasswordControls() {
+  const isPrivate = $('#room-visibility').value === 'private';
+  const needsNewPassword = isPrivate && (state.room.visibility !== 'private' || state.regenerateRoomPassword);
+  $('#room-password-wrap').hidden = !isPrivate;
+  $('#regenerate-room-password').hidden = !isPrivate || state.room.visibility !== 'private';
+  $('#regenerate-room-password').textContent = state.regenerateRoomPassword ? '발급 예약 취소' : '새 비밀번호 발급';
+  $('#room-password-help').textContent = needsNewPassword
+    ? '저장하면 전달하기 쉬운 새 비밀번호를 자동 발급합니다.'
+    : '현재 비밀번호는 다시 확인할 수 없습니다. 새로 발급하면 기존 비밀번호는 사용할 수 없게 됩니다.';
+  $('#room-member-policy-wrap').hidden = !needsNewPassword;
+  if (!isPrivate) state.regenerateRoomPassword = false;
+}
+
+function prepareRoomSettings() {
+  $('#room-visibility').value = state.room.visibility || 'public';
+  $('#room-locked').checked = state.room.locked === true;
+  $('#room-member-policy').value = 'keep';
+  $('#room-visibility').disabled = false; $('#room-locked').disabled = false; $('#room-member-policy').disabled = false; $('#regenerate-room-password').disabled = false;
+  state.regenerateRoomPassword = false;
+  $('#generated-room-password').value = '';
+  $('#generated-password-wrap').hidden = true;
+  $('#room-password-copy-status').hidden = true;
+  $('#save-room-settings').textContent = '설정 저장';
+  $('#save-room-settings').dataset.saved = 'false';
+  updateRoomPasswordControls();
+}
+
+async function copyRoomPassword() {
+  const input = $('#generated-room-password');
+  input.focus(); input.select(); input.setSelectionRange(0, input.value.length);
+  try {
+    await navigator.clipboard.writeText(input.value);
+    $('#room-password-copy-status').textContent = '비밀번호를 복사했습니다. 팬에게 붙여넣어 전달하세요.';
+  } catch (_) {
+    const copied = document.execCommand('copy');
+    $('#room-password-copy-status').textContent = copied ? '비밀번호를 복사했습니다. 팬에게 붙여넣어 전달하세요.' : '비밀번호를 선택했습니다. 복사해 팬에게 전달하세요.';
+  }
 }
 
 async function discardRoom() {
@@ -614,12 +665,14 @@ function bindEvents() {
   $('#send-message').addEventListener('click', () => sendMessage('text'));
   $('#message-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage('text'); } });
   $('#cancel-reply').addEventListener('click', () => { state.currentReply = null; $('#replying-to').hidden = true; });
-  $('#room-settings-button').addEventListener('click', () => { $('#room-visibility').value = state.room.visibility || 'public'; $('#room-password-wrap').hidden = $('#room-visibility').value !== 'private'; $('#room-locked').checked = state.room.locked === true; $('#room-member-policy').value = 'keep'; $('#room-password').value = ''; openDialog('room-settings-dialog'); });
+  $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
   $('#room-menu-button').addEventListener('click', async () => { const reason = window.prompt('신고 사유를 입력해 주세요. 신고 범위는 최근 24시간입니다.'); if (reason === null) return; if (state.isOwner && !state.selectedFanUid) { showError({ message: '신고할 팬 대화를 먼저 선택해 주세요.' }); return; } try { const endAt = Date.now(); await call('messengerSubmitReport', { roomId: state.room.roomId, targetUid: state.isOwner ? state.selectedFanUid : undefined, startAt: endAt - 24 * 60 * 60 * 1000, endAt, reason }); showError({ message: '관리자에게 신고를 접수했습니다.' }); } catch (error) { showError(error); } });
   $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = window.confirm('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });
   $('#save-room-settings').addEventListener('click', saveRoomSettings);
   $('#discard-room').addEventListener('click', discardRoom);
-  $('#room-visibility').addEventListener('change', () => { $('#room-password-wrap').hidden = $('#room-visibility').value !== 'private'; });
+  $('#room-visibility').addEventListener('change', updateRoomPasswordControls);
+  $('#regenerate-room-password').addEventListener('click', () => { state.regenerateRoomPassword = !state.regenerateRoomPassword; updateRoomPasswordControls(); });
+  $('#copy-room-password').addEventListener('click', copyRoomPassword);
   $('#message-audience').addEventListener('change', () => { $('#direct-recipient').hidden = $('#message-audience').value !== 'direct'; });
   document.querySelectorAll('.aside-tab').forEach((button) => button.addEventListener('click', () => switchAside(button.dataset.listTab)));
   $('#notification-button').addEventListener('click', enableNotifications);

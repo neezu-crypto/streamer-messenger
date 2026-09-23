@@ -70,6 +70,11 @@ async function passwordDigest(password, salt) {
   return (await scrypt(password, salt, 32)).toString('hex');
 }
 
+function generateRoomPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.randomBytes(12), (byte) => alphabet[byte & 31]).join('');
+}
+
 async function assertRoomPassword(meta, password) {
   if (meta.visibility !== 'private') return;
   if (!meta.passwordSalt || !meta.passwordHash || typeof password !== 'string') throw new HttpsError('permission-denied', '비공개방 비밀번호를 입력해 주세요.');
@@ -177,7 +182,7 @@ const messengerEnsureRoom = onCall(async (request) => {
 
 const messengerUpdateRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
-  const { roomId, visibility, password, locked, memberPolicy } = request.data || {};
+  const { roomId, visibility, password, regeneratePassword, locked, memberPolicy } = request.data || {};
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 설정을 변경할 수 있습니다.');
   if (!['public', 'private'].includes(visibility)) throw new HttpsError('invalid-argument', '방 공개 설정이 올바르지 않습니다.');
@@ -185,15 +190,19 @@ const messengerUpdateRoom = onCall(async (request) => {
   const metaPatch = { visibility, locked: locked === true, updatedAt: now() };
   const updates = {};
   let passwordChanged = false;
+  let generatedPassword = '';
   if (visibility === 'public') { metaPatch.passwordSalt = null; metaPatch.passwordHash = null; }
   else if (typeof password === 'string' && password.length) {
     if (password.length < 4 || password.length > 64) throw new HttpsError('invalid-argument', '비밀번호는 4~64자로 입력해 주세요.');
     const salt = crypto.randomBytes(16).toString('hex');
     metaPatch.passwordSalt = salt; metaPatch.passwordHash = await passwordDigest(password, salt);
     passwordChanged = true;
-  } else if (meta.visibility !== 'private' || !meta.passwordHash) {
-    throw new HttpsError('failed-precondition', '비공개방을 만들려면 비밀번호가 필요합니다.');
-  }
+  } else if (regeneratePassword === true || meta.visibility !== 'private' || !meta.passwordHash) {
+    generatedPassword = generateRoomPassword();
+    const salt = crypto.randomBytes(16).toString('hex');
+    metaPatch.passwordSalt = salt; metaPatch.passwordHash = await passwordDigest(generatedPassword, salt);
+    passwordChanged = true;
+  } else if (!meta.passwordSalt || !meta.passwordHash) throw new HttpsError('failed-precondition', '비밀번호를 새로 발급할 수 없습니다. 다시 시도해 주세요.');
   if (passwordChanged && !['keep', 'remove'].includes(memberPolicy)) {
     throw new HttpsError('invalid-argument', '비밀번호 변경 시 참여자 처리 방식을 선택해 주세요.');
   }
@@ -208,7 +217,7 @@ const messengerUpdateRoom = onCall(async (request) => {
   updates[`${ROOT}/publicRooms/${roomId}`] = publicRoom(nextMeta);
   await db().ref().update(updates);
   await writeAudit(p.uid, 'room.update', roomId);
-  return { room: publicRoom(nextMeta) };
+  return { room: publicRoom(nextMeta), generatedPassword: generatedPassword || null };
 });
 
 const messengerDiscardRoom = onCall(async (request) => {
