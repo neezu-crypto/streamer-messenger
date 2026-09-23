@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], messages: [], unsubscribers: [], galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), messages: [], unsubscribers: [], applicationPollTimer: null, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -112,6 +112,7 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  state.knownApplicationUids = new Set();
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
   $('#member-action').hidden = true;
@@ -127,6 +128,9 @@ async function openChat(room, isOwner) {
   if (isOwner) await loadStreamerLists();
   subscribeTimeline();
   state.activeView = 'chat';
+  if (isOwner) {
+    state.applicationPollTimer = window.setInterval(() => loadStreamerLists({ notifyNew: true }), 30000);
+  }
 }
 
 function renderRoomState(room) {
@@ -140,7 +144,12 @@ function renderRoomState(room) {
   $('#streamer-compose-options').hidden = !state.isOwner;
 }
 
-function clearSubscriptions() { for (const unsubscribe of state.unsubscribers) { try { unsubscribe(); } catch (_) {} } state.unsubscribers = []; }
+function clearSubscriptions() {
+  for (const unsubscribe of state.unsubscribers) { try { unsubscribe(); } catch (_) {} }
+  state.unsubscribers = [];
+  if (state.applicationPollTimer) window.clearInterval(state.applicationPollTimer);
+  state.applicationPollTimer = null;
+}
 
 function subscribeTimeline() {
   clearSubscriptions();
@@ -414,13 +423,23 @@ function renderMessage(message) {
   return row;
 }
 
-async function loadStreamerLists() {
+async function loadStreamerLists({ notifyNew = false } = {}) {
   const roomId = state.room.roomId;
   try {
     const [fansResult, requestsResult] = await Promise.all([
       call('messengerListFans', { roomId }), call('messengerListApplications', { roomId }),
     ]);
+    if (!state.room || state.room.roomId !== roomId || !state.isOwner) return;
     state.fans = fansResult.fans || []; state.blockedFans = state.fans.filter((fan) => fan.status === 'blocked'); state.applications = requestsResult.applications || [];
+    const currentApplicationUids = new Set(state.applications.map((application) => application.uid));
+    if (notifyNew && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+      const arrivals = state.applications.filter((application) => !state.knownApplicationUids.has(application.uid));
+      if (arrivals.length) {
+        const n = new Notification('새 대화 신청', { body: arrivals.length === 1 ? `${arrivals[0].profile.nickname || '팬'}님이 대화를 신청했어요.` : `${arrivals.length}건의 대화 신청이 도착했어요.`, tag: `messenger-application-${state.room.roomId}` });
+        n.onclick = () => { window.focus(); switchAside('requests'); n.close(); };
+      }
+    }
+    state.knownApplicationUids = currentApplicationUids;
     renderFans(); renderBlockedFans(); renderApplications(); updateRecipientSelect();
   } catch (error) { showError(error); }
 }
@@ -461,7 +480,7 @@ function renderApplications() {
     const row = document.createElement('div'); row.className = 'request-item';
     const avatar = document.createElement('span'); avatar.className = 'mini-avatar';
     if (application.profile && application.profile.avatarUrl) { const img = document.createElement('img'); img.src = application.profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (application.profile && application.profile.nickname || '✦').slice(0, 1);
-    const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = application.profile && application.profile.nickname || '팬'; const intro = document.createElement('small'); intro.textContent = application.intro || '소개 없음'; meta.append(name, intro);
+    const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = application.profile && application.profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = application.profile && application.profile.soopId ? `SOOP ${application.profile.soopId}` : 'SOOP 아이디 없음'; const intro = document.createElement('small'); intro.className = 'request-intro'; intro.textContent = application.intro || '소개 없음'; meta.append(name, id, intro);
     const actions = document.createElement('span'); actions.className = 'request-actions';
     for (const [decision, label] of [['approved', '승인'], ['rejected', '거절']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; if (decision === 'rejected') button.className = 'reject'; button.addEventListener('click', async () => { try { await call('messengerReviewApplication', { roomId: state.room.roomId, uid: application.uid, decision }); await loadStreamerLists(); } catch (error) { showError(error); } }); actions.appendChild(button); }
     row.append(avatar, meta, actions); host.appendChild(row);
