@@ -557,9 +557,12 @@ async function openOwnRoom() {
 
 async function saveRoomSettings() {
   const visibility = $('#room-visibility').value;
-  if ($('#save-room-settings').dataset.saved === 'true') {
-    closeDialog('room-settings-dialog'); $('#save-room-settings').dataset.saved = 'false'; return;
+  const saveButton = $('#save-room-settings');
+  if (saveButton.dataset.saving === 'true') return;
+  if (saveButton.dataset.saved === 'true') {
+    closeDialog('room-settings-dialog'); saveButton.dataset.saved = 'false'; return;
   }
+  saveButton.dataset.saving = 'true'; saveButton.disabled = true; saveButton.textContent = '저장 중…';
   try {
     const result = await call('messengerUpdateRoom', { roomId: state.room.roomId, visibility, regeneratePassword: state.regenerateRoomPassword, locked: $('#room-locked').checked, memberPolicy: $('#room-member-policy').value });
     state.room = result.room; state.regenerateRoomPassword = false; renderRoomState(state.room);
@@ -569,13 +572,18 @@ async function saveRoomSettings() {
       $('#room-password-copy-status').textContent = '비밀번호를 복사해 팬에게 전달하세요. 이 창을 닫으면 다시 확인할 수 없습니다.';
       $('#room-password-copy-status').hidden = false;
       $('#room-visibility').disabled = true; $('#room-locked').disabled = true; $('#room-member-policy').disabled = true; $('#regenerate-room-password').disabled = true;
-      $('#save-room-settings').textContent = '완료'; $('#save-room-settings').dataset.saved = 'true';
+      saveButton.textContent = '완료'; saveButton.dataset.saved = 'true';
       updateRoomPasswordControls();
     } else {
-      $('#save-room-settings').textContent = '설정 저장'; $('#save-room-settings').dataset.saved = 'false';
+      saveButton.textContent = '설정 저장'; saveButton.dataset.saved = 'false';
       closeDialog('room-settings-dialog');
     }
-  } catch (error) { showError(error); }
+  } catch (error) {
+    saveButton.textContent = '설정 저장'; saveButton.dataset.saved = 'false';
+    showError(error);
+  } finally {
+    saveButton.dataset.saving = 'false'; saveButton.disabled = false;
+  }
 }
 
 function updateRoomPasswordControls() {
