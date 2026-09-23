@@ -178,6 +178,18 @@
 
   <dialog class="app-dialog" id="generic-dialog"><div class="dialog-card"><button class="dialog-close" id="generic-close" type="button" aria-label="닫기">×</button><p class="dialog-copy" id="generic-message"></p><div class="dialog-actions"><button class="button button-quiet" id="generic-cancel" type="button">취소</button><button class="button button-primary" id="generic-confirm" type="button">확인</button></div></div></dialog>
   <dialog class="app-dialog" id="report-detail-dialog"><div class="dialog-card report-detail-card"><button class="dialog-close" id="report-detail-close" type="button" aria-label="닫기">×</button><p class="eyebrow">ADMIN REVIEW</p><h2>신고 대화 범위</h2><div id="report-evidence-list" class="report-evidence-list"></div></div></dialog>
+  <dialog class="app-dialog" id="report-submit-dialog">
+    <form method="dialog" class="dialog-card">
+      <button class="dialog-close" value="cancel" aria-label="닫기">×</button>
+      <p class="eyebrow">REPORT CONVERSATION</p><h2>대화 신고</h2>
+      <p class="dialog-copy">신고할 대화가 포함된 시간 범위를 선택해 주세요. 최근 7일 안에서 최대 24시간까지 선택할 수 있습니다.</p>
+      <label class="field-label" for="report-start">시작 시간</label><input class="text-input" id="report-start" type="datetime-local" required>
+      <label class="field-label" for="report-end">종료 시간</label><input class="text-input" id="report-end" type="datetime-local" required>
+      <label class="field-label" for="report-reason">신고 사유</label><textarea class="text-input" id="report-reason" rows="4" maxlength="300" required placeholder="신고 내용을 입력해 주세요"></textarea>
+      <p class="dialog-error" id="report-submit-error" hidden></p>
+      <button class="button button-primary full-width" id="submit-report" type="button">신고 접수</button>
+    </form>
+  </dialog>
   <dialog class="app-dialog" id="export-dialog">
     <form method="dialog" class="dialog-card">
       <button class="dialog-close" value="cancel" aria-label="닫기">×</button>

@@ -197,6 +197,40 @@ function localDateTimeValue(date) {
   return local.toISOString().slice(0, 16);
 }
 
+function openReportDialog() {
+  if (!state.room || !state.session || !state.session.trusted) return;
+  if (state.isOwner && (!state.selectedFanUid || !state.fans.some((fan) => fan.uid === state.selectedFanUid && fan.status === 'active'))) {
+    showError({ message: '신고할 팬 대화를 먼저 선택해 주세요.' }); return;
+  }
+  const now = new Date();
+  const startInput = $('#report-start'); const endInput = $('#report-end');
+  startInput.min = localDateTimeValue(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+  startInput.max = localDateTimeValue(now); endInput.min = startInput.min; endInput.max = startInput.max;
+  endInput.value = localDateTimeValue(now);
+  startInput.value = localDateTimeValue(new Date(now.getTime() - 60 * 60 * 1000));
+  $('#report-reason').value = ''; $('#report-submit-error').hidden = true;
+  openDialog('report-submit-dialog');
+}
+
+async function submitReport() {
+  const error = $('#report-submit-error'); error.hidden = true;
+  const startAt = new Date($('#report-start').value).getTime();
+  const endAt = new Date($('#report-end').value).getTime();
+  const now = Date.now(); const reason = $('#report-reason').value.trim();
+  if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || startAt >= endAt) { error.textContent = '시작·종료 시간을 확인해 주세요.'; error.hidden = false; return; }
+  if (startAt < now - 7 * 24 * 60 * 60 * 1000 || endAt > now) { error.textContent = '최근 7일 안의 시간 범위를 선택해 주세요.'; error.hidden = false; return; }
+  if (endAt - startAt > 24 * 60 * 60 * 1000) { error.textContent = '신고 범위는 최대 24시간까지 선택할 수 있습니다.'; error.hidden = false; return; }
+  if (!reason) { error.textContent = '신고 사유를 입력해 주세요.'; error.hidden = false; return; }
+  const submit = $('#submit-report'); submit.disabled = true;
+  try {
+    const reportData = { roomId: state.room.roomId, startAt, endAt, reason };
+    if (state.isOwner) reportData.targetUid = state.selectedFanUid;
+    await call('messengerSubmitReport', reportData);
+    closeDialog('report-submit-dialog'); showError({ message: '관리자에게 신고를 접수했습니다.' });
+  } catch (cause) { error.textContent = cause.message || '신고를 접수하지 못했습니다.'; error.hidden = false; }
+  finally { submit.disabled = false; }
+}
+
 function openExportDialog() {
   if (!state.room || !state.session || !state.session.trusted) return;
   if (state.isOwner && state.selectedFanUid && !state.fans.some((fan) => fan.uid === state.selectedFanUid && fan.status === 'active')) {
@@ -666,7 +700,8 @@ function bindEvents() {
   $('#message-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage('text'); } });
   $('#cancel-reply').addEventListener('click', () => { state.currentReply = null; $('#replying-to').hidden = true; });
   $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
-  $('#room-menu-button').addEventListener('click', async () => { const reason = window.prompt('신고 사유를 입력해 주세요. 신고 범위는 최근 24시간입니다.'); if (reason === null) return; if (state.isOwner && !state.selectedFanUid) { showError({ message: '신고할 팬 대화를 먼저 선택해 주세요.' }); return; } try { const endAt = Date.now(); await call('messengerSubmitReport', { roomId: state.room.roomId, targetUid: state.isOwner ? state.selectedFanUid : undefined, startAt: endAt - 24 * 60 * 60 * 1000, endAt, reason }); showError({ message: '관리자에게 신고를 접수했습니다.' }); } catch (error) { showError(error); } });
+  $('#room-menu-button').addEventListener('click', openReportDialog);
+  $('#submit-report').addEventListener('click', submitReport);
   $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = window.confirm('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });
   $('#save-room-settings').addEventListener('click', saveRoomSettings);
   $('#discard-room').addEventListener('click', discardRoom);
