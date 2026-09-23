@@ -192,6 +192,161 @@ function renderTimeline() {
   host.scrollTop = host.scrollHeight;
 }
 
+function localDateTimeValue(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function openExportDialog() {
+  if (!state.room || !state.session || !state.session.trusted) return;
+  if (state.isOwner && state.selectedFanUid && !state.fans.some((fan) => fan.uid === state.selectedFanUid && fan.status === 'active')) {
+    showError({ message: '현재 대화를 저장할 수 없습니다.' }); return;
+  }
+  const now = new Date();
+  $('#export-end').value = localDateTimeValue(now);
+  $('#export-start').value = localDateTimeValue(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  $('#export-error').hidden = true;
+  openDialog('export-dialog');
+}
+
+async function getExportMessages() {
+  const errorEl = $('#export-error');
+  errorEl.hidden = true;
+  const start = new Date($('#export-start').value).getTime();
+  const end = new Date($('#export-end').value).getTime();
+  const now = Date.now();
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) throw new Error('시작 시간과 종료 시간을 확인해 주세요.');
+  if (start < sevenDaysAgo || end > now) throw new Error('최근 7일 안의 시간 범위만 저장할 수 있습니다.');
+  const { db, ref, get, query, orderByChild, startAt, endAt, limitToFirst } = api();
+  const roomId = state.room.roomId;
+  const readRange = async (path) => {
+    const rangeQuery = query(ref(db, path), orderByChild('createdAt'), startAt(start), endAt(end), limitToFirst(501));
+    const snapshot = await get(rangeQuery);
+    const values = snapshot.val() || {};
+    return Object.entries(values).map(([key, message]) => ({ ...message, id: message.id || key }));
+  };
+  let messages;
+  if (state.isOwner) {
+    messages = await readRange(`streamerMessenger/chat/${roomId}/streamerTimeline`);
+    if (state.selectedFanUid) messages = messages.filter((message) => !message.recipientUid || message.recipientUid === state.selectedFanUid || message.senderUid === state.selectedFanUid);
+  } else {
+    messages = (await Promise.all([
+      readRange(`streamerMessenger/chat/${roomId}/private/${state.session.uid}`),
+      readRange(`streamerMessenger/chat/${roomId}/broadcast`),
+    ])).flat().filter((message, index, all) => all.findIndex((item) => item.id === message.id) === index);
+  }
+  if (messages.length > 500) throw new Error('한 번에 최대 500개 메시지만 저장할 수 있습니다. 범위를 좁혀 다시 저장해 주세요.');
+  messages.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  const imageMessages = messages.filter((message) => message.kind === 'image');
+  const accessibleImages = new Set();
+  const imageIds = [...new Set(imageMessages.map((message) => message.galleryImageId).filter(Boolean))];
+  for (let i = 0; i < imageIds.length; i += 8) {
+    const checks = await Promise.all(imageIds.slice(i, i + 8).map(async (imageId) => {
+      try { await call('messengerGetGalleryImage', { roomId, imageId }); return imageId; }
+      catch (_) { return ''; }
+    }));
+    checks.filter(Boolean).forEach((imageId) => accessibleImages.add(imageId));
+  }
+  const visible = messages.filter((message) => message.kind !== 'image' || accessibleImages.has(message.galleryImageId));
+  return { messages: visible, unavailableImages: imageMessages.length - visible.filter((message) => message.kind === 'image').length };
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url; link.download = filename;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportFilename(extension) {
+  const label = state.isOwner && state.selectedFanUid
+    ? (state.fans.find((fan) => fan.uid === state.selectedFanUid)?.profile?.nickname || '팬 대화')
+    : (state.room.streamerNickname || '메신저');
+  const safe = label.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 40) || '메신저';
+  return `${safe}-대화-${new Date().toISOString().slice(0, 10)}.${extension}`;
+}
+
+function messageExportText(messages, unavailableImages) {
+  const start = new Date($('#export-start').value).toLocaleString('ko-KR');
+  const end = new Date($('#export-end').value).toLocaleString('ko-KR');
+  const lines = [`${state.room.streamerNickname || '스트리머'} 메신저 대화`, `${start} – ${end}`, ...(unavailableImages ? [`접근할 수 없는 갤러리 이미지 ${unavailableImages}개 제외`] : []), ''];
+  for (const message of messages) {
+    const time = new Date(Number(message.createdAt || 0)).toLocaleString('ko-KR');
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : (message.text || '');
+    lines.push(`[${time}] ${message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '팬')}: ${body}`);
+  }
+  return lines.join('\n');
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const lines = [];
+  for (const paragraph of String(text || '').split('\n')) {
+    let line = '';
+    for (const char of paragraph) {
+      if (line && ctx.measureText(line + char).width > maxWidth) { lines.push(line); line = char; }
+      else line += char;
+    }
+    lines.push(line);
+  }
+  return lines.length ? lines : [''];
+}
+
+function conversationCanvas(messages, unavailableImages = 0) {
+  const width = 1200; const margin = 64; const contentWidth = width - margin * 2;
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = '24px "Noto Sans KR", sans-serif';
+  const layouts = messages.map((message) => {
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : (message.text || '');
+    const lines = wrapCanvasText(ctx, body, contentWidth - 48);
+    return { message, lines, height: 76 + lines.length * 36 };
+  });
+  const height = 250 + layouts.reduce((sum, item) => sum + item.height + 16, 0);
+  if (height > 24000) throw new Error('대화 이미지가 너무 길어요. 더 짧은 시간 범위를 선택해 주세요.');
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+  const draw = canvas.getContext('2d');
+  draw.fillStyle = '#f5f8ff'; draw.fillRect(0, 0, width, height);
+  draw.fillStyle = '#263451'; draw.font = 'bold 34px "Noto Sans KR", sans-serif';
+  draw.fillText(`${state.room.streamerNickname || '스트리머'} 메신저 대화`, margin, 72);
+  draw.fillStyle = '#77849b'; draw.font = '18px "Noto Sans KR", sans-serif';
+  draw.fillText(`${new Date($('#export-start').value).toLocaleString('ko-KR')} – ${new Date($('#export-end').value).toLocaleString('ko-KR')}`, margin, 108);
+  if (unavailableImages) draw.fillText(`접근할 수 없는 갤러리 이미지 ${unavailableImages}개 제외`, margin, 137);
+  let y = unavailableImages ? 177 : 148;
+  for (const item of layouts) {
+    const message = item.message;
+    draw.fillStyle = '#8793a8'; draw.font = '16px "Noto Sans KR", sans-serif';
+    draw.fillText(`${message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '팬')} · ${new Date(Number(message.createdAt || 0)).toLocaleString('ko-KR')}`, margin, y + 22);
+    draw.fillStyle = message.senderRole === 'streamer' ? '#e6f5ef' : '#ffffff';
+    draw.beginPath(); draw.roundRect(margin, y + 34, contentWidth, item.height - 38, 18); draw.fill();
+    draw.fillStyle = '#263451'; draw.font = '24px "Noto Sans KR", sans-serif';
+    item.lines.forEach((line, index) => draw.fillText(line, margin + 24, y + 78 + index * 36));
+    y += item.height + 16;
+  }
+  return canvas;
+}
+
+async function exportConversation(format) {
+  const buttons = [$('#export-text'), $('#export-image')];
+  buttons.forEach((button) => { button.disabled = true; });
+  $('#export-error').hidden = true;
+  try {
+    const { messages, unavailableImages } = await getExportMessages();
+    if (format === 'image') {
+      if (messages.length > 100) throw new Error('대화 이미지는 최대 100개 메시지까지 저장할 수 있습니다. 범위를 좁혀 주세요.');
+      const canvas = conversationCanvas(messages, unavailableImages);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('대화 이미지를 만들지 못했습니다.');
+      downloadBlob(blob, exportFilename('png'));
+    } else {
+      const blob = new Blob(['\ufeff', messageExportText(messages, unavailableImages)], { type: 'text/plain;charset=utf-8' });
+      downloadBlob(blob, exportFilename('txt'));
+    }
+    closeDialog('export-dialog');
+  } catch (error) {
+    const errorEl = $('#export-error'); errorEl.textContent = error.message || '대화를 저장하지 못했습니다.'; errorEl.hidden = false;
+  } finally { buttons.forEach((button) => { button.disabled = false; }); }
+}
+
 function renderMessage(message) {
   const mine = message.senderUid === state.session.uid;
   const row = document.createElement('article'); row.className = `message-row ${mine ? 'mine' : 'other'}${message.senderRole === 'streamer' ? ' streamer' : ''}`;
@@ -450,6 +605,9 @@ function bindEvents() {
   $('#close-admin').addEventListener('click', () => { $('#admin-view').hidden = true; $('#directory-view').hidden = false; });
   $('#room-search').addEventListener('input', renderRooms);
   $('#back-to-directory').addEventListener('click', leaveChat);
+  $('#export-chat-button').addEventListener('click', openExportDialog);
+  $('#export-text').addEventListener('click', () => exportConversation('text'));
+  $('#export-image').addEventListener('click', () => exportConversation('image'));
   $('#submit-application').addEventListener('click', submitApplication);
   $('#open-image-picker').addEventListener('click', openImagePicker);
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));

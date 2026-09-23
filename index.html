@@ -74,7 +74,7 @@
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
             <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
-            <div class="chat-header-actions"><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 메뉴">···</button></div>
+            <div class="chat-header-actions"><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
           </div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
@@ -178,6 +178,19 @@
 
   <dialog class="app-dialog" id="generic-dialog"><div class="dialog-card"><button class="dialog-close" id="generic-close" type="button" aria-label="닫기">×</button><p class="dialog-copy" id="generic-message"></p><div class="dialog-actions"><button class="button button-quiet" id="generic-cancel" type="button">취소</button><button class="button button-primary" id="generic-confirm" type="button">확인</button></div></div></dialog>
   <dialog class="app-dialog" id="report-detail-dialog"><div class="dialog-card report-detail-card"><button class="dialog-close" id="report-detail-close" type="button" aria-label="닫기">×</button><p class="eyebrow">ADMIN REVIEW</p><h2>신고 대화 범위</h2><div id="report-evidence-list" class="report-evidence-list"></div></div></dialog>
+  <dialog class="app-dialog" id="export-dialog">
+    <form method="dialog" class="dialog-card">
+      <button class="dialog-close" value="cancel" aria-label="닫기">×</button>
+      <p class="eyebrow">SAVE CONVERSATION</p><h2>대화 저장</h2>
+      <p class="dialog-copy">선택한 기간의 현재 화면에서 볼 수 있는 대화만 저장합니다. 서버에는 저장하지 않아요. 보관 정책에 따라 최근 7일 범위만 선택할 수 있습니다.</p>
+      <label class="field-label" for="export-start">시작 시간</label><input class="text-input" id="export-start" type="datetime-local" required>
+      <label class="field-label" for="export-end">종료 시간</label><input class="text-input" id="export-end" type="datetime-local" required>
+      <p class="dialog-error" id="export-error" hidden></p>
+      <button class="button button-primary full-width" id="export-text" type="button">텍스트 파일로 저장</button>
+      <button class="button button-quiet full-width" id="export-image" type="button">대화 이미지로 저장</button>
+      <p class="fine-print">대화 이미지는 한 번에 최대 100개 메시지를 포함합니다. 갤러리 이미지는 첨부 표시로 나타납니다. 범위를 좁혀 저장해 주세요.</p>
+    </form>
+  </dialog>
 
   <script type="module" src="js/firebase-init.js"></script>
   <script type="module" src="js/devbar-links.js"></script>
