@@ -27,3 +27,4 @@
 #image-picker-dialog .gallery-upload-row{width:100%;margin-top:0}
 #image-picker-dialog .dialog-close{z-index:1}
 @media(max-width:680px){#image-picker-dialog{width:calc(100% - 20px);max-height:88vh}#image-picker-dialog .image-picker-card{max-height:88vh;padding:24px 18px 18px;border-radius:22px}#image-picker-dialog .gallery-grid{grid-template-columns:repeat(3,minmax(0,1fr));max-height:48vh}.gallery-picker-header{padding-right:34px}.gallery-upload-row{gap:8px}}
+.privacy-note{border-color:rgba(103,130,230,.24);background:rgba(245,248,255,.88)}.privacy-note strong{color:#405fe0}.privacy-note small+small{margin-top:4px}
