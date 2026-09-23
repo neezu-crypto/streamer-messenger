@@ -18,6 +18,11 @@ function avatarUrl(soopId) {
   return `https://stimg.sooplive.com/LOGO/${id.slice(0, 2)}/${id}/${id}.jpg`;
 }
 
+function stationUrl(soopId) {
+  const id = String(soopId || '').trim().toLowerCase();
+  return /^[a-z0-9]{2,30}$/.test(id) ? `https://www.sooplive.com/station/${encodeURIComponent(id)}` : '';
+}
+
 function renderStreamerAvatar(host, src, nickname) {
   host.replaceChildren();
   const fallback = String(nickname || '✦').slice(0, 1);
@@ -400,7 +405,12 @@ function renderMessage(message) {
   const isMine = message.senderUid === state.session.uid;
   const isStreamerMessage = message.senderRole === 'streamer';
   const row = document.createElement('article'); row.className = `message-row ${isStreamerMessage ? 'streamer' : 'fan-message'}${isMine ? ' own' : ''}`;
-  const avatar = document.createElement('div'); avatar.className = 'message-avatar';
+  const senderProfile = isStreamerMessage
+    ? { soopId: state.room.streamerSoopId }
+    : (isMine ? (state.session.profile || {}) : (state.fans.find((fan) => fan.uid === message.senderUid) || {}).profile || {});
+  const profileLink = stationUrl(senderProfile.soopId);
+  const avatar = document.createElement(profileLink ? 'a' : 'div'); avatar.className = 'message-avatar';
+  if (profileLink) { avatar.href = profileLink; avatar.target = '_blank'; avatar.rel = 'noopener noreferrer'; avatar.setAttribute('aria-label', `${message.senderName || '사용자'} SOOP 방송국을 새 탭에서 열기`); avatar.title = 'SOOP 방송국 열기'; }
   if (message.senderAvatarUrl) { const img = document.createElement('img'); img.src = message.senderAvatarUrl; img.alt = ''; avatar.appendChild(img); }
   else avatar.textContent = (message.senderName || '✦').slice(0, 1);
   const stack = document.createElement('div'); stack.className = 'message-stack';
