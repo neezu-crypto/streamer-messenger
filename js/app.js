@@ -666,7 +666,7 @@ async function sendMessage(kind = 'text', galleryImageId = '') {
 async function openImagePicker() {
   if (!state.room) return;
   $('#gallery-image-list').replaceChildren(); $('#gallery-locked').hidden = true;
-  $('#gallery-empty-upload').hidden = true; $('#gallery-open-row').hidden = false;
+  $('#gallery-inline-upload-panel').hidden = true; $('#gallery-open-row').hidden = false;
   $('#gallery-inline-file').value = ''; $('#gallery-inline-filename').textContent = '선택한 파일 없음'; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
   state.galleryStreamerId = '';
   openDialog('image-picker-dialog');
@@ -684,8 +684,8 @@ async function loadGalleryImages() {
     if (result.locked) { $('#gallery-locked').hidden = false; $('#gallery-image-list').innerHTML = '<p class="muted">해금 후 이미지를 선택할 수 있어요.</p>'; return; }
     const grid = $('#gallery-image-list'); grid.replaceChildren();
     const images = result.images || [];
-    $('#gallery-empty-upload').hidden = images.length !== 0;
-    $('#gallery-open-row').hidden = images.length === 0;
+    $('#gallery-inline-upload-panel').hidden = false;
+    $('#gallery-open-row').hidden = false;
     for (const item of images) {
       state.galleryImages.set(item.imageId, item);
       const button = document.createElement('button'); button.className = 'gallery-image-button'; button.type = 'button'; button.title = new Date(item.createdAt).toLocaleDateString('ko-KR');
