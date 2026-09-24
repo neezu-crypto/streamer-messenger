@@ -68,8 +68,9 @@ function syncHeader() {
   } else profileButton.textContent = session.trusted ? '프로필 설정' : '로그인';
   $('#create-room-button').hidden = !session.isVerifiedStreamer && !session.isAdmin;
   $('#admin-tab-button').hidden = !session.isAdmin;
-  if ((session.isVerifiedStreamer || session.isAdmin) && session.ownRoom) $('#create-room-button').textContent = '내 채팅방';
-  else $('#create-room-button').textContent = '채팅방 만들기';
+  const hasRoom = (session.isVerifiedStreamer || session.isAdmin) && !!session.ownRoom;
+  $('#create-room-desktop-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
+  $('#create-room-mobile-label').textContent = hasRoom ? '내 방' : '방 만들기';
 }
 
 function renderRooms() {
