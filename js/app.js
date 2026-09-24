@@ -1026,19 +1026,12 @@ async function showReportEvidence(reportId) {
   openDialog('report-detail-dialog');
 }
 
-function updateProfilePreview() {
-  const src = avatarUrl($('#profile-soop-id').value);
-  const image = $('#profile-avatar-preview'); const fallback = $('#avatar-fallback');
-  image.hidden = !src; fallback.hidden = !!src;
-  if (src) image.src = src;
-}
-
 function openProfile() {
   if (!state.session || !state.session.trusted) { openDialog('auth-dialog'); return; }
   const profile = state.session.profile || {};
   $('#profile-soop-nickname').value = profile.nickname || (state.session.streamer && state.session.streamer.nickname) || '';
   $('#profile-soop-id').value = profile.soopId || (state.session.streamer && state.session.streamer.soopId) || '';
-  updateProfilePreview(); openDialog('profile-dialog');
+  openDialog('profile-dialog');
 }
 
 async function saveProfile() {
@@ -1127,9 +1120,7 @@ function bindEvents() {
   $('#kakao-login').addEventListener('click', async () => { try { await api().loginKakao(); closeDialog('auth-dialog'); } catch (error) { showError(error); } });
   $('#verify-streamer').addEventListener('click', () => { closeDialog('auth-dialog'); openDialog('verification-dialog'); });
   $('#verification-submit').addEventListener('click', async () => { const status = $('#verification-status'); status.hidden = false; try { const result = await api().requestStreamerVerification({ nickname: $('#verification-nickname').value.trim(), soopId: $('#verification-soop-id').value.trim() }); status.textContent = result.action === 'already-verified' ? '이미 인증된 계정입니다.' : '인증 신청을 확인 중입니다. 관리자 승인 후 방을 만들 수 있어요.'; } catch (error) { status.textContent = error.message || '인증 요청을 처리하지 못했습니다.'; } });
-  $('#profile-soop-id').addEventListener('input', updateProfilePreview);
   $('#save-profile').addEventListener('click', saveProfile);
-  $('#choose-gallery-avatar').addEventListener('click', () => { const link = document.querySelector('#devbar-links a[data-game-id="gallery"]'); window.open(link ? link.href : 'https://neezu-crypto.github.io/streamer-gallery/', '_blank', 'noopener'); });
   $('#generic-close').addEventListener('click', () => closeDialog('generic-dialog'));
   $('#generic-cancel').addEventListener('click', () => closeDialog('generic-dialog'));
   $('#report-detail-close').addEventListener('click', () => closeDialog('report-detail-dialog'));
