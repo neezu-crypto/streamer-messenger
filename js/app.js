@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), messages: [], unsubscribers: [], applicationPollTimer: null, messageSending: false, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -95,6 +95,94 @@ function upsertRoom(room) {
   state.rooms.push(room); sortRooms(); renderRooms();
 }
 
+function clearApplicationStatusSubscriptions() {
+  state.applicationStatusUnsubscribers.forEach((unsubscribe) => { try { unsubscribe(); } catch (_) {} });
+  state.applicationStatusUnsubscribers = [];
+}
+
+function notifyApplicationResult(room, status) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const copy = {
+    approved: ['대화 신청 승인', `${room.streamerNickname || '스트리머'} 채팅방 신청이 승인되었어요.`],
+    rejected: ['대화 신청 거절', `${room.streamerNickname || '스트리머'} 채팅방 신청이 거절되었어요.`],
+    expired: ['대화 신청 만료', `${room.streamerNickname || '스트리머'} 채팅방 신청이 만료되었어요.`],
+  }[status];
+  if (!copy) return;
+  const notification = new Notification(copy[0], { body: copy[1], tag: `messenger-application-result-${room.roomId}` });
+  notification.onclick = () => { window.focus(); selectRoom(room); notification.close(); };
+}
+
+function subscribeApplicationResults() {
+  clearApplicationStatusSubscriptions();
+  const uid = state.session && state.session.uid;
+  if (!uid || !state.rooms.length) return;
+  const { db, ref, onValue } = api();
+  for (const room of state.rooms) {
+    if (!room || !/^[a-z0-9]{2,30}$/.test(room.roomId || '')) continue;
+    let initialized = false;
+    let previousStatus = '';
+    const unsubscribe = onValue(ref(db, `streamerMessenger/rooms/${room.roomId}/applications/${uid}`), (snapshot) => {
+      const application = snapshot.val() || null;
+      const status = application && application.status || '';
+      if (initialized && previousStatus === 'pending' && ['approved', 'rejected', 'expired'].includes(status)) {
+        notifyApplicationResult(room, status);
+      }
+      previousStatus = status;
+      initialized = true;
+    }, (error) => console.warn('신청 상태를 구독하지 못했습니다.', error));
+    state.applicationStatusUnsubscribers.push(unsubscribe);
+  }
+}
+
+function clearOwnerApplicationSubscription() {
+  if (state.ownerApplicationsUnsubscribe) state.ownerApplicationsUnsubscribe();
+  state.ownerApplicationsUnsubscribe = null;
+  state.ownerApplicationsRoomId = '';
+}
+
+function notifyNewApplications(room, arrivals) {
+  if (!arrivals.length || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const body = arrivals.length === 1
+    ? `${arrivals[0].profile && arrivals[0].profile.nickname || '팬'}님이 대화를 신청했어요.`
+    : `${arrivals.length}건의 대화 신청이 도착했어요.`;
+  const notification = new Notification('새 대화 신청', { body, tag: `messenger-application-${room.roomId}` });
+  notification.onclick = async () => {
+    window.focus();
+    if (!state.isOwner || !state.room || state.room.roomId !== room.roomId) await openOwnRoom();
+    switchAside('requests'); notification.close();
+  };
+}
+
+function subscribeOwnerApplications(room) {
+  const uid = state.session && state.session.uid;
+  if (!uid || !room || !/^[a-z0-9]{2,30}$/.test(room.roomId || '')) return;
+  if (state.ownerApplicationsRoomId === room.roomId && state.ownerApplicationsUnsubscribe) return;
+  clearOwnerApplicationSubscription();
+  const { db, ref, onValue } = api();
+  let initialized = false;
+  let knownUids = new Set();
+  state.ownerApplicationsRoomId = room.roomId;
+  state.ownerApplicationsUnsubscribe = onValue(ref(db, `streamerMessenger/rooms/${room.roomId}/applications`), (snapshot) => {
+    const pending = [];
+    snapshot.forEach((child) => {
+      const application = child.val() || {};
+      if (application.status === 'pending' && Number(application.expiresAt) > Date.now()) {
+        pending.push({ ...application, uid: application.uid || child.key });
+      }
+    });
+    pending.sort((a, b) => Number(a.submittedAt) - Number(b.submittedAt));
+    const currentUids = new Set(pending.map((application) => application.uid));
+    if (initialized) {
+      notifyNewApplications(room, pending.filter((application) => !knownUids.has(application.uid)));
+    }
+    initialized = true;
+    knownUids = currentUids;
+    state.knownApplicationUids = currentUids;
+    state.applications = pending;
+    if (state.isOwner && state.room && state.room.roomId === room.roomId) renderApplications();
+  }, (error) => console.warn('새 대화 신청을 구독하지 못했습니다.', error));
+}
+
 async function loadRooms() {
   const { db, ref, get } = api();
   try {
@@ -102,6 +190,7 @@ async function loadRooms() {
     const data = snapshot.val() || {};
     state.rooms = Object.values(data).filter((room) => room && room.roomId); sortRooms();
     renderRooms();
+    subscribeApplicationResults();
   } catch (error) {
     console.error('채팅방 목록을 불러오지 못했습니다.', error);
     $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>';
@@ -150,9 +239,6 @@ async function openChat(room, isOwner) {
   if (isOwner) await loadStreamerLists();
   subscribeTimeline();
   state.activeView = 'chat';
-  if (isOwner) {
-    state.applicationPollTimer = window.setInterval(() => loadStreamerLists({ notifyNew: true }), 30000);
-  }
 }
 
 function renderRoomState(room) {
@@ -169,8 +255,6 @@ function renderRoomState(room) {
 function clearSubscriptions() {
   for (const unsubscribe of state.unsubscribers) { try { unsubscribe(); } catch (_) {} }
   state.unsubscribers = [];
-  if (state.applicationPollTimer) window.clearInterval(state.applicationPollTimer);
-  state.applicationPollTimer = null;
 }
 
 function subscribeTimeline() {
@@ -451,7 +535,7 @@ function renderMessage(message) {
   return row;
 }
 
-async function loadStreamerLists({ notifyNew = false } = {}) {
+async function loadStreamerLists() {
   const roomId = state.room.roomId;
   try {
     const [fansResult, requestsResult] = await Promise.all([
@@ -460,13 +544,6 @@ async function loadStreamerLists({ notifyNew = false } = {}) {
     if (!state.room || state.room.roomId !== roomId || !state.isOwner) return;
     state.fans = fansResult.fans || []; state.blockedFans = state.fans.filter((fan) => fan.status === 'blocked'); state.applications = requestsResult.applications || [];
     const currentApplicationUids = new Set(state.applications.map((application) => application.uid));
-    if (notifyNew && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
-      const arrivals = state.applications.filter((application) => !state.knownApplicationUids.has(application.uid));
-      if (arrivals.length) {
-        const n = new Notification('새 대화 신청', { body: arrivals.length === 1 ? `${arrivals[0].profile.nickname || '팬'}님이 대화를 신청했어요.` : `${arrivals.length}건의 대화 신청이 도착했어요.`, tag: `messenger-application-${state.room.roomId}` });
-        n.onclick = () => { window.focus(); switchAside('requests'); n.close(); };
-      }
-    }
     state.knownApplicationUids = currentApplicationUids;
     renderFans(); renderBlockedFans(); renderApplications(); updateRecipientSelect();
   } catch (error) { showError(error); }
@@ -577,6 +654,7 @@ async function openOwnRoom() {
   try {
     const result = await call('messengerEnsureRoom');
     state.session.ownRoom = result.room;
+    subscribeOwnerApplications(result.room);
     syncHeader();
     upsertRoom(result.room);
     const room = result.room;
@@ -668,7 +746,7 @@ async function discardRoom() {
   try {
     await call('messengerDiscardRoom', { roomId: state.room.roomId });
     const result = await call('messengerEnsureRoom');
-    state.session.ownRoom = result.room; syncHeader(); upsertRoom(result.room);
+    state.session.ownRoom = result.room; subscribeOwnerApplications(result.room); syncHeader(); upsertRoom(result.room);
     closeDialog('room-settings-dialog'); leaveChat();
     showError({ message: '새 채팅방을 만들었습니다. 공개/비공개 설정을 확인해 주세요.' });
   }
@@ -797,7 +875,13 @@ function bindEvents() {
 }
 
 function handleSession(event) {
+  const previousUid = state.session && state.session.uid;
   state.session = event.detail.session || null;
+  const nextUid = state.session && state.session.uid;
+  if (previousUid !== nextUid) {
+    subscribeApplicationResults(); clearOwnerApplicationSubscription();
+  }
+  if (state.session && state.session.ownRoom) subscribeOwnerApplications(state.session.ownRoom);
   syncHeader();
   if (state.session && state.session.trusted) {
     $('#profile-button').title = '공개 프로필 설정';
