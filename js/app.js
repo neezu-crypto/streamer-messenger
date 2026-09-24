@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -666,21 +666,90 @@ async function sendMessage(kind = 'text', galleryImageId = '') {
 async function openImagePicker() {
   if (!state.room) return;
   $('#gallery-image-list').replaceChildren(); $('#gallery-locked').hidden = true;
+  $('#gallery-empty-upload').hidden = true; $('#gallery-open-row').hidden = false;
+  $('#gallery-inline-file').value = ''; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
+  state.galleryStreamerId = '';
   openDialog('image-picker-dialog');
+  await loadGalleryImages();
+}
+
+async function loadGalleryImages() {
+  const room = state.room;
+  if (!room) return;
   try {
-    const result = await call('messengerGetGalleryImages', { roomId: state.room.roomId });
+    const result = await call('messengerGetGalleryImages', { roomId: room.roomId });
+    if (!state.room || state.room.roomId !== room.roomId) return;
     if (result.linked === false) { $('#gallery-image-list').innerHTML = '<p class="muted">이 채팅방의 SOOP 아이디와 연결된 갤러리 스트리머를 찾지 못했어요. 프로필의 SOOP 아이디가 갤러리 스트리머 정보와 일치하는지 확인해 주세요.</p>'; return; }
+    state.galleryStreamerId = result.streamerId || '';
     if (result.locked) { $('#gallery-locked').hidden = false; $('#gallery-image-list').innerHTML = '<p class="muted">해금 후 이미지를 선택할 수 있어요.</p>'; return; }
     const grid = $('#gallery-image-list'); grid.replaceChildren();
-    for (const item of result.images || []) {
+    const images = result.images || [];
+    $('#gallery-empty-upload').hidden = images.length !== 0;
+    $('#gallery-open-row').hidden = images.length === 0;
+    for (const item of images) {
       state.galleryImages.set(item.imageId, item);
       const button = document.createElement('button'); button.className = 'gallery-image-button'; button.type = 'button'; button.title = new Date(item.createdAt).toLocaleDateString('ko-KR');
       const img = document.createElement('img'); img.src = item.thumbUrl || item.imageUrl; img.alt = '갤러리 이미지'; img.loading = 'lazy'; button.appendChild(img);
       button.addEventListener('click', async () => { closeDialog('image-picker-dialog'); await sendMessage('image', item.imageId); });
       grid.appendChild(button);
     }
-    if (!(result.images || []).length) grid.innerHTML = '<p class="muted">이 스트리머의 갤러리 이미지가 없습니다.</p>';
+    if (!images.length) grid.innerHTML = '<p class="muted">이 스트리머 갤러리에 등록된 사진이 아직 없습니다.</p>';
   } catch (error) { $('#gallery-image-list').textContent = ''; showError(error); }
+}
+
+function makeGalleryThumbnail(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const width = image.naturalWidth; const height = image.naturalHeight;
+      const scale = Math.min(1, 480 / Math.max(width, height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => blob ? resolve({ blob, width, height }) : reject(new Error('사진 미리보기를 만들지 못했습니다.')), 'image/jpeg', 0.82);
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('사진 파일을 읽을 수 없습니다.')); };
+    image.src = url;
+  });
+}
+
+async function uploadGalleryImageFromPicker() {
+  const fileInput = $('#gallery-inline-file');
+  const file = fileInput.files && fileInput.files[0];
+  const status = $('#gallery-inline-status');
+  const button = $('#gallery-inline-upload');
+  const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  if (!state.room || !file) { status.textContent = '먼저 업로드할 사진을 선택해 주세요.'; status.hidden = false; return; }
+  if (!allowedTypes.has(file.type)) { status.textContent = 'JPG, PNG, WebP, GIF 사진만 업로드할 수 있어요.'; status.hidden = false; return; }
+  if (file.size > 15 * 1024 * 1024) { status.textContent = '사진 용량은 15MB 이하여야 해요.'; status.hidden = false; return; }
+  const room = state.room;
+  const streamerId = state.galleryStreamerId;
+  if (!streamerId) { status.textContent = '이 채팅방의 스트리머 갤러리를 확인하지 못했습니다. 다시 열어 주세요.'; status.hidden = false; return; }
+  button.disabled = true; button.textContent = '업로드 중…'; status.hidden = false; status.textContent = '사진을 갤러리에 업로드하고 있어요.';
+  try {
+    const thumb = await makeGalleryThumbnail(file);
+    const prepared = await call('requestImageUpload', { contentType: file.type, fileSize: file.size, thumbFileSize: thumb.blob.size });
+    const originalUpload = await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+    if (!originalUpload.ok) throw new Error('원본 사진을 스토리지에 올리지 못했습니다. 다시 시도해 주세요.');
+    const thumbnailUpload = await fetch(prepared.thumbUploadUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: thumb.blob });
+    if (!thumbnailUpload.ok) throw new Error('사진 미리보기를 스토리지에 올리지 못했습니다. 다시 시도해 주세요.');
+    const streamerNameSnapshot = await api().get(api().ref(api().db, `streamerNames/${streamerId}`)).catch(() => null);
+    const streamerName = streamerNameSnapshot && streamerNameSnapshot.val() || room.streamerNickname || '스트리머';
+    await call('registerImage', {
+      imageId: prepared.imageId, key: prepared.key, thumbKey: prepared.thumbKey,
+      streamerId, streamerName,
+      category: $('#gallery-inline-category').value, width: thumb.width, height: thumb.height,
+    });
+    fileInput.value = '';
+    status.textContent = '업로드 완료! 사진을 불러오는 중이에요.';
+    if (state.room && state.room.roomId === room.roomId && $('#image-picker-dialog').open) await loadGalleryImages();
+  } catch (error) {
+    status.textContent = error.message || '사진 업로드에 실패했습니다.';
+  } finally {
+    button.disabled = false; button.textContent = '갤러리에 사진 업로드';
+  }
 }
 
 async function submitApplication() {
@@ -893,6 +962,7 @@ function bindEvents() {
   $('#submit-application').addEventListener('click', submitApplication);
   $('#open-image-picker').addEventListener('click', openImagePicker);
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
+  $('#gallery-inline-upload').addEventListener('click', uploadGalleryImageFromPicker);
   $('#send-message').addEventListener('click', () => sendMessage('text'));
   $('#message-input').addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
