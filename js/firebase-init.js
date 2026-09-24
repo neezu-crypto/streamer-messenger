@@ -61,8 +61,10 @@ async function refreshSession(user) {
   notifySession();
 }
 
-onAuthStateChanged(auth, async (user) => {
-  await persistenceReady;
+// Restore/migrate the persisted real account before observing auth state.
+// Registering the observer first can deliver a transient null user, which the
+// anonymous fallback would otherwise persist over the sibling-project login.
+persistenceReady.then(() => onAuthStateChanged(auth, async (user) => {
   if (!user) {
     state.ready = false;
     try { await signInAnonymously(auth); }
@@ -70,7 +72,7 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   await refreshSession(user);
-});
+}));
 
 function confirmDialog(message) {
   return new Promise((resolve) => {
