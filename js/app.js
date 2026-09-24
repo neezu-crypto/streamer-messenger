@@ -1031,7 +1031,22 @@ function openProfile() {
   const profile = state.session.profile || {};
   $('#profile-soop-nickname').value = profile.nickname || (state.session.streamer && state.session.streamer.nickname) || '';
   $('#profile-soop-id').value = profile.soopId || (state.session.streamer && state.session.streamer.soopId) || '';
+  updateProfilePreview();
   openDialog('profile-dialog');
+}
+
+function updateProfilePreview() {
+  const image = $('#profile-avatar-preview');
+  const fallback = $('#avatar-fallback');
+  const src = avatarUrl($('#profile-soop-id').value);
+  image.hidden = true;
+  fallback.hidden = false;
+  image.onload = () => { image.hidden = false; fallback.hidden = true; };
+  image.onerror = () => { image.hidden = true; fallback.hidden = false; };
+  if (src) {
+    image.src = src;
+    if (image.complete && image.naturalWidth > 0) { image.hidden = false; fallback.hidden = true; }
+  } else image.removeAttribute('src');
 }
 
 async function saveProfile() {
@@ -1121,6 +1136,7 @@ function bindEvents() {
   $('#verify-streamer').addEventListener('click', () => { closeDialog('auth-dialog'); openDialog('verification-dialog'); });
   $('#verification-submit').addEventListener('click', async () => { const status = $('#verification-status'); status.hidden = false; try { const result = await api().requestStreamerVerification({ nickname: $('#verification-nickname').value.trim(), soopId: $('#verification-soop-id').value.trim() }); status.textContent = result.action === 'already-verified' ? '이미 인증된 계정입니다.' : '인증 신청을 확인 중입니다. 관리자 승인 후 방을 만들 수 있어요.'; } catch (error) { status.textContent = error.message || '인증 요청을 처리하지 못했습니다.'; } });
   $('#save-profile').addEventListener('click', saveProfile);
+  $('#profile-soop-id').addEventListener('input', updateProfilePreview);
   $('#generic-close').addEventListener('click', () => closeDialog('generic-dialog'));
   $('#generic-cancel').addEventListener('click', () => closeDialog('generic-dialog'));
   $('#report-detail-close').addEventListener('click', () => closeDialog('report-detail-dialog'));

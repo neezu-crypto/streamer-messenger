@@ -124,6 +124,8 @@
     <form method="dialog" class="dialog-card" id="profile-form">
       <button class="dialog-close" value="cancel" aria-label="닫기">×</button>
       <p class="eyebrow">YOUR PUBLIC PROFILE</p><h2>프로필 설정</h2>
+      <label class="field-label">프로필 미리보기</label>
+      <div class="avatar-preview"><img id="profile-avatar-preview" alt="SOOP 프로필 사진 미리보기" hidden><span id="avatar-fallback" aria-hidden="true">✦</span></div>
       <label class="field-label" for="profile-soop-nickname">SOOP 닉네임</label><input class="text-input" id="profile-soop-nickname" maxlength="12" autocomplete="nickname" required>
       <label class="field-label" for="profile-soop-id">SOOP 아이디</label><input class="text-input" id="profile-soop-id" maxlength="20" autocomplete="off" required>
       <p class="fine-print">입력한 SOOP 닉네임과 아이디는 공개 프로필에 표시되며 실제 계정과 대조하지 않습니다.</p>
