@@ -2,7 +2,6 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/fireba
 import {
   getAuth, GoogleAuthProvider, signInAnonymously, signInWithPopup,
   signInWithCustomToken, linkWithPopup, signOut, onAuthStateChanged,
-  setPersistence, browserLocalPersistence,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
   getDatabase, ref, get, set, push, onValue, query, orderByKey, orderByChild,
@@ -23,12 +22,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-// Firebase Auth persistence is scoped to the browser origin and Firebase API key/app name.
-// The sibling GitHub Pages sites share neezu-crypto.github.io and the default app name,
-// so keep the real account persisted there for cross-project navigation.
-const persistenceReady = setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error('브라우저 로그인 유지 설정 실패:', error);
-});
 const db = getDatabase(app);
 const functions = getFunctions(app);
 const googleProvider = new GoogleAuthProvider();
@@ -64,13 +57,22 @@ async function refreshSession(user) {
 // Restore/migrate the persisted real account before observing auth state.
 // Registering the observer first can deliver a transient null user, which the
 // anonymous fallback would otherwise persist over the sibling-project login.
-persistenceReady.then(() => auth.authStateReady()).then(() => onAuthStateChanged(auth, async (user) => {
+let hasRestoredAccount = false;
+auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    // Auth persistence may briefly emit null while another same-origin sibling
+    // page is restoring/synchronizing the shared account. Never replace an
+    // account already observed in this tab with a new anonymous user.
+    if (hasRestoredAccount) {
+      console.warn('공유 로그인 상태가 일시적으로 비어 있어 기존 메신저 세션을 유지합니다.');
+      return;
+    }
     state.ready = false;
     try { await signInAnonymously(auth); }
     catch (error) { console.error('익명 세션 시작 실패:', error); state.ready = true; notifySession(); }
     return;
   }
+  hasRestoredAccount = true;
   await refreshSession(user);
 }));
 
