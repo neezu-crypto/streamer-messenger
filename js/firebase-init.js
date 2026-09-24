@@ -46,11 +46,17 @@ function waitForSession() {
 }
 
 async function refreshSession(user) {
+  const previousSession = state.session;
   state.user = user;
-  state.session = null;
+  // Focus-based refreshes can fail transiently. Keep the last verified session
+  // for this same Firebase UID so a server timeout never looks like sign-out.
+  if (!previousSession || previousSession.uid !== user.uid) state.session = null;
   set(ref(db, `presence/streamerMessenger/${user.uid}`), { lastSeen: Date.now() }).catch((error) => console.error('접속 집계 기록 실패:', error));
   try { state.session = await call('messengerGetSession'); }
-  catch (error) { console.error('메신저 계정 상태 확인 실패:', error); }
+  catch (error) {
+    console.error('메신저 계정 상태 확인 실패:', error);
+    state.session = previousSession && previousSession.uid === user.uid ? previousSession : null;
+  }
   state.ready = true;
   notifySession();
 }
