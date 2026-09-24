@@ -162,8 +162,11 @@
       <section class="gallery-empty-upload" id="gallery-empty-upload" hidden>
         <strong>아직 등록된 사진이 없어요</strong>
         <p>아래에서 사진을 올리면 이 채팅방의 스트리머 갤러리에 등록됩니다.</p>
-        <label class="field-label" for="gallery-inline-file">사진 선택</label>
-        <input class="text-input" id="gallery-inline-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        <span class="field-label">사진 선택</span>
+        <div class="gallery-file-control">
+          <input id="gallery-inline-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <label class="gallery-file-picker" for="gallery-inline-file"><span class="gallery-file-button">파일 선택</span><span id="gallery-inline-filename">선택한 파일 없음</span></label>
+        </div>
         <label class="field-label" for="gallery-inline-category">사진 분류</label>
         <select class="text-input" id="gallery-inline-category"><option value="screenshot">스크린샷</option><option value="ai-art">AI 일러스트</option><option value="fan-art">팬아트</option><option value="meme">밈</option><option value="etc">기타</option></select>
         <p class="gallery-inline-help">JPG, PNG, WebP, GIF · 15MB 이하</p>

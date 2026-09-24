@@ -667,7 +667,7 @@ async function openImagePicker() {
   if (!state.room) return;
   $('#gallery-image-list').replaceChildren(); $('#gallery-locked').hidden = true;
   $('#gallery-empty-upload').hidden = true; $('#gallery-open-row').hidden = false;
-  $('#gallery-inline-file').value = ''; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
+  $('#gallery-inline-file').value = ''; $('#gallery-inline-filename').textContent = '선택한 파일 없음'; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
   state.galleryStreamerId = '';
   openDialog('image-picker-dialog');
   await loadGalleryImages();
@@ -963,6 +963,11 @@ function bindEvents() {
   $('#open-image-picker').addEventListener('click', openImagePicker);
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
   $('#gallery-inline-upload').addEventListener('click', uploadGalleryImageFromPicker);
+  $('#gallery-inline-file').addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    $('#gallery-inline-filename').textContent = file ? file.name : '선택한 파일 없음';
+    $('#gallery-inline-status').hidden = true;
+  });
   $('#send-message').addEventListener('click', () => sendMessage('text'));
   $('#message-input').addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
