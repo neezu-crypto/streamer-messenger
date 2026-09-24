@@ -6,6 +6,21 @@ const state = { session: null, rooms: [], room: null, isOwner: false, selectedFa
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
+let toastTimer = 0;
+
+function showToast(message) {
+  const toast = $('#app-toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.remove('visible');
+  requestAnimationFrame(() => toast.classList.add('visible'));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => { toast.hidden = true; }, 220);
+  }, 2600);
+}
 
 function showError(error, fallback = '요청을 처리하지 못했습니다.') {
   const message = error && error.message ? error.message.replace(/^Firebase: /, '') : fallback;
@@ -836,14 +851,20 @@ function openProfile() {
 }
 
 async function saveProfile() {
+  const saveButton = $('#save-profile');
+  if (saveButton.dataset.saving === 'true') return;
   const nickname = $('#profile-soop-nickname').value.trim(); const soopId = $('#profile-soop-id').value.trim().toLowerCase();
   if (!nickname || !soopId) { showError({ message: 'SOOP 닉네임과 아이디를 입력해 주세요.' }); return; }
   if (nickname.length > 12 || /[<>\x00-\x1f\x7f]/.test(nickname) || !/^[a-z0-9]{2,20}$/.test(soopId)) { showError({ message: '닉네임은 12자 이하, SOOP 아이디는 영문 소문자와 숫자 2~20자로 입력해 주세요.' }); return; }
+  const originalText = saveButton.textContent;
+  saveButton.dataset.saving = 'true'; saveButton.disabled = true; saveButton.textContent = '저장 중…';
   try {
     await call('updateGalleryProfile', { nickname, soopId });
     await api().refreshSession(api().auth.currentUser);
     closeDialog('profile-dialog');
+    showToast('프로필 저장 완료');
   } catch (error) { showError(error); }
+  finally { saveButton.dataset.saving = 'false'; saveButton.disabled = false; saveButton.textContent = originalText; }
 }
 
 async function enableNotifications() {
