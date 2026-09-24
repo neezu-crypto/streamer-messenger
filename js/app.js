@@ -49,9 +49,9 @@ function syncHeader() {
       profileButton.append(img, span);
     }
   } else profileButton.textContent = session.trusted ? '프로필 설정' : '로그인';
-  $('#create-room-button').hidden = !session.isVerifiedStreamer;
+  $('#create-room-button').hidden = !session.isVerifiedStreamer && !session.isAdmin;
   $('#admin-tab-button').hidden = !session.isAdmin;
-  if (session.isVerifiedStreamer && session.ownRoom) $('#create-room-button').textContent = '내 채팅방';
+  if ((session.isVerifiedStreamer || session.isAdmin) && session.ownRoom) $('#create-room-button').textContent = '내 채팅방';
   else $('#create-room-button').textContent = '채팅방 만들기';
 }
 
@@ -71,7 +71,7 @@ function renderRooms() {
     renderStreamerAvatar(avatar, room.streamerAvatarUrl, room.streamerNickname);
     const identity = document.createElement('div'); identity.className = 'room-identity';
     const name = document.createElement('strong'); name.textContent = room.streamerNickname || '스트리머';
-    const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : '스트리머 인증 완료';
+    const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : (room.roomType === 'admin' ? '관리자 운영' : '스트리머 인증 완료');
     identity.append(name, soopId);
     const lock = document.createElement('span'); lock.className = 'room-lock'; lock.textContent = room.visibility === 'private' ? '🔒' : '◌';
     top.append(avatar, identity, lock);
@@ -122,7 +122,7 @@ async function openChat(room, isOwner) {
   $('#streamer-aside').hidden = !isOwner;
   $('#member-action').hidden = true;
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
-  $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`;
+  $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : (room.roomType === 'admin' ? '나와 관리자만 보이는 대화' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`);
   const src = room.streamerAvatarUrl || avatarUrl(room.streamerSoopId);
   renderStreamerAvatar($('#chat-avatar'), src, room.streamerNickname);
   renderRoomState(room);

@@ -18,6 +18,11 @@ const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
 
 const db = () => getDatabase();
 const now = () => Date.now();
+function principalRoomId(principal) {
+  if (principal.streamer && /^[a-z0-9]{2,30}$/.test(principal.streamer.soopId || '')) return principal.streamer.soopId;
+  if (principal.admin) return `admin${crypto.createHash('sha256').update(principal.uid).digest('hex').slice(0, 24)}`;
+  return '';
+}
 const safeText = (value, max, required = false) => {
   if (typeof value !== 'string') throw new HttpsError('invalid-argument', '입력값이 올바르지 않습니다.');
   const text = value.trim();
@@ -131,6 +136,7 @@ function publicRoom(meta) {
     roomId: meta.roomId,
     streamerNickname: meta.streamerNickname,
     streamerSoopId: meta.streamerSoopId,
+    roomType: meta.roomType || 'streamer',
     streamerAvatarUrl: meta.streamerAvatarUrl || '',
     galleryLinked: !!meta.galleryStreamerId,
     visibility: meta.visibility || 'public',
@@ -155,10 +161,11 @@ const messengerGetSession = onCall(async (request) => {
   const p = await getPrincipal(request);
   const profile = p.trusted ? await profileFor(p.uid) : null;
   let ownRoom = null;
-  if (p.streamer && p.streamer.soopId) {
-    const snap = await roomRef(p.streamer.soopId).child('meta').get();
+  const ownRoomId = principalRoomId(p);
+  if (ownRoomId) {
+    const snap = await roomRef(ownRoomId).child('meta').get();
     if (snap.exists() && snap.val().ownerUid === p.uid) {
-      const meta = await syncOwnerRoomAvatar(p.streamer.soopId, p.uid, profile && profile.avatarUrl, snap.val());
+      const meta = await syncOwnerRoomAvatar(ownRoomId, p.uid, profile && profile.avatarUrl, snap.val());
       ownRoom = publicRoom(meta);
     }
   }
@@ -181,15 +188,18 @@ const messengerGetRoomState = onCall(async (request) => {
 
 const messengerEnsureRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
-  if (!p.streamer || !p.streamer.soopId || !/^[a-z0-9]{2,30}$/.test(p.streamer.soopId)) throw new HttpsError('permission-denied', '인증된 스트리머만 채팅방을 만들 수 있습니다.');
-  const roomId = p.streamer.soopId;
+  const roomId = principalRoomId(p);
+  if (!roomId) throw new HttpsError('permission-denied', '인증된 스트리머 또는 관리자만 채팅방을 만들 수 있습니다.');
   const ref = roomRef(roomId);
   const current = await ref.child('meta').get();
   if (current.exists() && current.val().ownerUid !== p.uid) throw new HttpsError('already-exists', '이 스트리머 아이디의 채팅방이 이미 존재합니다.');
   if (!current.exists()) {
     const createdAt = now();
-    const galleryStreamerId = await resolveGalleryStreamerId(p.streamer.nickname);
-    const meta = { roomId, ownerUid: p.uid, streamerId: roomId, galleryStreamerId: galleryStreamerId || null, streamerNickname: p.streamer.nickname, streamerSoopId: roomId, streamerAvatarUrl: await streamerAvatar(p.uid), visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt: createdAt };
+    const profile = await profileFor(p.uid);
+    const streamerNickname = p.streamer ? p.streamer.nickname : (profile.nickname || '관리자');
+    const streamerSoopId = p.streamer ? roomId : profile.soopId;
+    const galleryStreamerId = p.streamer ? await resolveGalleryStreamerId(streamerNickname) : '';
+    const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt };
     await db().ref().update({ [`${ROOT}/rooms/${roomId}/meta`]: meta, [`${ROOT}/publicRooms/${roomId}`]: publicRoom(meta) });
     await writeAudit(p.uid, 'room.create', roomId);
     return { room: publicRoom(meta), created: true };
