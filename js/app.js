@@ -34,6 +34,7 @@ function renderStreamerAvatar(host, src, nickname) {
 
 function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 function closeDialog(id) { const dialog = document.getElementById(id); if (dialog && dialog.open) dialog.close(); }
+function setRoomEntryLoading(loading) { $('#room-entry-overlay').hidden = !loading; }
 
 function syncHeader() {
   const session = state.session || {};
@@ -109,6 +110,7 @@ async function loadRooms() {
 
 async function selectRoom(room) {
   if (!state.session || !state.session.trusted) { openDialog('auth-dialog'); return; }
+  setRoomEntryLoading(true);
   try {
     const result = await call('messengerGetRoomState', { roomId: room.roomId });
     if (result.blocked) { showError({ message: '이 채팅방에서 차단되어 다시 신청할 수 없습니다.' }); return; }
@@ -127,6 +129,7 @@ async function selectRoom(room) {
     $('#application-error').hidden = true;
     openDialog('application-dialog');
   } catch (error) { showError(error); }
+  finally { setRoomEntryLoading(false); }
 }
 
 async function openChat(room, isOwner) {
@@ -570,6 +573,7 @@ async function submitApplication() {
 }
 
 async function openOwnRoom() {
+  setRoomEntryLoading(true);
   try {
     const result = await call('messengerEnsureRoom');
     state.session.ownRoom = result.room;
@@ -579,6 +583,7 @@ async function openOwnRoom() {
     await openChat(room, true);
     if (result.created) { prepareRoomSettings(); openDialog('room-settings-dialog'); }
   } catch (error) { showError(error); }
+  finally { setRoomEntryLoading(false); }
 }
 
 async function saveRoomSettings() {
