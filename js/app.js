@@ -84,13 +84,27 @@ function renderRooms() {
   }
 }
 
-function loadRooms() {
-  const { db, ref, onValue } = api();
-  onValue(ref(db, 'streamerMessenger/publicRooms'), (snapshot) => {
+function sortRooms() {
+  state.rooms.sort((a, b) => String(a.streamerNickname).localeCompare(String(b.streamerNickname), 'ko'));
+}
+
+function upsertRoom(room) {
+  if (!room || !room.roomId) return;
+  state.rooms = state.rooms.filter((item) => item.roomId !== room.roomId);
+  state.rooms.push(room); sortRooms(); renderRooms();
+}
+
+async function loadRooms() {
+  const { db, ref, get } = api();
+  try {
+    const snapshot = await get(ref(db, 'streamerMessenger/publicRooms'));
     const data = snapshot.val() || {};
-    state.rooms = Object.values(data).filter((room) => room && room.roomId).sort((a, b) => String(a.streamerNickname).localeCompare(String(b.streamerNickname), 'ko'));
+    state.rooms = Object.values(data).filter((room) => room && room.roomId); sortRooms();
     renderRooms();
-  }, (error) => { console.error('채팅방 목록을 불러오지 못했습니다.', error); $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>'; });
+  } catch (error) {
+    console.error('채팅방 목록을 불러오지 못했습니다.', error);
+    $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>';
+  }
 }
 
 async function selectRoom(room) {
@@ -560,6 +574,7 @@ async function openOwnRoom() {
     const result = await call('messengerEnsureRoom');
     state.session.ownRoom = result.room;
     syncHeader();
+    upsertRoom(result.room);
     const room = result.room;
     await openChat(room, true);
     if (result.created) { prepareRoomSettings(); openDialog('room-settings-dialog'); }
@@ -576,7 +591,7 @@ async function saveRoomSettings() {
   saveButton.dataset.saving = 'true'; saveButton.disabled = true; saveButton.textContent = '저장 중…';
   try {
     const result = await call('messengerUpdateRoom', { roomId: state.room.roomId, visibility, regeneratePassword: state.regenerateRoomPassword, locked: $('#room-locked').checked, memberPolicy: $('#room-member-policy').value });
-    state.room = result.room; state.regenerateRoomPassword = false; renderRoomState(state.room);
+    state.room = result.room; state.regenerateRoomPassword = false; renderRoomState(state.room); upsertRoom(result.room);
     if (result.generatedPassword) {
       $('#generated-room-password').value = result.generatedPassword;
       $('#generated-password-wrap').hidden = false;
@@ -645,7 +660,13 @@ async function discardRoom() {
     yes.addEventListener('click', onYes); no.addEventListener('click', onNo); dialog.showModal();
   });
   if (!ok) return;
-  try { await call('messengerDiscardRoom', { roomId: state.room.roomId }); await call('messengerEnsureRoom'); closeDialog('room-settings-dialog'); leaveChat(); loadRooms(); showError({ message: '새 채팅방을 만들었습니다. 공개/비공개 설정을 확인해 주세요.' }); }
+  try {
+    await call('messengerDiscardRoom', { roomId: state.room.roomId });
+    const result = await call('messengerEnsureRoom');
+    state.session.ownRoom = result.room; syncHeader(); upsertRoom(result.room);
+    closeDialog('room-settings-dialog'); leaveChat();
+    showError({ message: '새 채팅방을 만들었습니다. 공개/비공개 설정을 확인해 주세요.' });
+  }
   catch (error) { showError(error); }
 }
 
