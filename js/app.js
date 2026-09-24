@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -242,6 +242,7 @@ async function openChat(room, isOwner) {
   state.knownApplicationUids = new Set();
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
+  if (isOwner) switchAside('fans');
   $('#member-action').hidden = true;
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
   $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : (room.roomType === 'admin' ? '나와 관리자만 보이는 대화' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`);
@@ -680,11 +681,20 @@ function renderFans() {
   host.className = 'fan-list';
   const all = document.createElement('button'); all.className = `fan-item${state.selectedFanUid ? '' : ' active'}`; all.type = 'button'; all.textContent = '모든 팬 대화';
   all.addEventListener('click', () => { state.selectedFanUid = ''; renderFans(); renderTimeline(); }); host.appendChild(all);
-  for (const fan of activeFans) {
+  const keyword = state.fanSearchQuery.trim().toLocaleLowerCase();
+  const visibleFans = keyword ? activeFans.filter((fan) => {
+    const profile = fan.profile || {};
+    return [profile.nickname, profile.soopId].some((value) => String(value || '').toLocaleLowerCase().includes(keyword));
+  }) : activeFans;
+  if (keyword && !visibleFans.length) {
+    const empty = document.createElement('div'); empty.className = 'fan-search-empty'; empty.textContent = '검색 결과가 없습니다.'; host.appendChild(empty); return;
+  }
+  for (const fan of visibleFans) {
     const button = document.createElement('button'); button.type = 'button'; button.className = `fan-item${state.selectedFanUid === fan.uid ? ' active' : ''}`;
     const avatar = document.createElement('span'); avatar.className = 'mini-avatar';
-    if (fan.profile.avatarUrl) { const img = document.createElement('img'); img.src = fan.profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (fan.profile.nickname || '✦').slice(0, 1);
-    const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = fan.profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = fan.profile.soopId ? `SOOP ${fan.profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
+    const profile = fan.profile || {};
+    if (profile.avatarUrl) { const img = document.createElement('img'); img.src = profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (profile.nickname || '✦').slice(0, 1);
+    const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = profile.soopId ? `SOOP ${profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
     button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; renderFans(); renderTimeline(); }); host.appendChild(button);
   }
 }
@@ -979,6 +989,7 @@ function leaveChat() { clearSubscriptions(); state.room = null; state.activeView
 
 function switchAside(tab) {
   document.querySelectorAll('.aside-tab').forEach((button) => button.classList.toggle('active', button.dataset.listTab === tab));
+  $('#fan-search-wrap').hidden = tab !== 'fans';
   $('#fan-list').hidden = tab !== 'fans'; $('#request-list').hidden = tab !== 'requests';
   $('#blocked-list').hidden = tab !== 'blocked';
 }
@@ -1060,6 +1071,18 @@ function showNewMessageNotification(message) {
 }
 
 function bindEvents() {
+  $('#fan-search').addEventListener('input', () => {
+    state.fanSearchQuery = $('#fan-search').value;
+    $('#clear-fan-search').hidden = !state.fanSearchQuery;
+    renderFans();
+  });
+  $('#clear-fan-search').addEventListener('click', () => {
+    $('#fan-search').value = '';
+    state.fanSearchQuery = '';
+    $('#clear-fan-search').hidden = true;
+    renderFans();
+    $('#fan-search').focus();
+  });
   $('#timeline').addEventListener('scroll', () => {
     if ($('#timeline').scrollTop <= 36 && state.hasOlderMessages) loadOlderMessages();
   }, { passive: true });

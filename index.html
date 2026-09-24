@@ -63,6 +63,11 @@
             <button class="aside-tab" data-list-tab="requests" type="button">신청 <span class="count-badge" id="request-count">0</span></button>
             <button class="aside-tab" data-list-tab="blocked" type="button">차단</button>
           </div>
+          <label class="fan-search" id="fan-search-wrap" hidden>
+            <span aria-hidden="true">⌕</span>
+            <input id="fan-search" type="search" placeholder="팬 닉네임 또는 SOOP 아이디" autocomplete="off" aria-label="팬 닉네임 또는 SOOP 아이디 검색">
+            <button id="clear-fan-search" type="button" aria-label="검색어 지우기" hidden>×</button>
+          </label>
           <div id="fan-list" class="fan-list"></div>
           <div id="request-list" class="request-list" hidden></div>
           <div id="blocked-list" class="fan-list" hidden></div>
