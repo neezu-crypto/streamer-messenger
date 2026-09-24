@@ -2,7 +2,8 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const MESSAGE_PAGE_SIZE = 100;
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -250,6 +251,10 @@ async function openChat(room, isOwner) {
   clearSubscriptions();
   state.galleryImages.clear(); state.imageUrls.clear();
   state.privateMessages = []; state.broadcastMessages = []; state.seenMessageIds = new Set();
+  state.messages = []; state.olderMessages = []; state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
+  state.liveMessages = []; state.hasOlderMessages = false; state.hasOlderPrivateMessages = false; state.hasOlderBroadcastMessages = false;
+  state.olderMessagesExhausted = false; state.olderPrivateMessagesExhausted = false; state.olderBroadcastMessagesExhausted = false;
+  state.loadingOlderMessages = false; state.optimisticMessages = [];
   state.notificationsPrimed = false; state.timelineLoaded = { owner: false, private: false, broadcast: false };
   if (isOwner) await loadStreamerLists();
   subscribeTimeline();
@@ -276,24 +281,115 @@ function subscribeTimeline() {
   clearSubscriptions();
   const { db, ref, onValue, query, orderByKey, limitToLast } = api();
   const roomId = state.room.roomId;
-  const render = () => renderTimeline();
   if (state.isOwner) {
-    const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByKey(), limitToLast(100));
-    state.unsubscribers.push(onValue(q, (snap) => { state.messages = Object.values(snap.val() || {}); state.timelineLoaded.owner = true; trackNotifications(state.messages); render(); }, showError));
+    const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByKey(), limitToLast(MESSAGE_PAGE_SIZE));
+    state.unsubscribers.push(onValue(q, (snap) => {
+      state.liveMessages = Object.values(snap.val() || {});
+      state.hasOlderMessages = !state.olderMessagesExhausted && (state.liveMessages.length >= MESSAGE_PAGE_SIZE || state.olderMessages.length > 0);
+      state.timelineLoaded.owner = true;
+      discardAcknowledgedOptimisticMessages(state.liveMessages);
+      state.messages = combineMessages(state.olderMessages, state.liveMessages, state.optimisticMessages);
+      trackNotifications(state.liveMessages);
+      renderTimeline();
+    }, showError));
     return;
   }
   const own = ref(db, `streamerMessenger/chat/${roomId}/private/${state.session.uid}`);
   const broadcast = ref(db, `streamerMessenger/chat/${roomId}/broadcast`);
-  state.unsubscribers.push(onValue(query(own, orderByKey(), limitToLast(100)), (snap) => { state.privateMessages = Object.values(snap.val() || {}); state.timelineLoaded.private = true; mergeFanMessages(); }, showError));
-  state.unsubscribers.push(onValue(query(broadcast, orderByKey(), limitToLast(100)), (snap) => { state.broadcastMessages = Object.values(snap.val() || {}); state.timelineLoaded.broadcast = true; mergeFanMessages(); }, showError));
+  state.unsubscribers.push(onValue(query(own, orderByKey(), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+    state.privateMessages = Object.values(snap.val() || {});
+    state.hasOlderPrivateMessages = !state.olderPrivateMessagesExhausted && (state.privateMessages.length >= MESSAGE_PAGE_SIZE || state.olderPrivateMessages.length > 0);
+    state.timelineLoaded.private = true;
+    mergeFanMessages();
+  }, showError));
+  state.unsubscribers.push(onValue(query(broadcast, orderByKey(), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+    state.broadcastMessages = Object.values(snap.val() || {});
+    state.hasOlderBroadcastMessages = !state.olderBroadcastMessagesExhausted && (state.broadcastMessages.length >= MESSAGE_PAGE_SIZE || state.olderBroadcastMessages.length > 0);
+    state.timelineLoaded.broadcast = true;
+    mergeFanMessages();
+  }, showError));
 }
 
 function mergeFanMessages() {
-  state.messages = [...(state.privateMessages || []), ...(state.broadcastMessages || [])]
-    .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i)
-    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(-150);
-  trackNotifications(state.messages);
+  const live = combineMessages(state.privateMessages || [], state.broadcastMessages || []);
+  discardAcknowledgedOptimisticMessages(live);
+  state.hasOlderMessages = state.hasOlderPrivateMessages || state.hasOlderBroadcastMessages;
+  state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, live, state.optimisticMessages);
+  trackNotifications(live);
   renderTimeline();
+}
+
+function combineMessages(...groups) {
+  const byId = new Map();
+  for (const group of groups) for (const message of group || []) if (message && message.id) byId.set(message.id, message);
+  return [...byId.values()].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0) || String(a.id).localeCompare(String(b.id)));
+}
+
+function discardAcknowledgedOptimisticMessages(liveMessages) {
+  const liveIds = new Set((liveMessages || []).map((message) => message.id));
+  state.optimisticMessages = state.optimisticMessages.filter((message) => !liveIds.has(message.id));
+}
+
+async function loadOlderMessages() {
+  if (!state.room || state.loadingOlderMessages || !state.hasOlderMessages) return;
+  const roomId = state.room.roomId;
+  const owner = state.isOwner;
+  const uid = state.session.uid;
+  const { db, ref, get, query, orderByKey, endBefore, limitToLast } = api();
+  const pageLimit = MESSAGE_PAGE_SIZE + 1;
+  state.loadingOlderMessages = true;
+  renderTimeline({ preservePosition: true });
+  try {
+    if (owner) {
+      const loaded = state.olderMessages;
+      const cursor = loaded.length ? loaded[0].id : (state.liveMessages[0] && state.liveMessages[0].id);
+      if (!cursor) { state.hasOlderMessages = false; state.olderMessagesExhausted = true; return; }
+      const path = `streamerMessenger/chat/${roomId}/streamerTimeline`;
+      const snapshot = await get(query(ref(db, path), orderByKey(), endBefore(cursor), limitToLast(pageLimit)));
+      if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner) return;
+      const page = Object.values(snapshot.val() || {});
+      state.hasOlderMessages = page.length > MESSAGE_PAGE_SIZE;
+      state.olderMessagesExhausted = !state.hasOlderMessages;
+      state.olderMessages = combineMessages(state.olderMessages, page.slice(-MESSAGE_PAGE_SIZE));
+      state.messages = combineMessages(state.olderMessages, state.liveMessages, state.optimisticMessages);
+    } else {
+      const streams = [
+        { path: `streamerMessenger/chat/${roomId}/private/${uid}`, older: state.olderPrivateMessages, live: state.privateMessages || [], key: 'private' },
+        { path: `streamerMessenger/chat/${roomId}/broadcast`, older: state.olderBroadcastMessages, live: state.broadcastMessages || [], key: 'broadcast' },
+      ];
+      const pages = await Promise.all(streams.map(async (stream) => {
+        const cursor = stream.older.length ? stream.older[0].id : (stream.live[0] && stream.live[0].id);
+        if (!cursor) return { key: stream.key, page: [], hasMore: false };
+        const snapshot = await get(query(ref(db, stream.path), orderByKey(), endBefore(cursor), limitToLast(pageLimit)));
+        const values = Object.values(snapshot.val() || {});
+        return { key: stream.key, page: values.slice(-MESSAGE_PAGE_SIZE), hasMore: values.length > MESSAGE_PAGE_SIZE };
+      }));
+      if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner || state.session.uid !== uid) return;
+      for (const result of pages) {
+        if (result.key === 'private') {
+          state.olderPrivateMessages = combineMessages(state.olderPrivateMessages, result.page);
+          state.hasOlderPrivateMessages = result.hasMore;
+          state.olderPrivateMessagesExhausted = !result.hasMore;
+        } else {
+          state.olderBroadcastMessages = combineMessages(state.olderBroadcastMessages, result.page);
+          state.hasOlderBroadcastMessages = result.hasMore;
+          state.olderBroadcastMessagesExhausted = !result.hasMore;
+        }
+      }
+      state.hasOlderMessages = state.hasOlderPrivateMessages || state.hasOlderBroadcastMessages;
+      state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, state.privateMessages, state.broadcastMessages, state.optimisticMessages);
+    }
+  } catch (error) {
+    if (state.room && state.room.roomId === roomId) {
+      console.error('이전 대화를 불러오지 못했습니다.', error);
+      showToast('이전 대화를 불러오지 못했어요. 다시 시도해 주세요.');
+    }
+  } finally {
+    if (state.room && state.room.roomId === roomId && state.isOwner === owner) {
+      state.loadingOlderMessages = false;
+      renderTimeline({ preservePosition: true });
+    }
+  }
 }
 
 function trackNotifications(messages) {
@@ -318,14 +414,26 @@ async function getImageUrl(imageId) {
   return promise;
 }
 
-function renderTimeline() {
-  const host = $('#timeline'); host.replaceChildren();
+function renderTimeline({ preservePosition = false } = {}) {
+  const host = $('#timeline');
+  const oldHeight = host.scrollHeight;
+  const oldTop = host.scrollTop;
+  const wasAtBottom = oldHeight - oldTop - host.clientHeight < 56;
+  host.replaceChildren();
+  const historyReady = state.isOwner ? state.timelineLoaded && state.timelineLoaded.owner : state.timelineLoaded && state.timelineLoaded.private && state.timelineLoaded.broadcast;
+  if (historyReady) {
+    const status = document.createElement('div');
+    status.className = 'timeline-history-status';
+    status.textContent = state.loadingOlderMessages ? '이전 대화를 불러오는 중…' : state.hasOlderMessages ? '위로 스크롤해 이전 대화를 불러오세요' : '오래된 대화가 없습니다.';
+    host.appendChild(status);
+  }
   let messages = state.messages || [];
   if (state.isOwner && state.selectedFanUid) messages = messages.filter((m) => !m.recipientUid || m.recipientUid === state.selectedFanUid || m.senderUid === state.selectedFanUid);
   messages = [...messages].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  if (!messages.length) { const empty = document.createElement('div'); empty.className = 'timeline-empty'; empty.textContent = '대화가 시작되면 여기에 표시됩니다.'; host.appendChild(empty); return; }
-  for (const message of messages) host.appendChild(renderMessage(message));
-  host.scrollTop = host.scrollHeight;
+  if (!messages.length) { const empty = document.createElement('div'); empty.className = 'timeline-empty'; empty.textContent = '대화가 시작되면 여기에 표시됩니다.'; host.appendChild(empty); }
+  else for (const message of messages) host.appendChild(renderMessage(message));
+  if (preservePosition) host.scrollTop = oldTop + (host.scrollHeight - oldHeight);
+  else if (wasAtBottom) host.scrollTop = host.scrollHeight;
 }
 
 function localDateTimeValue(date) {
@@ -643,18 +751,20 @@ async function sendMessage(kind = 'text', galleryImageId = '') {
     scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
     ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),
   };
-  state.messages = [...state.messages, message];
+  state.optimisticMessages.push(message);
+  state.messages = combineMessages(state.olderMessages, state.olderPrivateMessages, state.olderBroadcastMessages, state.liveMessages, state.privateMessages, state.broadcastMessages, state.optimisticMessages);
   renderTimeline();
   if (kind === 'text') $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
     await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId, recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
     if (state.room && state.room.roomId === room.roomId) {
-      const optimistic = state.messages.find((item) => item.id === messageId);
+      const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
     }
   } catch (error) {
     if (state.room && state.room.roomId === room.roomId) {
+      state.optimisticMessages = state.optimisticMessages.filter((item) => item.id !== messageId);
       state.messages = state.messages.filter((item) => item.id !== messageId);
       if (kind === 'text' && !$('#message-input').value) $('#message-input').value = text;
       renderTimeline();
@@ -950,6 +1060,9 @@ function showNewMessageNotification(message) {
 }
 
 function bindEvents() {
+  $('#timeline').addEventListener('scroll', () => {
+    if ($('#timeline').scrollTop <= 36 && state.hasOlderMessages) loadOlderMessages();
+  }, { passive: true });
   $('#profile-button').addEventListener('click', openProfile);
   $('#create-room-button').addEventListener('click', openOwnRoom);
   $('#admin-tab-button').addEventListener('click', showAdmin);
