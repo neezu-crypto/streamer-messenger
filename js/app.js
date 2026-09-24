@@ -626,7 +626,7 @@ async function openImagePicker() {
   openDialog('image-picker-dialog');
   try {
     const result = await call('messengerGetGalleryImages', { roomId: state.room.roomId });
-    if (result.linked === false) { $('#gallery-image-list').innerHTML = '<p class="muted">갤러리 스트리머를 자동으로 연결하지 못했어요. 갤러리의 스트리머 이름과 인증 닉네임이 같은지 확인해 주세요.</p>'; return; }
+    if (result.linked === false) { $('#gallery-image-list').innerHTML = '<p class="muted">이 채팅방의 SOOP 아이디와 연결된 갤러리 스트리머를 찾지 못했어요. 프로필의 SOOP 아이디가 갤러리 스트리머 정보와 일치하는지 확인해 주세요.</p>'; return; }
     if (result.locked) { $('#gallery-locked').hidden = false; $('#gallery-image-list').innerHTML = '<p class="muted">해금 후 이미지를 선택할 수 있어요.</p>'; return; }
     const grid = $('#gallery-image-list'); grid.replaceChildren();
     for (const item of result.images || []) {

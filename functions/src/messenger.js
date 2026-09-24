@@ -146,7 +146,12 @@ function publicRoom(meta) {
   };
 }
 
-async function resolveGalleryStreamerId(streamerNickname) {
+async function resolveGalleryStreamerId(streamerSoopId, streamerNickname) {
+  const normalizedId = String(streamerSoopId || '').trim().toLowerCase();
+  if (/^[a-z0-9]{2,30}$/.test(normalizedId)) {
+    const byId = await db().ref(`streamerNames/${normalizedId}`).get();
+    if (byId.exists()) return normalizedId;
+  }
   const wanted = String(streamerNickname || '').trim().toLocaleLowerCase();
   if (!wanted) return '';
   const snap = await db().ref('streamerNames').get();
@@ -155,6 +160,18 @@ async function resolveGalleryStreamerId(streamerNickname) {
     if (String(child.val() || '').trim().toLocaleLowerCase() === wanted) matches.push(child.key);
   });
   return matches.length === 1 ? matches[0] : '';
+}
+
+async function ensureGalleryLink(roomId, meta) {
+  if (!meta || meta.galleryStreamerId || !['streamer', 'admin'].includes(meta.roomType)) return meta;
+  const streamerId = await resolveGalleryStreamerId(meta.streamerSoopId, meta.streamerNickname);
+  if (!streamerId) return meta;
+  const nextMeta = { ...meta, galleryStreamerId: streamerId, updatedAt: now() };
+  await db().ref().update({
+    [`${ROOT}/rooms/${roomId}/meta`]: nextMeta,
+    [`${ROOT}/publicRooms/${roomId}`]: publicRoom(nextMeta),
+  });
+  return nextMeta;
 }
 
 const messengerGetSession = onCall(async (request) => {
@@ -198,7 +215,7 @@ const messengerEnsureRoom = onCall(async (request) => {
     const profile = await profileFor(p.uid);
     const streamerNickname = p.streamer ? p.streamer.nickname : (profile.nickname || '관리자');
     const streamerSoopId = p.streamer ? roomId : profile.soopId;
-    const galleryStreamerId = p.streamer ? await resolveGalleryStreamerId(streamerNickname) : '';
+    const galleryStreamerId = await resolveGalleryStreamerId(streamerSoopId, streamerNickname);
     const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt: createdAt };
     await db().ref().update({ [`${ROOT}/rooms/${roomId}/meta`]: meta, [`${ROOT}/publicRooms/${roomId}`]: publicRoom(meta) });
     await writeAudit(p.uid, 'room.create', roomId);
@@ -367,7 +384,8 @@ const messengerSetMemberStatus = onCall(async (request) => {
 });
 
 async function galleryImageForChat(roomId, imageId) {
-  const meta = (await roomRef(roomId).child('meta').get()).val() || {};
+  const rawMeta = (await roomRef(roomId).child('meta').get()).val() || {};
+  const meta = await ensureGalleryLink(roomId, rawMeta);
   if (!meta.galleryStreamerId) throw new HttpsError('failed-precondition', '인증된 스트리머 닉네임과 갤러리 스트리머를 연결할 수 없습니다. 갤러리의 스트리머 이름을 확인해 주세요.');
   const imageSnap = await db().ref(`gallery/imagesPublic/${imageId}`).get();
   if (!imageSnap.exists()) throw new HttpsError('not-found', '갤러리 이미지가 없거나 삭제되었습니다.');
@@ -387,7 +405,8 @@ async function galleryImageForChat(roomId, imageId) {
 const messengerGetGalleryImages = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = String((request.data || {}).roomId || '');
-  const { meta } = await requireRoomMember(p, roomId);
+  const { meta: rawMeta } = await requireRoomMember(p, roomId);
+  const meta = await ensureGalleryLink(roomId, rawMeta);
   if (!meta.galleryStreamerId) return { locked: false, linked: false, streamerId: '', images: [] };
   const [firstUpload, unlockedUntil] = await Promise.all([
     db().ref(`gallery/streamerFirstUpload/${meta.galleryStreamerId}`).get(),
