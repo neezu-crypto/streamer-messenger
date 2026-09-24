@@ -199,7 +199,7 @@ const messengerEnsureRoom = onCall(async (request) => {
     const streamerNickname = p.streamer ? p.streamer.nickname : (profile.nickname || '관리자');
     const streamerSoopId = p.streamer ? roomId : profile.soopId;
     const galleryStreamerId = p.streamer ? await resolveGalleryStreamerId(streamerNickname) : '';
-    const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt };
+    const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt: createdAt };
     await db().ref().update({ [`${ROOT}/rooms/${roomId}/meta`]: meta, [`${ROOT}/publicRooms/${roomId}`]: publicRoom(meta) });
     await writeAudit(p.uid, 'room.create', roomId);
     return { room: publicRoom(meta), created: true };
