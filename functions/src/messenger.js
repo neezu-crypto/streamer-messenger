@@ -415,7 +415,11 @@ const messengerGetGalleryImages = onCall(async (request) => {
   const first = Number(firstUpload.val()) || 0;
   const until = Number(unlockedUntil.val()) || 0;
   const unlocked = (first > 0 && now() < first + 30 * 24 * 60 * 60 * 1000) || (until > 0 && now() < until);
-  if (!unlocked) return { locked: true, linked: true, streamerId: meta.galleryStreamerId, images: [] };
+  if (!unlocked) {
+    const hasImages = (await db().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToFirst(1).get()).exists();
+    if (hasImages) return { locked: true, linked: true, streamerId: meta.galleryStreamerId, images: [] };
+    return { locked: false, linked: true, streamerId: meta.galleryStreamerId, images: [] };
+  }
   const snap = await db().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToLast(100).get();
   const images = [];
   snap.forEach((child) => { const image = child.val() || {}; images.push({ imageId: child.key, thumbUrl: image.thumbUrl || '', imageUrl: image.imageUrl || '', createdAt: image.createdAt || 0, width: image.width || null, height: image.height || null }); });
