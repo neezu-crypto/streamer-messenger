@@ -446,7 +446,12 @@ const messengerSendMessage = onCall(async (request) => {
   }
   if (!isOwner) await applyMessageRate(p.uid);
   const createdAt = now();
-  const messageId = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`).push().key;
+  const requestedMessageId = String(data.clientMessageId || '');
+  if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
+  const messageId = requestedMessageId || db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`).push().key;
+  if (requestedMessageId && (await db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get()).exists()) {
+    throw new HttpsError('already-exists', '메시지가 이미 전송되었습니다. 대화 내용을 새로고침해 주세요.');
+  }
   const common = { id: messageId, roomId, senderUid: p.uid, senderRole: isOwner ? 'streamer' : 'fan', createdAt, recipientUid: recipientUid || null };
   let message;
   if (kind === 'image') {

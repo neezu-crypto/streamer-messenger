@@ -530,6 +530,7 @@ function renderMessage(message) {
     reply.addEventListener('click', () => setReply(message)); meta.appendChild(reply);
   }
   if (state.isOwner && message.scope === 'direct') { const label = document.createElement('span'); label.className = 'message-kind'; label.textContent = '다이렉트'; meta.appendChild(label); }
+  if (message.pending) { const pending = document.createElement('span'); pending.className = 'message-delivery-status'; pending.textContent = '전송 중'; meta.appendChild(pending); }
   stack.appendChild(meta);
   row.append(avatar, stack);
   return row;
@@ -605,19 +606,46 @@ function setReply(message) {
 }
 
 async function sendMessage(kind = 'text', galleryImageId = '') {
-  if (!state.room || state.messageSending) return;
+  if (!state.room || !state.session) return;
   const text = $('#message-input').value.trim();
   if (kind === 'text' && !text) return;
   const audience = state.isOwner ? $('#message-audience').value : 'direct';
   const recipientUid = state.isOwner ? (audience === 'direct' ? $('#direct-recipient').value : '') : '';
   if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return; }
-  const button = $('#send-message'); state.messageSending = true; button.disabled = true;
+  const room = state.room;
+  const uid = state.session.uid;
+  const isOwner = state.isOwner;
+  const reply = state.currentReply;
+  const messageId = api().push(api().ref(api().db, `streamerMessenger/chat/${room.roomId}/streamerTimeline`)).key;
+  const senderProfile = isOwner
+    ? { nickname: room.streamerNickname || '스트리머', avatarUrl: room.streamerAvatarUrl || '' }
+    : (state.session.profile || {});
+  const message = {
+    id: messageId, roomId: room.roomId, senderUid: uid,
+    senderRole: isOwner ? 'streamer' : 'fan', senderName: senderProfile.nickname || (isOwner ? '스트리머' : '팬'),
+    senderAvatarUrl: senderProfile.avatarUrl || '', createdAt: Date.now(), recipientUid: recipientUid || null,
+    kind, ...(kind === 'image' ? { galleryImageId } : { text }),
+    scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
+    ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),
+  };
+  state.messages = [...state.messages, message];
+  renderTimeline();
+  if (kind === 'text') $('#message-input').value = '';
+  state.currentReply = null; $('#replying-to').hidden = true;
   try {
-    await call('messengerSendMessage', { roomId: state.room.roomId, kind, text, galleryImageId, recipientUid, replyToId: state.currentReply && state.currentReply.id, replyToUid: state.currentReply && state.currentReply.senderUid });
-    if (kind === 'text' && $('#message-input').value.trim() === text) $('#message-input').value = '';
-    state.currentReply = null; $('#replying-to').hidden = true;
-  } catch (error) { showError(error); }
-  finally { state.messageSending = false; button.disabled = false; }
+    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId, recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
+    if (state.room && state.room.roomId === room.roomId) {
+      const optimistic = state.messages.find((item) => item.id === messageId);
+      if (optimistic) { optimistic.pending = false; renderTimeline(); }
+    }
+  } catch (error) {
+    if (state.room && state.room.roomId === room.roomId) {
+      state.messages = state.messages.filter((item) => item.id !== messageId);
+      if (kind === 'text' && !$('#message-input').value) $('#message-input').value = text;
+      renderTimeline();
+    }
+    showError(error);
+  }
 }
 
 async function openImagePicker() {

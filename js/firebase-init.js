@@ -5,7 +5,7 @@ import {
   setPersistence, browserLocalPersistence,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
-  getDatabase, ref, get, set, onValue, query, orderByKey, orderByChild,
+  getDatabase, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js';
@@ -125,7 +125,7 @@ async function requestStreamerVerification(data) {
 }
 
 window.messenger = {
-  auth, db, state, ref, get, set, onValue, query, orderByKey, orderByChild,
+  auth, db, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, serverTimestamp,
   call, waitForSession, refreshSession, loginGoogle, loginKakao,
   requestStreamerVerification, signOut: () => signOut(auth),
