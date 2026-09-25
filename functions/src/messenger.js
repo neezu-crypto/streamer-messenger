@@ -74,6 +74,29 @@ async function writeAudit(uid, action, detail) {
   }
 }
 
+async function ensureMessengerBanIndex() {
+  const adminRef = db().ref(`${ROOT}/admin`);
+  const versionSnap = await adminRef.child('banIndexVersion').get();
+  if (Number(versionSnap.val()) >= 1) return;
+
+  // One-time backfill from the shared ecosystem ban tree. Subsequent dashboard
+  // reads use only this service-scoped index and counter.
+  const bansSnap = await db().ref('bannedAccounts').get();
+  const updates = {};
+  let count = 0;
+  bansSnap.forEach((child) => {
+    const ban = child.child(`games/${SERVICE_ID}`).val();
+    if (!ban) return;
+    updates[`${ROOT}/admin/banIndex/${child.key}`] = ban;
+    count += 1;
+  });
+  const entries = Object.entries(updates);
+  for (let offset = 0; offset < entries.length; offset += 400) {
+    await db().ref().update(Object.fromEntries(entries.slice(offset, offset + 400)));
+  }
+  await adminRef.update({ activeBanCount: count, banIndexVersion: 1 });
+}
+
 async function passwordDigest(password, salt) {
   return (await scrypt(password, salt, 32)).toString('hex');
 }
@@ -627,10 +650,11 @@ const messengerSubmitReport = onCall(async (request) => {
 
 const messengerAdminGetDashboard = onCall(async (request) => {
   const p = await requireAdmin(request);
-  const [reportsSnap, auditSnap, bansSnap] = await Promise.all([
+  await ensureMessengerBanIndex();
+  const [reportsSnap, auditSnap, banCountSnap] = await Promise.all([
     db().ref(`${ROOT}/reports`).orderByChild('createdAt').limitToLast(100).get(),
     db().ref(`${ROOT}/auditLog`).limitToLast(100).get(),
-    db().ref('bannedAccounts').get(),
+    db().ref(`${ROOT}/admin/activeBanCount`).get(),
   ]);
   const reports = [];
   reportsSnap.forEach((child) => reports.push({ ...(child.val() || {}), id: child.key }));
@@ -638,19 +662,12 @@ const messengerAdminGetDashboard = onCall(async (request) => {
   const auditLog = [];
   auditSnap.forEach((child) => auditLog.push({ ...(child.val() || {}), id: child.key }));
   auditLog.sort((a, b) => b.at - a.at);
-  const bannedAccounts = [];
-  bansSnap.forEach((child) => {
-    const games = child.child(`games/${SERVICE_ID}`).val();
-    if (games) bannedAccounts.push({ uid: child.key, ...games });
-  });
-  bannedAccounts.sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
   return {
     reports,
     auditLog,
-    bannedAccounts,
     summary: {
       pendingReports: reports.filter((report) => (report.status || 'pending') === 'pending').length,
-      activeBans: bannedAccounts.length,
+      activeBans: Number(banCountSnap.val()) || 0,
     },
   };
 });
@@ -692,9 +709,22 @@ const messengerAdminSetBan = onCall(async (request) => {
   const { uid, banned, reason } = request.data || {};
   if (typeof uid !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(uid) || typeof banned !== 'boolean') throw new HttpsError('invalid-argument', '계정 정지 정보가 올바르지 않습니다.');
   const cleanReason = banned ? safeText(String(reason || ''), 200, true) : '';
+  await ensureMessengerBanIndex();
   const path = `bannedAccounts/${uid}/games/${SERVICE_ID}`;
-  if (banned) await db().ref(path).set({ reason: cleanReason, at: now(), by: p.uid });
-  else await db().ref(path).remove();
+  const ban = banned ? { reason: cleanReason, at: now(), by: p.uid } : null;
+  const sourceRef = db().ref(path);
+  if (banned) await sourceRef.set(ban);
+  else await sourceRef.remove();
+
+  const indexRef = db().ref(`${ROOT}/admin/banIndex/${uid}`);
+  let previouslyIndexed = false;
+  const indexResult = await indexRef.transaction((current) => {
+    previouslyIndexed = current !== null;
+    return ban;
+  });
+  if (indexResult.committed && previouslyIndexed !== banned) {
+    await db().ref(`${ROOT}/admin/activeBanCount`).transaction((current) => Math.max(0, (Number(current) || 0) + (banned ? 1 : -1)));
+  }
   await writeAudit(p.uid, banned ? 'account.ban' : 'account.unban', `${uid}${cleanReason ? ` · ${cleanReason}` : ''}`);
   return { banned };
 });
