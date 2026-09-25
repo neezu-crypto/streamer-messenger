@@ -16,9 +16,11 @@ const SELF_GAME_ID = 'streamerMessenger';
     if (!nav) return;
     nav.querySelectorAll('a[data-game-id]').forEach((node) => node.remove());
     for (const item of links) {
+      const targetUrl = new URL(item.url, window.location.href);
+      if (item.id === 'gallery') targetUrl.searchParams.set('from', 'messenger');
       const link = document.createElement('a');
       link.dataset.gameId = item.id;
-      link.href = item.url;
+      link.href = targetUrl.href;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.textContent = item.label || item.name || item.id;
@@ -26,8 +28,8 @@ const SELF_GAME_ID = 'streamerMessenger';
       if (item.id === 'gallery') {
         const unlockLink = document.getElementById('open-gallery-unlock');
         const uploadLink = document.getElementById('upload-to-gallery');
-        if (unlockLink) unlockLink.href = item.url;
-        if (uploadLink) uploadLink.href = item.url;
+        if (unlockLink) unlockLink.href = targetUrl.href;
+        if (uploadLink) uploadLink.href = targetUrl.href;
       }
     }
   } catch (error) {
