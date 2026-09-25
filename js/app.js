@@ -283,6 +283,27 @@ function subscribeTimeline() {
   clearSubscriptions();
   const { db, ref, onValue, query, orderByKey, limitToLast } = api();
   const roomId = state.room.roomId;
+  if (!state.isOwner) {
+    const uid = state.session.uid;
+    let memberStatusInitialized = false;
+    const membershipRef = ref(db, `streamerMessenger/rooms/${roomId}/members/${uid}/status`);
+    state.unsubscribers.push(onValue(membershipRef, (snapshot) => {
+      if (!state.room || state.room.roomId !== roomId || state.isOwner) return;
+      const status = snapshot.val();
+      if (!memberStatusInitialized) {
+        memberStatusInitialized = true;
+        if (status === 'active') return;
+      } else if (status === 'active') return;
+      leaveChat();
+      showToast('채팅방 참여가 종료되어 대화를 닫았습니다.');
+    }, (error) => {
+      console.warn('채팅방 참여 상태를 구독하지 못했습니다.', error);
+      if (error && error.code === 'PERMISSION_DENIED' && state.room && state.room.roomId === roomId) {
+        leaveChat();
+        showToast('채팅방 접근 권한이 종료되어 대화를 닫았습니다.');
+      }
+    }));
+  }
   if (state.isOwner) {
     const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByKey(), limitToLast(MESSAGE_PAGE_SIZE));
     state.unsubscribers.push(onValue(q, (snap) => {
@@ -986,7 +1007,15 @@ async function discardRoom() {
   catch (error) { showError(error); }
 }
 
-function leaveChat() { clearSubscriptions(); state.room = null; state.activeView = 'directory'; $('#chat-view').hidden = true; $('#directory-view').hidden = false; }
+function leaveChat() {
+  clearSubscriptions();
+  state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
+  state.messages = []; state.liveMessages = []; state.olderMessages = [];
+  state.privateMessages = []; state.broadcastMessages = [];
+  state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
+  state.optimisticMessages = []; state.galleryImages.clear(); state.imageUrls.clear();
+  $('#chat-view').hidden = true; $('#directory-view').hidden = false;
+}
 
 function switchAside(tab) {
   document.querySelectorAll('.aside-tab').forEach((button) => button.classList.toggle('active', button.dataset.listTab === tab));

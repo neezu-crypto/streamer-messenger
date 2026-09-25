@@ -13,6 +13,11 @@ const APPLICATION_INTERVAL = 5 * 60 * 1000;
 const APPLICATION_EXPIRE = 3 * 24 * 60 * 60 * 1000;
 const MESSAGE_COOLDOWN = 2000;
 const MESSAGE_LIMIT_PER_MINUTE = 20;
+const MESSAGE_REPEAT_WINDOW = 10 * 1000;
+const LINK_REPEAT_WINDOW = 60 * 1000;
+const SPAM_VIOLATION_WINDOW = 10 * 60 * 1000;
+const SPAM_VIOLATIONS_BEFORE_COOLDOWN = 3;
+const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
 const CHAT_RETENTION = 7 * 24 * 60 * 60 * 1000;
 const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
 
@@ -98,19 +103,80 @@ async function applyCooldown(uid, roomId) {
   if (!result.committed) throw new HttpsError('resource-exhausted', '대화 신청은 5분에 한 번만 보낼 수 있습니다.');
 }
 
-async function applyMessageRate(uid) {
+function cooldownError(until) {
+  const seconds = Math.max(1, Math.ceil((Number(until) - now()) / 1000));
+  return new HttpsError('resource-exhausted', `스팸 방지 제한이 적용되었습니다. ${seconds}초 후 다시 시도해 주세요.`);
+}
+
+async function recordMessageViolation(uid, message) {
+  const ref = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
+  const t = now();
+  const result = await ref.transaction((currentValue) => {
+    const current = currentValue || {};
+    if (Number(current.cooldownUntil) > t) return;
+    const expired = t - Number(current.lastViolationAt || 0) > 24 * 60 * 60 * 1000;
+    const sameWindow = !expired && t - Number(current.violationWindowAt || 0) <= SPAM_VIOLATION_WINDOW;
+    const violations = (sameWindow ? Number(current.violations) || 0 : 0) + 1;
+    const level = expired ? 0 : Math.min(2, Number(current.cooldownLevel) || 0);
+    const next = {
+      ...current,
+      violations,
+      violationWindowAt: sameWindow ? Number(current.violationWindowAt) : t,
+      lastViolationAt: t,
+    };
+    if (violations >= SPAM_VIOLATIONS_BEFORE_COOLDOWN) {
+      next.cooldownUntil = t + SPAM_COOLDOWNS[level];
+      next.cooldownLevel = Math.min(level + 1, SPAM_COOLDOWNS.length - 1);
+      next.violations = 0;
+      next.violationWindowAt = t;
+    }
+    return next;
+  });
+  const latest = result.snapshot.val() || {};
+  if (Number(latest.cooldownUntil) > now()) throw cooldownError(latest.cooldownUntil);
+  throw new HttpsError('resource-exhausted', message);
+}
+
+async function checkRepeatedMessage(uid, text) {
+  const normalized = String(text || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return;
+  const ref = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation/recentText`);
+  const t = now();
+  const result = await ref.transaction((current) => {
+    if (current && current.hash === crypto.createHash('sha256').update(normalized).digest('hex') && t - Number(current.at || 0) < MESSAGE_REPEAT_WINDOW) return;
+    return { hash: crypto.createHash('sha256').update(normalized).digest('hex'), at: t };
+  });
+  if (!result.committed) await recordMessageViolation(uid, '같은 메시지를 반복해서 보낼 수 없습니다.');
+
+  const links = normalized.match(/https?:\/\/[^\s<>()]+/g) || [];
+  const url = links.length ? links[0].replace(/[.,!?;:]+$/, '') : '';
+  if (!url) return;
+  const urlRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation/recentLink`);
+  const linkHash = crypto.createHash('sha256').update(url).digest('hex');
+  const linkResult = await urlRef.transaction((current) => {
+    if (current && current.hash === linkHash && t - Number(current.at || 0) < LINK_REPEAT_WINDOW) return;
+    return { hash: linkHash, at: t };
+  });
+  if (!linkResult.committed) await recordMessageViolation(uid, '같은 링크를 반복해서 보낼 수 없습니다.');
+}
+
+async function applyMessageRate(uid, text) {
+  const moderationRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
+  const moderation = (await moderationRef.get()).val() || {};
+  if (Number(moderation.cooldownUntil) > now()) throw cooldownError(moderation.cooldownUntil);
   const lastRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/lastAt`);
   const result = await lastRef.transaction((last) => {
     const t = now();
     if (last && t - last < MESSAGE_COOLDOWN) return;
     return t;
   });
-  if (!result.committed) throw new HttpsError('resource-exhausted', '메시지는 2초에 한 번씩 보낼 수 있습니다.');
+  if (!result.committed) await recordMessageViolation(uid, '메시지는 2초에 한 번씩 보낼 수 있습니다.');
   const slot = Math.floor(now() / 60000);
   const countRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/minute/${slot}`);
   const count = await countRef.transaction((value) => (Number(value) || 0) < MESSAGE_LIMIT_PER_MINUTE ? (Number(value) || 0) + 1 : undefined);
-  if (!count.committed) throw new HttpsError('resource-exhausted', '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
+  if (!count.committed) await recordMessageViolation(uid, '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
   await db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
+  await checkRepeatedMessage(uid, text);
 }
 
 async function streamerAvatar(uid) {
@@ -448,7 +514,8 @@ const messengerSendMessage = onCall(async (request) => {
     const recipient = await roomRef(roomId).child(`members/${recipientUid}`).get();
     if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
   }
-  if (!isOwner) await applyMessageRate(p.uid);
+  const text = kind === 'image' ? '' : safeText(data.text, MESSAGE_MAX, true);
+  await applyMessageRate(p.uid, text);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
@@ -462,7 +529,6 @@ const messengerSendMessage = onCall(async (request) => {
     const image = await galleryImageForChat(roomId, String(data.galleryImageId || ''));
     message = { ...common, kind: 'image', galleryImageId: image.imageId };
   } else {
-    const text = safeText(data.text, MESSAGE_MAX, true);
     message = { ...common, kind: 'text', text };
   }
   if (data.replyToId) message.replyToId = safeText(String(data.replyToId), 100, true);
@@ -613,9 +679,9 @@ const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'A
 
 const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1' }, async () => {
   const t = now(); const cutoff = t - CHAT_RETENTION;
-  const roomsSnap = await db().ref(`${ROOT}/rooms`).get();
-  const rooms = roomsSnap.val() || {}; const updates = {};
-  for (const roomId of Object.keys(rooms)) {
+  const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
+  const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
+  for (const roomId of Object.keys(publicRooms)) {
     const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
     let cursor = null;
     while (true) {
