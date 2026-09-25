@@ -526,11 +526,40 @@ const messengerSubmitReport = onCall(async (request) => {
 
 const messengerAdminGetDashboard = onCall(async (request) => {
   const p = await requireAdmin(request);
-  const snap = await db().ref(`${ROOT}/reports`).orderByChild('createdAt').limitToLast(100).get();
+  const [reportsSnap, auditSnap, bansSnap] = await Promise.all([
+    db().ref(`${ROOT}/reports`).orderByChild('createdAt').limitToLast(100).get(),
+    db().ref(`${ROOT}/auditLog`).limitToLast(100).get(),
+    db().ref('bannedAccounts').get(),
+  ]);
   const reports = [];
-  snap.forEach((child) => reports.push({ ...(child.val() || {}), id: child.key }));
+  reportsSnap.forEach((child) => reports.push({ ...(child.val() || {}), id: child.key }));
   reports.sort((a, b) => b.createdAt - a.createdAt);
-  return { reports };
+  const auditLog = [];
+  auditSnap.forEach((child) => auditLog.push({ ...(child.val() || {}), id: child.key }));
+  auditLog.sort((a, b) => b.at - a.at);
+  const bannedAccounts = [];
+  bansSnap.forEach((child) => {
+    const games = child.child(`games/${SERVICE_ID}`).val();
+    if (games) bannedAccounts.push({ uid: child.key, ...games });
+  });
+  bannedAccounts.sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+  return {
+    reports,
+    auditLog,
+    bannedAccounts,
+    summary: {
+      pendingReports: reports.filter((report) => (report.status || 'pending') === 'pending').length,
+      activeBans: bannedAccounts.length,
+    },
+  };
+});
+
+const messengerAdminGetBanStatus = onCall(async (request) => {
+  await requireAdmin(request);
+  const uid = String((request.data || {}).uid || '').trim();
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(uid)) throw new HttpsError('invalid-argument', '계정 UID를 확인해 주세요.');
+  const snap = await db().ref(`bannedAccounts/${uid}/games/${SERVICE_ID}`).get();
+  return { uid, ban: snap.val() || null };
 });
 
 const messengerAdminGetReportDetail = onCall(async (request) => {
@@ -560,11 +589,12 @@ const messengerAdminUpdateReport = onCall(async (request) => {
 const messengerAdminSetBan = onCall(async (request) => {
   const p = await requireAdmin(request);
   const { uid, banned, reason } = request.data || {};
-  if (typeof uid !== 'string' || uid.length > 128 || typeof banned !== 'boolean') throw new HttpsError('invalid-argument', '계정 정지 정보가 올바르지 않습니다.');
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(uid) || typeof banned !== 'boolean') throw new HttpsError('invalid-argument', '계정 정지 정보가 올바르지 않습니다.');
+  const cleanReason = banned ? safeText(String(reason || ''), 200, true) : '';
   const path = `bannedAccounts/${uid}/games/${SERVICE_ID}`;
-  if (banned) await db().ref(path).set({ reason: safeText(reason || '관리자 조치', 200), at: now(), by: p.uid });
+  if (banned) await db().ref(path).set({ reason: cleanReason, at: now(), by: p.uid });
   else await db().ref(path).remove();
-  await writeAudit(p.uid, banned ? 'account.ban' : 'account.unban', uid);
+  await writeAudit(p.uid, banned ? 'account.ban' : 'account.unban', `${uid}${cleanReason ? ` · ${cleanReason}` : ''}`);
   return { banned };
 });
 
@@ -620,5 +650,6 @@ module.exports = {
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
+  messengerAdminGetBanStatus,
   messengerExpireRequests, messengerPurgeExpiredData,
 };

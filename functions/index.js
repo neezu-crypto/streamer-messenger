@@ -22,6 +22,7 @@ module.exports = {
   messengerAdminGetReportDetail: messenger.messengerAdminGetReportDetail,
   messengerAdminUpdateReport: messenger.messengerAdminUpdateReport,
   messengerAdminSetBan: messenger.messengerAdminSetBan,
+  messengerAdminGetBanStatus: messenger.messengerAdminGetBanStatus,
   messengerExpireRequests: messenger.messengerExpireRequests,
   messengerPurgeExpiredData: messenger.messengerPurgeExpiredData,
 };

@@ -101,8 +101,18 @@
     </section>
 
     <section class="admin-view glass-card" id="admin-view" hidden>
-      <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2>신고 관리</h2></div><button class="button button-quiet" id="close-admin" type="button">닫기</button></div>
-      <div id="admin-report-list" class="admin-report-list"><p class="muted">신고 목록을 불러옵니다.</p></div>
+      <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2>메신저 운영 관리</h2></div><button class="button button-quiet" id="close-admin" type="button">닫기</button></div>
+      <div class="admin-summary" aria-live="polite"><article><span>최근 100건 내 대기 신고</span><strong id="admin-pending-count">—</strong></article><article><span>메신저 이용 정지</span><strong id="admin-ban-count">—</strong></article></div>
+      <nav class="admin-tabs" aria-label="관리 기능"><button class="active" type="button" data-admin-tab="reports">신고 검토</button><button type="button" data-admin-tab="accounts">계정 제한</button><button type="button" data-admin-tab="audit">관리 기록</button></nav>
+      <section class="admin-pane" id="admin-pane-reports"><div id="admin-report-list" class="admin-report-list"><p class="muted">신고 목록을 불러옵니다.</p></div></section>
+      <section class="admin-pane" id="admin-pane-accounts" hidden>
+        <div class="admin-tool-card"><h3>메신저 이용 정지·해제</h3><p>계정 UID를 입력해 메신저 이용 상태를 확인하세요. 이 조치는 다른 자매 서비스에는 적용되지 않습니다.</p>
+          <label class="field-label" for="admin-ban-uid">계정 UID</label><div class="admin-lookup-row"><input class="text-input" id="admin-ban-uid" maxlength="128" autocomplete="off" placeholder="계정 UID"><button class="button button-quiet" id="admin-check-ban" type="button">상태 확인</button></div>
+          <p class="admin-ban-status muted" id="admin-ban-status" role="status" aria-live="polite">UID를 확인하면 메신저 정지 상태가 표시됩니다.</p>
+          <div class="admin-ban-actions" id="admin-ban-actions" hidden><label class="field-label" for="admin-ban-reason">정지 사유</label><textarea class="text-input" id="admin-ban-reason" rows="3" maxlength="200" placeholder="사용자에게 안내 가능한 사유를 입력해 주세요"></textarea><button class="button button-danger" id="admin-ban-submit" type="button">메신저 이용 정지</button><button class="button button-quiet" id="admin-unban-submit" type="button" hidden>정지 해제</button></div>
+        </div>
+      </section>
+      <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
     </section>
   </main>
 

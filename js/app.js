@@ -1000,17 +1000,84 @@ async function showAdmin() {
   leaveChat(); $('#directory-view').hidden = true; $('#admin-view').hidden = false;
   const host = $('#admin-report-list'); host.textContent = '신고 목록을 불러옵니다.';
   try {
-    const result = await call('messengerAdminGetDashboard'); host.replaceChildren();
-    if (!result.reports.length) { host.textContent = '대기 중인 신고가 없습니다.'; return; }
-    for (const report of result.reports) {
+    const result = await call('messengerAdminGetDashboard');
+    $('#admin-pending-count').textContent = String(result.summary && result.summary.pendingReports || 0);
+    $('#admin-ban-count').textContent = String(result.summary && result.summary.activeBans || 0);
+    renderAdminReports(result.reports || []);
+    renderAdminAudit(result.auditLog || []);
+    $('#admin-ban-status').textContent = 'UID를 확인하면 메신저 정지 상태가 표시됩니다.';
+    $('#admin-ban-actions').hidden = true;
+    $('#admin-ban-uid').value = '';
+    $('#admin-ban-reason').value = '';
+    switchAdminTab('reports');
+  } catch (error) { host.textContent = error.message || '관리 현황을 불러오지 못했습니다.'; }
+}
+
+function renderAdminReports(reports) {
+  const host = $('#admin-report-list'); host.replaceChildren();
+  const pending = reports.filter((report) => (report.status || 'pending') === 'pending');
+  const ordered = [...pending, ...reports.filter((report) => (report.status || 'pending') !== 'pending')];
+  if (!ordered.length) { host.textContent = '접수된 신고가 없습니다.'; return; }
+  for (const report of ordered) {
       const card = document.createElement('article'); card.className = 'admin-report-card';
-      const copy = document.createElement('div'); const title = document.createElement('strong'); title.textContent = `신고 · ${report.status || 'pending'}`; const meta = document.createElement('p'); meta.textContent = `${new Date(report.createdAt).toLocaleString('ko-KR')} · ${report.reason || '사유 없음'}`; const detail = document.createElement('p'); detail.textContent = `범위: ${new Date(report.rangeStart).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd).toLocaleString('ko-KR')}`; copy.append(title, meta, detail);
+      const copy = document.createElement('div'); const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[report.status || 'pending'] || report.status; const title = document.createElement('strong'); title.textContent = `신고 · ${statusLabel}`; const meta = document.createElement('p'); meta.textContent = `${new Date(report.createdAt).toLocaleString('ko-KR')} · ${report.reason || '사유 없음'}`; const detail = document.createElement('p'); detail.textContent = `신고 대상 UID: ${report.targetUid || '확인 불가'} · 범위: ${new Date(report.rangeStart).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd).toLocaleString('ko-KR')}`; copy.append(title, meta, detail);
       const actions = document.createElement('div'); actions.className = 'report-actions';
       const evidenceButton = document.createElement('button'); evidenceButton.type = 'button'; evidenceButton.textContent = '대화 보기'; evidenceButton.addEventListener('click', async () => { try { await showReportEvidence(report.id); } catch (error) { showError(error); } }); actions.appendChild(evidenceButton);
-      for (const [status, label] of [['reviewed', '확인'], ['dismissed', '기각']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; if (status === 'dismissed') button.className = 'danger'; button.addEventListener('click', async () => { try { await call('messengerAdminUpdateReport', { reportId: report.id, status }); await showAdmin(); } catch (error) { showError(error); } }); actions.appendChild(button); }
+      if (report.status === 'pending' || !report.status) {
+        const restrictButton = document.createElement('button'); restrictButton.type = 'button'; restrictButton.textContent = '계정 제한'; restrictButton.addEventListener('click', () => { $('#admin-ban-uid').value = report.targetUid || ''; switchAdminTab('accounts'); if (report.targetUid) checkMessengerBan(); }); actions.appendChild(restrictButton);
+        for (const [status, label] of [['reviewed', '확인 완료'], ['dismissed', '기각']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; if (status === 'dismissed') button.className = 'danger'; button.addEventListener('click', async () => { try { await call('messengerAdminUpdateReport', { reportId: report.id, status }); await showAdmin(); } catch (error) { showError(error); } }); actions.appendChild(button); }
+      }
       card.append(copy, actions); host.appendChild(card);
-    }
-  } catch (error) { host.textContent = error.message || '신고 목록을 불러오지 못했습니다.'; }
+  }
+}
+
+function renderAdminAudit(entries) {
+  const host = $('#admin-audit-list'); host.replaceChildren();
+  if (!entries.length) { host.textContent = '관리 기록이 없습니다.'; return; }
+  const labels = { 'report.submit': '신고 접수', 'report.reviewed': '신고 확인 완료', 'report.dismissed': '신고 기각', 'account.ban': '메신저 이용 정지', 'account.unban': '메신저 이용 정지 해제' };
+  for (const entry of entries) {
+    const row = document.createElement('article'); row.className = 'admin-audit-card';
+    const title = document.createElement('strong'); title.textContent = labels[entry.action] || entry.action || '관리 조치';
+    const meta = document.createElement('p'); meta.textContent = `${new Date(entry.at || 0).toLocaleString('ko-KR')} · 관리자 UID ${entry.actorUid || '확인 불가'}`;
+    const detail = document.createElement('small'); detail.textContent = entry.detail || '';
+    row.append(title, meta, detail); host.appendChild(row);
+  }
+}
+
+function switchAdminTab(tab) {
+  document.querySelectorAll('[data-admin-tab]').forEach((button) => button.classList.toggle('active', button.dataset.adminTab === tab));
+  ['reports', 'accounts', 'audit'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
+}
+
+async function checkMessengerBan() {
+  const uid = $('#admin-ban-uid').value.trim();
+  const status = $('#admin-ban-status'); const actions = $('#admin-ban-actions');
+  status.textContent = '상태를 확인하고 있습니다.'; actions.hidden = true;
+  try {
+    const result = await call('messengerAdminGetBanStatus', { uid });
+    const ban = result.ban;
+    status.textContent = ban ? `메신저 이용 정지 상태 · ${ban.reason || '사유 없음'} · ${new Date(ban.at || 0).toLocaleString('ko-KR')}` : '메신저 이용 정지 상태가 아닙니다.';
+    $('#admin-ban-submit').hidden = !!ban; $('#admin-unban-submit').hidden = !ban;
+    $('#admin-ban-reason').value = '';
+    actions.hidden = false;
+  } catch (error) { status.textContent = error.message || '계정 상태를 확인하지 못했습니다.'; }
+}
+
+async function setMessengerBan(banned) {
+  const uid = $('#admin-ban-uid').value.trim();
+  const reason = $('#admin-ban-reason').value.trim();
+  if (banned && !reason) { showError({ message: '정지 사유를 입력해 주세요.' }); return; }
+  if (!window.confirm(banned ? '이 계정의 메신저 이용을 정지할까요? 다른 서비스에는 적용되지 않습니다.' : '이 계정의 메신저 이용 정지를 해제할까요?')) return;
+  const button = banned ? $('#admin-ban-submit') : $('#admin-unban-submit'); button.disabled = true;
+  try {
+    await call('messengerAdminSetBan', { uid, banned, reason });
+    await showAdmin();
+    $('#admin-ban-uid').value = uid;
+    await checkMessengerBan();
+    switchAdminTab('accounts');
+    showToast(banned ? '메신저 이용을 정지했습니다.' : '메신저 이용 정지를 해제했습니다.');
+  } catch (error) { showError(error); }
+  finally { button.disabled = false; }
 }
 
 async function showReportEvidence(reportId) {
@@ -1098,6 +1165,10 @@ function bindEvents() {
   $('#profile-button').addEventListener('click', openProfile);
   $('#create-room-button').addEventListener('click', openOwnRoom);
   $('#admin-tab-button').addEventListener('click', showAdmin);
+  document.querySelectorAll('[data-admin-tab]').forEach((button) => button.addEventListener('click', () => switchAdminTab(button.dataset.adminTab)));
+  $('#admin-check-ban').addEventListener('click', checkMessengerBan);
+  $('#admin-ban-submit').addEventListener('click', () => setMessengerBan(true));
+  $('#admin-unban-submit').addEventListener('click', () => setMessengerBan(false));
   $('#close-admin').addEventListener('click', () => { $('#admin-view').hidden = true; $('#directory-view').hidden = false; });
   $('#room-search').addEventListener('input', renderRooms);
   $('#back-to-directory').addEventListener('click', leaveChat);
