@@ -13,8 +13,6 @@ const APPLICATION_INTERVAL = 5 * 60 * 1000;
 const APPLICATION_EXPIRE = 3 * 24 * 60 * 60 * 1000;
 const MESSAGE_COOLDOWN = 2000;
 const MESSAGE_LIMIT_PER_MINUTE = 20;
-const MESSAGE_REPEAT_WINDOW = 10 * 1000;
-const LINK_REPEAT_WINDOW = 60 * 1000;
 const SPAM_VIOLATION_WINDOW = 10 * 60 * 1000;
 const SPAM_VIOLATIONS_BEFORE_COOLDOWN = 3;
 const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
@@ -137,30 +135,34 @@ async function recordMessageViolation(uid, message) {
   throw new HttpsError('resource-exhausted', message);
 }
 
-async function checkRepeatedMessage(uid, text) {
+async function checkRepeatedMessage(uid, roomId, text, repeatTextDelaySeconds, repeatLinkDelaySeconds) {
   const normalized = String(text || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return;
-  const ref = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation/recentText`);
   const t = now();
-  const result = await ref.transaction((current) => {
-    if (current && current.hash === crypto.createHash('sha256').update(normalized).digest('hex') && t - Number(current.at || 0) < MESSAGE_REPEAT_WINDOW) return;
-    return { hash: crypto.createHash('sha256').update(normalized).digest('hex'), at: t };
-  });
-  if (!result.committed) await recordMessageViolation(uid, '같은 메시지를 반복해서 보낼 수 없습니다.');
+  if (repeatTextDelaySeconds > 0) {
+    const hash = crypto.createHash('sha256').update(normalized).digest('hex');
+    const ref = db().ref(`${ROOT}/rateLimits/rooms/${roomId}/${uid}/recentText`);
+    const result = await ref.transaction((current) => {
+      if (current && current.hash === hash && t - Number(current.at || 0) < repeatTextDelaySeconds * 1000) return;
+      return { hash, at: t };
+    });
+    if (!result.committed) await recordMessageViolation(uid, '같은 메시지를 반복해서 보낼 수 없습니다.');
+  }
 
+  if (repeatLinkDelaySeconds <= 0) return;
   const links = normalized.match(/https?:\/\/[^\s<>()]+/g) || [];
   const url = links.length ? links[0].replace(/[.,!?;:]+$/, '') : '';
   if (!url) return;
-  const urlRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation/recentLink`);
+  const urlRef = db().ref(`${ROOT}/rateLimits/rooms/${roomId}/${uid}/recentLink`);
   const linkHash = crypto.createHash('sha256').update(url).digest('hex');
   const linkResult = await urlRef.transaction((current) => {
-    if (current && current.hash === linkHash && t - Number(current.at || 0) < LINK_REPEAT_WINDOW) return;
+    if (current && current.hash === linkHash && t - Number(current.at || 0) < repeatLinkDelaySeconds * 1000) return;
     return { hash: linkHash, at: t };
   });
   if (!linkResult.committed) await recordMessageViolation(uid, '같은 링크를 반복해서 보낼 수 없습니다.');
 }
 
-async function applyMessageRate(uid, text) {
+async function applyMessageRate(uid, roomId, text, meta) {
   const moderationRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
   const moderation = (await moderationRef.get()).val() || {};
   if (Number(moderation.cooldownUntil) > now()) throw cooldownError(moderation.cooldownUntil);
@@ -176,7 +178,7 @@ async function applyMessageRate(uid, text) {
   const count = await countRef.transaction((value) => (Number(value) || 0) < MESSAGE_LIMIT_PER_MINUTE ? (Number(value) || 0) + 1 : undefined);
   if (!count.committed) await recordMessageViolation(uid, '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
   await db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
-  await checkRepeatedMessage(uid, text);
+  await checkRepeatedMessage(uid, roomId, text, Number(meta.repeatTextDelaySeconds) || 0, Number(meta.repeatLinkDelaySeconds) || 0);
 }
 
 async function streamerAvatar(uid) {
@@ -207,6 +209,8 @@ function publicRoom(meta) {
     galleryLinked: !!meta.galleryStreamerId,
     visibility: meta.visibility || 'public',
     locked: meta.locked === true,
+    repeatTextDelaySeconds: Number(meta.repeatTextDelaySeconds) || 0,
+    repeatLinkDelaySeconds: Number(meta.repeatLinkDelaySeconds) || 0,
     memberCount: Number(meta.memberCount) || 0,
     updatedAt: Number(meta.updatedAt) || Number(meta.createdAt) || now(),
   };
@@ -294,11 +298,15 @@ const messengerEnsureRoom = onCall(async (request) => {
 const messengerUpdateRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, visibility, password, regeneratePassword, locked, memberPolicy } = request.data || {};
+  const data = request.data || {};
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 설정을 변경할 수 있습니다.');
   if (!['public', 'private'].includes(visibility)) throw new HttpsError('invalid-argument', '방 공개 설정이 올바르지 않습니다.');
   const meta = result.meta;
-  const metaPatch = { visibility, locked: locked === true, updatedAt: now() };
+  const repeatTextDelaySeconds = data.repeatTextDelaySeconds === undefined ? Number(meta.repeatTextDelaySeconds) || 0 : Number(data.repeatTextDelaySeconds);
+  const repeatLinkDelaySeconds = data.repeatLinkDelaySeconds === undefined ? Number(meta.repeatLinkDelaySeconds) || 0 : Number(data.repeatLinkDelaySeconds);
+  if (![repeatTextDelaySeconds, repeatLinkDelaySeconds].every((value) => Number.isInteger(value) && value >= 0 && value <= 3600)) throw new HttpsError('invalid-argument', '반복 차단 시간은 0~3600초 사이의 정수로 입력해 주세요.');
+  const metaPatch = { visibility, locked: locked === true, repeatTextDelaySeconds, repeatLinkDelaySeconds, updatedAt: now() };
   const updates = {};
   let passwordChanged = false;
   let generatedPassword = '';
@@ -515,7 +523,7 @@ const messengerSendMessage = onCall(async (request) => {
     if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
   }
   const text = kind === 'image' ? '' : safeText(data.text, MESSAGE_MAX, true);
-  await applyMessageRate(p.uid, text);
+  await applyMessageRate(p.uid, roomId, text, result.meta);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
