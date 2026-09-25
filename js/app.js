@@ -832,7 +832,7 @@ async function sendMessage(kind = 'text', galleryImageId = '') {
 
 async function openImagePicker() {
   if (!state.room) return;
-  $('#gallery-image-list').replaceChildren(); $('#gallery-locked').hidden = true;
+  $('#gallery-image-list').innerHTML = '<div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div>'; $('#gallery-locked').hidden = true;
   $('#gallery-inline-upload-panel').hidden = true; $('#gallery-open-row').hidden = false;
   $('#gallery-inline-file').value = ''; $('#gallery-inline-filename').textContent = '선택한 파일 없음'; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
   state.galleryStreamerId = '';
@@ -861,7 +861,12 @@ async function loadGalleryImages() {
       grid.appendChild(button);
     }
     if (!images.length) grid.innerHTML = '<p class="muted">이 스트리머 갤러리에 등록된 사진이 아직 없습니다.</p>';
-  } catch (error) { $('#gallery-image-list').textContent = ''; showError(error); }
+  } catch (error) {
+    if (state.room && state.room.roomId === room.roomId && $('#image-picker-dialog').open) {
+      $('#gallery-image-list').innerHTML = '<p class="muted">갤러리 사진을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</p>';
+    }
+    showError(error);
+  }
 }
 
 function makeGalleryThumbnail(file) {

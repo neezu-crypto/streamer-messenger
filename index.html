@@ -175,7 +175,7 @@
       <button class="dialog-close" id="close-image-picker" type="button" aria-label="닫기">×</button>
       <header class="gallery-picker-header"><p class="eyebrow">STREAMER GALLERY</p><h2 id="gallery-picker-title">갤러리 이미지 선택</h2>
       <p class="dialog-copy" id="gallery-picker-copy">이미지를 누르면 채팅으로 전송돼요. 새 사진은 아래에서 업로드할 수 있어요.</p></header>
-      <div class="gallery-grid" id="gallery-image-list"><p class="muted">갤러리 이미지를 불러옵니다.</p></div>
+      <div class="gallery-grid" id="gallery-image-list" aria-live="polite"><div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div></div>
       <section class="gallery-inline-upload-panel" id="gallery-inline-upload-panel" hidden>
         <strong>사진 업로드</strong>
         <p>사진을 올리면 이 채팅방의 스트리머 갤러리에 등록돼요.</p>

@@ -24,6 +24,7 @@
 .gallery-picker-header{padding-right:36px}.gallery-picker-header .eyebrow{margin-bottom:8px}.gallery-picker-header h2{margin-bottom:8px}.gallery-picker-header .dialog-copy{margin:0}
 #image-picker-dialog .gallery-grid{width:100%;min-height:154px;max-height:52vh;align-content:start}
 #gallery-image-list>.muted{grid-column:1/-1;margin:auto;padding:28px 12px;text-align:center}
+.gallery-loading{grid-column:1/-1;min-height:120px;display:flex;align-items:center;justify-content:center;gap:10px;color:#8592a9;font-size:12px}
 #image-picker-dialog .gallery-upload-row{width:100%;margin-top:0}
 .gallery-inline-upload-panel{margin-top:14px;padding:16px;border:1px solid rgba(126,148,185,.2);border-radius:16px;background:rgba(255,255,255,.7)}.gallery-inline-upload-panel>strong{font-size:13px;color:var(--ink)}.gallery-inline-upload-panel>p:first-of-type{margin:5px 0 10px;color:#7d8aa2;font-size:11px;line-height:1.5}.gallery-inline-upload-panel .field-label{margin:10px 0 6px}.gallery-inline-help,.gallery-inline-status{margin:7px 0;color:#8794aa;font-size:10px}.gallery-inline-status{color:#5972dc}
 .gallery-inline-upload-panel[hidden],.gallery-upload-row[hidden]{display:none!important}
