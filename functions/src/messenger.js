@@ -578,15 +578,26 @@ const messengerSubmitReport = onCall(async (request) => {
     const targetMember = await roomRef(roomId).child(`members/${targetUid}`).get();
     if (!targetMember.exists() || targetMember.val().status !== 'active') throw new HttpsError('invalid-argument', '신고할 팬을 선택해 주세요.');
   }
-  const timelineSnap = await db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`).orderByChild('createdAt').startAt(start).endAt(end).limitToLast(500).get();
   const visible = [];
-  timelineSnap.forEach((child) => {
-    const m = child.val() || {};
-    const allowed = isOwner
-      ? (m.senderUid === targetUid || m.recipientUid === targetUid || m.senderRole === 'streamer' && (!m.recipientUid || m.recipientUid === targetUid))
-      : (m.senderUid === p.uid || m.senderRole === 'streamer' && (!m.recipientUid || m.recipientUid === p.uid));
-    if (allowed) visible.push(m);
-  });
+  const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
+  let query = timelineRef.orderByChild('createdAt').startAt(start).endAt(end).limitToFirst(100);
+  while (query) {
+    const page = await query.get();
+    let lastKey = '';
+    let lastCreatedAt = 0;
+    page.forEach((child) => {
+      lastKey = child.key;
+      const m = child.val() || {};
+      lastCreatedAt = Number(m.createdAt) || lastCreatedAt;
+      const allowed = isOwner
+        ? (m.senderUid === targetUid || m.recipientUid === targetUid || m.senderRole === 'streamer' && (!m.recipientUid || m.recipientUid === targetUid))
+        : (m.senderUid === p.uid || m.senderRole === 'streamer' && (!m.recipientUid || m.recipientUid === p.uid));
+      if (allowed) visible.push(m);
+    });
+    if (visible.length > 500) throw new HttpsError('resource-exhausted', '선택한 범위에 신고 증거가 500개를 넘습니다. 시간 범위를 좁혀 접수해 주세요.');
+    if (page.numChildren() < 100 || !lastKey) break;
+    query = timelineRef.orderByChild('createdAt').startAfter(lastCreatedAt, lastKey).endAt(end).limitToFirst(100);
+  }
   if (!visible.length) throw new HttpsError('failed-precondition', '선택 범위에서 신고할 대화를 찾을 수 없습니다.');
   const reportRef = db().ref(`${ROOT}/reports`).push();
   const reportId = reportRef.key;
