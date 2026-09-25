@@ -566,7 +566,9 @@ const messengerSendMessage = onCall(async (request) => {
 
 const messengerSubmitReport = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
-  const { roomId, startAt, endAt, reason } = request.data || {};
+  const { roomId, startAt, endAt, reasonCategory, reason } = request.data || {};
+  const reasonCategories = new Set(['harassment', 'spam', 'privacy', 'sexual', 'impersonation', 'other']);
+  if (!reasonCategories.has(reasonCategory)) throw new HttpsError('invalid-argument', '신고 사유를 선택해 주세요.');
   const { meta, isOwner } = await requireRoomMember(p, String(roomId || ''));
   const start = Number(startAt); const end = Number(endAt); const at = now();
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || end - start > 24 * 60 * 60 * 1000 || start < at - CHAT_RETENTION || end > at) {
@@ -601,10 +603,24 @@ const messengerSubmitReport = onCall(async (request) => {
   if (!visible.length) throw new HttpsError('failed-precondition', '선택 범위에서 신고할 대화를 찾을 수 없습니다.');
   const reportRef = db().ref(`${ROOT}/reports`).push();
   const reportId = reportRef.key;
-  const item = { id: reportId, roomId, reporterUid: p.uid, targetUid, streamerId: meta.streamerId, reason: safeText(reason || '기타', 300), status: 'pending', createdAt: at, retainUntil: at + REPORT_RETENTION, rangeStart: start, rangeEnd: end };
+  const reasonDetail = safeText(typeof reason === 'string' ? reason : '', 300);
+  const item = { id: reportId, roomId, reporterUid: p.uid, targetUid, streamerId: meta.streamerId, reason: reasonCategory, reasonCategory, reasonDetail, status: 'pending', createdAt: at, retainUntil: at + REPORT_RETENTION, rangeStart: start, rangeEnd: end };
   const evidence = {};
-  visible.forEach((m) => { evidence[m.id] = m; });
-  await db().ref().update({ [`${ROOT}/reports/${reportId}`]: item, [`${ROOT}/reportEvidence/${reportId}`]: evidence });
+  const updates = { [`${ROOT}/reports/${reportId}`]: item };
+  visible.forEach((m) => {
+    evidence[m.id] = m;
+    if (m.kind === 'image' && m.galleryImageId) updates[`${ROOT}/reportImageRefs/${m.galleryImageId}/${reportId}/${m.id}`] = item.retainUntil;
+  });
+  const imageMessages = visible.filter((m) => m.kind === 'image' && m.galleryImageId);
+  for (let offset = 0; offset < imageMessages.length; offset += 25) {
+    await Promise.all(imageMessages.slice(offset, offset + 25).map(async (message) => {
+      const imageSnap = await db().ref(`gallery/imagesPublic/${message.galleryImageId}`).get();
+      const image = imageSnap.val() || {};
+      if (image.imageUrl) evidence[message.id] = { ...message, reportImageUrl: image.imageUrl, reportThumbUrl: image.thumbUrl || '' };
+    }));
+  }
+  updates[`${ROOT}/reportEvidence/${reportId}`] = evidence;
+  await db().ref().update(updates);
   await writeAudit(p.uid, 'report.submit', reportId);
   return { reportId };
 });

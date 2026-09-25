@@ -9,6 +9,31 @@ const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 let toastTimer = 0;
 
+async function registerGalleryImageWithRetry(payload, onRetry) {
+  const deadline = Date.now() + 180000;
+  const retryableCodes = new Set(['unavailable', 'deadline-exceeded', 'internal', 'unknown', 'resource-exhausted', 'aborted']);
+  let lastError;
+  for (let attempt = 1; attempt <= 3 && Date.now() < deadline; attempt += 1) {
+    const remaining = deadline - Date.now();
+    let timeoutId;
+    try {
+      return await Promise.race([
+        call('registerImage', payload),
+        new Promise((_, reject) => { timeoutId = setTimeout(() => { const error = new Error('갤러리 등록 응답을 기다리는 시간이 초과되었습니다.'); error.code = 'functions/deadline-exceeded'; reject(error); }, Math.min(60000, remaining)); }),
+      ]);
+    } catch (error) {
+      lastError = error;
+      const code = String(error && error.code || '').replace(/^functions\//, '');
+      if (attempt >= 3 || !retryableCodes.has(code) || Date.now() >= deadline) throw error;
+      onRetry(attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(attempt * 1500, Math.max(0, deadline - Date.now()))));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  throw lastError || new Error('갤러리에 사진을 등록하지 못했습니다.');
+}
+
 function showToast(message) {
   const toast = $('#app-toast');
   if (!toast) return;
@@ -475,7 +500,7 @@ function openReportDialog() {
   startInput.max = localDateTimeValue(now); endInput.min = startInput.min; endInput.max = startInput.max;
   endInput.value = localDateTimeValue(now);
   startInput.value = localDateTimeValue(new Date(now.getTime() - 60 * 60 * 1000));
-  $('#report-reason').value = ''; $('#report-submit-error').hidden = true;
+  $('#report-reason-category').value = ''; $('#report-reason').value = ''; $('#report-submit-error').hidden = true;
   openDialog('report-submit-dialog');
 }
 
@@ -483,14 +508,14 @@ async function submitReport() {
   const error = $('#report-submit-error'); error.hidden = true;
   const startAt = new Date($('#report-start').value).getTime();
   const endAt = new Date($('#report-end').value).getTime();
-  const now = Date.now(); const reason = $('#report-reason').value.trim();
+  const now = Date.now(); const reasonCategory = $('#report-reason-category').value; const reason = $('#report-reason').value.trim();
   if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || startAt >= endAt) { error.textContent = '시작·종료 시간을 확인해 주세요.'; error.hidden = false; return; }
   if (startAt < now - 7 * 24 * 60 * 60 * 1000 || endAt > now) { error.textContent = '최근 7일 안의 시간 범위를 선택해 주세요.'; error.hidden = false; return; }
   if (endAt - startAt > 24 * 60 * 60 * 1000) { error.textContent = '신고 범위는 최대 24시간까지 선택할 수 있습니다.'; error.hidden = false; return; }
-  if (!reason) { error.textContent = '신고 사유를 입력해 주세요.'; error.hidden = false; return; }
+  if (!reasonCategory) { error.textContent = '신고 사유를 선택해 주세요.'; error.hidden = false; return; }
   const submit = $('#submit-report'); submit.disabled = true;
   try {
-    const reportData = { roomId: state.room.roomId, startAt, endAt, reason };
+    const reportData = { roomId: state.room.roomId, startAt, endAt, reasonCategory, reason };
     if (state.isOwner) reportData.targetUid = state.selectedFanUid;
     await call('messengerSubmitReport', reportData);
     closeDialog('report-submit-dialog'); showError({ message: '관리자에게 신고를 접수했습니다.' });
@@ -879,11 +904,11 @@ async function uploadGalleryImageFromPicker() {
     if (!thumbnailUpload.ok) throw new Error('사진 미리보기를 스토리지에 올리지 못했습니다. 다시 시도해 주세요.');
     const streamerNameSnapshot = await api().get(api().ref(api().db, `streamerNames/${streamerId}`)).catch(() => null);
     const streamerName = streamerNameSnapshot && streamerNameSnapshot.val() || room.streamerNickname || '스트리머';
-    await call('registerImage', {
+    await registerGalleryImageWithRetry({
       imageId: prepared.imageId, key: prepared.key, thumbKey: prepared.thumbKey,
       streamerId, streamerName,
       category: $('#gallery-inline-category').value, width: thumb.width, height: thumb.height,
-    });
+    }, (attempt) => { status.textContent = `갤러리 등록 재시도 중… (${attempt}/3)`; });
     fileInput.value = '';
     status.textContent = '업로드 완료! 사진을 불러오는 중이에요.';
     if (state.room && state.room.roomId === room.roomId && $('#image-picker-dialog').open) await loadGalleryImages();
@@ -1056,7 +1081,7 @@ function renderAdminReports(reports) {
   if (!ordered.length) { host.textContent = '접수된 신고가 없습니다.'; return; }
   for (const report of ordered) {
       const card = document.createElement('article'); card.className = 'admin-report-card';
-      const copy = document.createElement('div'); const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[report.status || 'pending'] || report.status; const title = document.createElement('strong'); title.textContent = `신고 · ${statusLabel}`; const meta = document.createElement('p'); meta.textContent = `${new Date(report.createdAt).toLocaleString('ko-KR')} · ${report.reason || '사유 없음'}`; const detail = document.createElement('p'); detail.textContent = `신고 대상 UID: ${report.targetUid || '확인 불가'} · 범위: ${new Date(report.rangeStart).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd).toLocaleString('ko-KR')}`; copy.append(title, meta, detail);
+      const copy = document.createElement('div'); const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[report.status || 'pending'] || report.status; const title = document.createElement('strong'); title.textContent = `신고 · ${statusLabel}`; const reasonLabels = { harassment: '욕설·괴롭힘', spam: '도배·스팸·광고', privacy: '개인정보 노출', sexual: '성적 콘텐츠', impersonation: '사칭·기만', other: '기타' }; const reasonLabel = reasonLabels[report.reasonCategory] || report.reason || '사유 없음'; const meta = document.createElement('p'); meta.textContent = `${new Date(report.createdAt).toLocaleString('ko-KR')} · ${reasonLabel}${report.reasonDetail ? ` · ${report.reasonDetail}` : ''}`; const detail = document.createElement('p'); detail.textContent = `신고 대상 UID: ${report.targetUid || '확인 불가'} · 범위: ${new Date(report.rangeStart).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd).toLocaleString('ko-KR')}`; copy.append(title, meta, detail);
       const actions = document.createElement('div'); actions.className = 'report-actions';
       const evidenceButton = document.createElement('button'); evidenceButton.type = 'button'; evidenceButton.textContent = '대화 보기'; evidenceButton.addEventListener('click', async () => { try { await showReportEvidence(report.id); } catch (error) { showError(error); } }); actions.appendChild(evidenceButton);
       if (report.status === 'pending' || !report.status) {
@@ -1123,7 +1148,12 @@ async function showReportEvidence(reportId) {
     const row = document.createElement('article'); row.className = 'report-evidence-item';
     const label = document.createElement('small'); label.textContent = `${message.senderName || '사용자'} · ${new Date(message.createdAt || 0).toLocaleString('ko-KR')}`;
     const body = document.createElement('p'); body.textContent = message.kind === 'image' ? `갤러리 이미지 첨부 (${message.galleryImageId})` : (message.text || '');
-    row.append(label, body); host.appendChild(row);
+    row.append(label, body);
+    if (message.kind === 'image') {
+      if (message.reportImageUrl) { const image = document.createElement('img'); image.src = message.reportImageUrl; image.alt = '신고 증거 이미지'; image.loading = 'lazy'; image.className = 'report-evidence-image'; row.appendChild(image); }
+      else { const unavailable = document.createElement('small'); unavailable.textContent = '원본 이미지가 삭제되어 표시할 수 없습니다.'; row.appendChild(unavailable); }
+    }
+    host.appendChild(row);
   }
   if (!host.children.length) host.textContent = '보관된 대화 증거가 없습니다.';
   openDialog('report-detail-dialog');
