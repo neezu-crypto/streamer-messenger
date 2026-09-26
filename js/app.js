@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -737,12 +737,23 @@ function renderFans() {
     const empty = document.createElement('div'); empty.className = 'fan-search-empty'; empty.textContent = '검색 결과가 없습니다.'; host.appendChild(empty); return;
   }
   for (const fan of visibleFans) {
+    const row = document.createElement('div'); row.className = 'fan-contact-row';
     const button = document.createElement('button'); button.type = 'button'; button.className = `fan-item${state.selectedFanUid === fan.uid ? ' active' : ''}`;
     const avatar = document.createElement('span'); avatar.className = 'mini-avatar';
     const profile = fan.profile || {};
     if (profile.avatarUrl) { const img = document.createElement('img'); img.src = profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (profile.nickname || '✦').slice(0, 1);
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = profile.soopId ? `SOOP ${profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
-    button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; renderFans(); renderTimeline(); }); host.appendChild(button);
+    button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; renderFans(); renderTimeline(); });
+    const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = '이 팬에게만 갤러리 이미지를 보내요';
+    roomself.addEventListener('click', (event) => {
+      event.stopPropagation();
+      state.selectedFanUid = fan.uid;
+      state.currentReply = null; $('#replying-to').hidden = true;
+      $('#message-audience').value = 'direct'; $('#direct-recipient').hidden = false; $('#direct-recipient').value = fan.uid;
+      $('#member-action').hidden = false; $('#member-action').textContent = '차단';
+      renderFans(); renderTimeline(); openImagePicker(fan.uid);
+    });
+    row.append(button, roomself); host.appendChild(row);
   }
 }
 
@@ -785,12 +796,12 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
-async function sendMessage(kind = 'text', galleryImageId = '') {
+async function sendMessage(kind = 'text', galleryImageId = '', targetUid = '') {
   if (!state.room || !state.session) return;
   const text = $('#message-input').value.trim();
   if (kind === 'text' && !text) return;
   const audience = state.isOwner ? $('#message-audience').value : 'direct';
-  const recipientUid = state.isOwner ? (audience === 'direct' ? $('#direct-recipient').value : '') : '';
+  const recipientUid = state.isOwner ? (targetUid || (audience === 'direct' ? $('#direct-recipient').value : '')) : '';
   if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return; }
   const room = state.room;
   const uid = state.session.uid;
@@ -830,8 +841,14 @@ async function sendMessage(kind = 'text', galleryImageId = '') {
   }
 }
 
-async function openImagePicker() {
+async function openImagePicker(targetUid = '') {
   if (!state.room) return;
+  const targetFan = targetUid ? state.fans.find((fan) => fan.uid === targetUid && fan.status === 'active') : null;
+  if (targetUid && (!state.isOwner || !targetFan)) { showError({ message: '참여 중인 팬에게만 방셀을 보낼 수 있어요.' }); return; }
+  state.galleryTargetUid = targetFan ? targetFan.uid : '';
+  $('#gallery-picker-copy').textContent = targetFan
+    ? `${targetFan.profile && targetFan.profile.nickname || '선택한 팬'}님에게만 보낼 이미지예요. 이미지를 누르면 1:1 대화로 전송돼요.`
+    : '이미지를 누르면 채팅으로 전송돼요. 새 사진은 아래에서 업로드할 수 있어요.';
   $('#gallery-image-list').innerHTML = '<div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div>'; $('#gallery-locked').hidden = true;
   $('#gallery-inline-upload-panel').hidden = true; $('#gallery-open-row').hidden = false;
   $('#gallery-inline-file').value = ''; $('#gallery-inline-filename').textContent = '선택한 파일 없음'; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
@@ -857,7 +874,7 @@ async function loadGalleryImages() {
       state.galleryImages.set(item.imageId, item);
       const button = document.createElement('button'); button.className = 'gallery-image-button'; button.type = 'button'; button.title = new Date(item.createdAt).toLocaleDateString('ko-KR');
       const img = document.createElement('img'); img.src = item.thumbUrl || item.imageUrl; img.alt = '갤러리 이미지'; img.loading = 'lazy'; button.appendChild(img);
-      button.addEventListener('click', async () => { closeDialog('image-picker-dialog'); await sendMessage('image', item.imageId); });
+      button.addEventListener('click', async () => { const targetUid = state.galleryTargetUid; closeDialog('image-picker-dialog'); await sendMessage('image', item.imageId, targetUid); });
       grid.appendChild(button);
     }
     if (!images.length) grid.innerHTML = '<p class="muted">이 스트리머 갤러리에 등록된 사진이 아직 없습니다.</p>';

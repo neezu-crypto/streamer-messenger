@@ -25,6 +25,7 @@
 #image-picker-dialog .gallery-grid{width:100%;min-height:154px;max-height:52vh;align-content:start}
 #gallery-image-list>.muted{grid-column:1/-1;margin:auto;padding:28px 12px;text-align:center}
 .gallery-loading{grid-column:1/-1;min-height:120px;display:flex;align-items:center;justify-content:center;gap:10px;color:#8592a9;font-size:12px}
+.fan-contact-row{display:flex;align-items:center;gap:5px}.fan-contact-row>.fan-item{flex:1;min-width:0}.fan-roomself-button{flex:0 0 auto;padding:7px 8px;border:1px solid rgba(126,148,185,.2);border-radius:10px;background:#f3f6fc;color:#5c70c7;font-size:10px;font-weight:700;white-space:nowrap}.fan-roomself-button:hover,.fan-roomself-button:focus-visible{border-color:#9aafff;background:#edf2ff;outline:none}
 #image-picker-dialog .gallery-upload-row{width:100%;margin-top:0}
 .gallery-inline-upload-panel{margin-top:14px;padding:16px;border:1px solid rgba(126,148,185,.2);border-radius:16px;background:rgba(255,255,255,.7)}.gallery-inline-upload-panel>strong{font-size:13px;color:var(--ink)}.gallery-inline-upload-panel>p:first-of-type{margin:5px 0 10px;color:#7d8aa2;font-size:11px;line-height:1.5}.gallery-inline-upload-panel .field-label{margin:10px 0 6px}.gallery-inline-help,.gallery-inline-status{margin:7px 0;color:#8794aa;font-size:10px}.gallery-inline-status{color:#5972dc}
 .gallery-inline-upload-panel[hidden],.gallery-upload-row[hidden]{display:none!important}
@@ -45,3 +46,4 @@
 @media(max-width:480px){.topbar{gap:8px;padding:0 10px}.brand{gap:0}.brand-name{display:none}.topbar-actions{gap:6px}.profile-button{max-width:104px;padding:0 8px}.topbar-actions #create-room-button{padding:0 10px}.desktop-action-label{display:none}.mobile-action-label{display:inline}.admin-tab-button{width:40px;min-width:40px;padding:0;display:grid;place-items:center}.mobile-admin-icon{display:inline;font-size:17px}}
 @media(max-width:480px){.admin-summary{gap:7px}.admin-summary article{padding:11px}.admin-summary span{font-size:10px}.admin-summary strong{font-size:19px}.admin-tabs button{padding:9px 4px;font-size:11px}.admin-lookup-row{flex-wrap:wrap}.admin-lookup-row .text-input{flex-basis:100%}.admin-lookup-row .button{width:100%}}
 @media(max-width:360px){.topbar-actions #notification-button{display:none}.profile-button{max-width:94px}}
+@media(max-width:680px){.chat-aside:not([hidden]) .fan-contact-row{flex:0 0 auto}}
