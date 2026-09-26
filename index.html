@@ -173,17 +173,8 @@
   <dialog class="app-dialog" id="image-picker-dialog">
     <section class="dialog-card image-picker-card" aria-labelledby="gallery-picker-title">
       <button class="dialog-close" id="close-image-picker" type="button" aria-label="닫기">×</button>
-      <header class="gallery-picker-header"><p class="eyebrow" id="gallery-picker-eyebrow">STREAMER GALLERY</p><h2 id="gallery-picker-title">갤러리 이미지 선택</h2>
+      <header class="gallery-picker-header"><p class="eyebrow">STREAMER GALLERY</p><h2 id="gallery-picker-title">갤러리 이미지 선택</h2>
       <p class="dialog-copy" id="gallery-picker-copy">이미지를 누르면 채팅으로 전송돼요. 새 사진은 아래에서 업로드할 수 있어요.</p></header>
-      <section class="roomself-private-panel" id="roomself-private-panel" hidden>
-        <div class="roomself-private-note"><span aria-hidden="true">🔒</span><div><strong>비공개 1:1 이미지</strong><p>이 사진은 스트리머 갤러리에 올라가지 않으며, 선택한 팬과 스트리머만 메신저에서 볼 수 있어요.</p></div></div>
-        <label class="field-label" for="roomself-image-file">보낼 사진</label>
-        <div class="gallery-file-control"><input id="roomself-image-file" type="file" accept="image/jpeg,image/png,image/webp"><label class="gallery-file-picker" for="roomself-image-file"><span class="gallery-file-button">사진 선택</span><span id="roomself-image-filename">선택한 사진 없음</span></label></div>
-        <img class="roomself-preview" id="roomself-image-preview" alt="방셀 미리보기" hidden>
-        <p class="gallery-inline-help">JPG, PNG, WebP · 사진은 전송용으로 변환되며 최대 4MB로 저장돼요.</p>
-        <button class="button button-primary full-width" id="send-roomself-image" type="button">비공개로 방셀 보내기</button>
-        <p class="gallery-inline-status" id="roomself-upload-status" role="status" aria-live="polite" hidden></p>
-      </section>
       <div class="gallery-grid" id="gallery-image-list" aria-live="polite"><div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div></div>
       <section class="gallery-inline-upload-panel" id="gallery-inline-upload-panel" hidden>
         <strong>사진 업로드</strong>
