@@ -3,8 +3,8 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'verification-dialog', 'generic-dialog'];
+const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 let toastTimer = 0;
@@ -462,6 +462,22 @@ async function getImageUrl(imageId) {
   return promise;
 }
 
+async function getRoomselfImageUrl(message) {
+  const imageId = message.roomselfImageId;
+  if (state.roomselfUrls.has(imageId)) return state.roomselfUrls.get(imageId);
+  const promise = call('messengerGetRoomselfImage', { roomId: state.room.roomId, imageId }).then((result) => {
+    return roomselfDataUrl(result);
+  }).catch(() => '');
+  state.roomselfUrls.set(imageId, promise);
+  return promise;
+}
+
+function roomselfDataUrl(result) {
+  const binary = atob(result.data); const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: result.contentType }));
+}
+
 function renderTimeline({ preservePosition = false } = {}) {
   const host = $('#timeline');
   const oldHeight = host.scrollHeight;
@@ -599,7 +615,7 @@ function messageExportText(messages, unavailableImages) {
   const lines = [`${state.room.streamerNickname || '스트리머'} 메신저 대화`, `${start} – ${end}`, ...(unavailableImages ? [`접근할 수 없는 갤러리 이미지 ${unavailableImages}개 제외`] : []), ''];
   for (const message of messages) {
     const time = new Date(Number(message.createdAt || 0)).toLocaleString('ko-KR');
-    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : (message.text || '');
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : (message.text || '');
     lines.push(`[${time}] ${message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '팬')}: ${body}`);
   }
   return lines.join('\n');
@@ -623,7 +639,7 @@ function conversationCanvas(messages, unavailableImages = 0) {
   const ctx = document.createElement('canvas').getContext('2d');
   ctx.font = '24px "Noto Sans KR", sans-serif';
   const layouts = messages.map((message) => {
-    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : (message.text || '');
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : (message.text || '');
     const lines = wrapCanvasText(ctx, body, contentWidth - 48);
     return { message, lines, height: 76 + lines.length * 36 };
   });
@@ -692,6 +708,13 @@ function renderMessage(message) {
     const img = document.createElement('img'); img.className = 'message-image'; img.alt = '스트리머 갤러리 이미지'; img.loading = 'lazy'; img.src = '';
     getImageUrl(message.galleryImageId).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '갤러리 이미지에 접근할 수 없어요.'; bubble.replaceChildren(unavailable); } });
     bubble.appendChild(img);
+  } else if (message.kind === 'roomself') {
+    if (message.pending) bubble.textContent = '비공개 이미지 전송 중…';
+    else {
+      const img = document.createElement('img'); img.className = 'message-image'; img.alt = '비공개 방셀 이미지'; img.loading = 'lazy';
+      getRoomselfImageUrl(message).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '비공개 이미지를 불러오지 못했어요.'; bubble.replaceChildren(unavailable); } });
+      bubble.appendChild(img);
+    }
   } else bubble.textContent = message.text || '';
   stack.appendChild(bubble);
   const meta = document.createElement('div'); meta.className = 'message-meta';
@@ -744,12 +767,40 @@ function renderFans() {
     if (profile.avatarUrl) { const img = document.createElement('img'); img.src = profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (profile.nickname || '✦').slice(0, 1);
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = profile.soopId ? `SOOP ${profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
     button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; renderFans(); renderTimeline(); });
-    const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = '비공개 저장소 준비 중';
+    const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = '선택한 팬에게만 비공개 전송';
     roomself.addEventListener('click', (event) => {
       event.stopPropagation();
-      showToast('비공개 방셀 저장 방식을 준비 중이에요. 갤러리에 공개되는 사진으로는 전송하지 않습니다.');
+      openRoomselfDialog(fan);
     });
     row.append(button, roomself); host.appendChild(row);
+  }
+}
+
+function openRoomselfDialog(fan) {
+  if (!state.isOwner || !state.room || !fan || fan.status !== 'active') return;
+  state.roomselfTargetUid = fan.uid;
+  $('#roomself-recipient-copy').textContent = `${fan.profile && fan.profile.nickname || '선택한 팬'}님에게만 전달돼요. 갤러리에는 공개되지 않습니다.`;
+  $('#roomself-file').value = ''; $('#roomself-preview').hidden = true; $('#roomself-preview').removeAttribute('src');
+  $('#roomself-send').disabled = true; $('#roomself-send').textContent = '이미지를 선택해 주세요';
+  $('#roomself-status').hidden = true; openDialog('roomself-dialog');
+}
+
+async function uploadAndSendRoomself() {
+  const file = $('#roomself-file').files && $('#roomself-file').files[0];
+  const recipientUid = state.roomselfTargetUid;
+  if (!file || !recipientUid || !state.room || file.size > 4 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return;
+  const button = $('#roomself-send'); const status = $('#roomself-status');
+  button.disabled = true; button.textContent = '업로드 중…'; status.hidden = false; status.textContent = '비공개 버킷에 업로드하고 있습니다.';
+  try {
+    const prepared = await call('messengerRequestRoomselfUpload', { roomId: state.room.roomId, recipientUid, contentType: file.type, size: file.size });
+    const response = await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+    if (!response.ok) throw new Error('비공개 이미지 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    await call('messengerFinalizeRoomselfUpload', { imageId: prepared.imageId });
+    closeDialog('roomself-dialog');
+    await sendMessage('roomself', prepared.imageId, recipientUid);
+  } catch (error) {
+    button.disabled = false; button.textContent = '다시 시도';
+    status.textContent = error.message || '이미지를 보내지 못했습니다.';
   }
 }
 
@@ -792,7 +843,7 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
-async function sendMessage(kind = 'text', galleryImageId = '', targetUid = '') {
+async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
   if (!state.room || !state.session) return;
   const text = $('#message-input').value.trim();
   if (kind === 'text' && !text) return;
@@ -811,7 +862,7 @@ async function sendMessage(kind = 'text', galleryImageId = '', targetUid = '') {
     id: messageId, roomId: room.roomId, senderUid: uid,
     senderRole: isOwner ? 'streamer' : 'fan', senderName: senderProfile.nickname || (isOwner ? '스트리머' : '팬'),
     senderAvatarUrl: senderProfile.avatarUrl || '', createdAt: Date.now(), recipientUid: recipientUid || null,
-    kind, ...(kind === 'image' ? { galleryImageId } : { text }),
+    kind, ...(kind === 'image' ? { galleryImageId: imageId } : kind === 'roomself' ? { roomselfImageId: imageId } : { text }),
     scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
     ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),
   };
@@ -821,7 +872,7 @@ async function sendMessage(kind = 'text', galleryImageId = '', targetUid = '') {
   if (kind === 'text') $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
-    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId, recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
+    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
     if (state.room && state.room.roomId === room.roomId) {
       const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
@@ -1165,11 +1216,16 @@ async function showReportEvidence(reportId) {
   for (const message of result.evidence || []) {
     const row = document.createElement('article'); row.className = 'report-evidence-item';
     const label = document.createElement('small'); label.textContent = `${message.senderName || '사용자'} · ${new Date(message.createdAt || 0).toLocaleString('ko-KR')}`;
-    const body = document.createElement('p'); body.textContent = message.kind === 'image' ? `갤러리 이미지 첨부 (${message.galleryImageId})` : (message.text || '');
+    const body = document.createElement('p'); body.textContent = message.kind === 'image' ? `갤러리 이미지 첨부 (${message.galleryImageId})` : message.kind === 'roomself' ? '비공개 방셀 이미지' : (message.text || '');
     row.append(label, body);
     if (message.kind === 'image') {
       if (message.reportImageUrl) { const image = document.createElement('img'); image.src = message.reportImageUrl; image.alt = '신고 증거 이미지'; image.loading = 'lazy'; image.className = 'report-evidence-image'; row.appendChild(image); }
       else { const unavailable = document.createElement('small'); unavailable.textContent = '원본 이미지가 삭제되어 표시할 수 없습니다.'; row.appendChild(unavailable); }
+    } else if (message.kind === 'roomself' && message.roomselfImageId) {
+      try {
+        const imageData = await call('messengerAdminGetReportRoomselfImage', { reportId, imageId: message.roomselfImageId });
+        const image = document.createElement('img'); image.src = roomselfDataUrl(imageData); image.alt = '신고된 비공개 방셀 증거'; image.className = 'report-evidence-image'; row.appendChild(image);
+      } catch (_) { const unavailable = document.createElement('small'); unavailable.textContent = '비공개 이미지 보존 기간이 끝났거나 불러올 수 없습니다.'; row.appendChild(unavailable); }
     }
     host.appendChild(row);
   }
@@ -1262,6 +1318,16 @@ function bindEvents() {
   $('#submit-application').addEventListener('click', submitApplication);
   $('#open-image-picker').addEventListener('click', openImagePicker);
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
+  $('#close-roomself').addEventListener('click', () => closeDialog('roomself-dialog'));
+  $('#roomself-file').addEventListener('change', () => {
+    const file = $('#roomself-file').files && $('#roomself-file').files[0]; const preview = $('#roomself-preview'); const button = $('#roomself-send'); const status = $('#roomself-status');
+    if (!file) { preview.hidden = true; button.disabled = true; return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024) {
+      status.hidden = false; status.textContent = 'JPG, PNG, WebP 형식의 4MB 이하 이미지를 선택해 주세요.'; button.disabled = true; return;
+    }
+    status.hidden = true; preview.src = URL.createObjectURL(file); preview.hidden = false; button.disabled = false; button.textContent = '선택한 팬에게 비공개 전송';
+  });
+  $('#roomself-send').addEventListener('click', uploadAndSendRoomself);
   $('#gallery-inline-upload').addEventListener('click', uploadGalleryImageFromPicker);
   $('#gallery-inline-file').addEventListener('change', (event) => {
     const file = event.target.files && event.target.files[0];

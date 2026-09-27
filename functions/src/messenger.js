@@ -3,6 +3,9 @@ const { promisify } = require('util');
 const { getDatabase } = require('firebase-admin/database');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { defineSecret } = require('firebase-functions/params');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getPrincipal, requireAdmin, SERVICE_ID } = require('./auth');
 
 const scrypt = promisify(crypto.scrypt);
@@ -18,6 +21,11 @@ const SPAM_VIOLATIONS_BEFORE_COOLDOWN = 3;
 const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
 const CHAT_RETENTION = 7 * 24 * 60 * 60 * 1000;
 const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
+const ROOMSELF_MAX_BYTES = 4 * 1024 * 1024;
+const ROOMSELF_BUCKET = 'streamer-messenger-private';
+const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
+const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
+const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
 
 const db = () => getDatabase();
 const now = () => Date.now();
@@ -35,6 +43,15 @@ const safeText = (value, max, required = false) => {
   return text;
 };
 const roomRef = (roomId) => db().ref(`${ROOT}/rooms/${roomId}`);
+const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
+const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
+const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
+function roomselfBytesMatchType(bytes, contentType) {
+  if (contentType === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (contentType === 'image/png') return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  if (contentType === 'image/webp') return bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+  return false;
+}
 
 async function profileFor(uid) {
   const snap = await db().ref(`gallery/profiles/${uid}`).get();
@@ -531,7 +548,60 @@ const messengerGetGalleryImage = onCall(async (request) => {
   return await galleryImageForChat(String(roomId), String(imageId || ''));
 });
 
-const messengerSendMessage = onCall(async (request) => {
+const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const { roomId, recipientUid, contentType, size } = request.data || {};
+  const room = String(roomId || ''); const recipient = String(recipientUid || '');
+  const { meta, isOwner } = await requireRoomMember(p, room);
+  if (!isOwner) throw new HttpsError('permission-denied', '스트리머만 방셀 이미지를 보낼 수 있습니다.');
+  const member = await roomRef(room).child(`members/${recipient}`).get();
+  if (!member.exists() || member.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 방셀을 보낼 수 있습니다.');
+  const mimeExt = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP 형식의 4MB 이하 이미지를 선택해 주세요.');
+  const id = crypto.randomUUID().replaceAll('-', ''); const key = roomselfKey(id, mimeExt[contentType]); const at = now();
+  const record = { id, roomId: room, ownerUid: p.uid, recipientUid: recipient, uploaderUid: p.uid, key, contentType, size, status: 'upload_issued', createdAt: at, expiresAt: at + CHAT_RETENTION };
+  await db().ref().update({ [`${ROOT}/privateImages/${id}`]: record, [`${ROOT}/privateImageDays/${roomselfDateShard(at)}/${id}`]: true });
+  const uploadUrl = await getSignedUrl(roomselfS3(), new PutObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: key, ContentType: contentType, ContentLength: size }), { expiresIn: 300 });
+  return { imageId: id, uploadUrl, expiresAt: at + 5 * 60 * 1000, streamerName: meta.streamerNickname || '' };
+});
+
+const messengerFinalizeRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const imageId = String((request.data || {}).imageId || '');
+  if (!/^[a-f0-9]{32}$/.test(imageId)) throw new HttpsError('invalid-argument', '이미지 정보가 올바르지 않습니다.');
+  const ref = db().ref(`${ROOT}/privateImages/${imageId}`); const snap = await ref.get(); const record = snap.val() || {};
+  if (!snap.exists() || record.uploaderUid !== p.uid || record.status !== 'upload_issued' || now() > Number(record.expiresAt)) throw new HttpsError('permission-denied', '이미지 업로드를 확인할 수 없습니다. 다시 시도해 주세요.');
+  const head = await roomselfS3().send(new HeadObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
+  if (Number(head.ContentLength) !== Number(record.size) || head.ContentType !== record.contentType || Number(head.ContentLength) > ROOMSELF_MAX_BYTES) throw new HttpsError('failed-precondition', '업로드한 이미지 정보를 확인할 수 없습니다.');
+  const object = await roomselfS3().send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key, Range: 'bytes=0-11' }));
+  const bytes = Buffer.from(await object.Body.transformToByteArray());
+  if (!roomselfBytesMatchType(bytes, record.contentType)) {
+    await roomselfS3().send(new DeleteObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
+    throw new HttpsError('invalid-argument', '선택한 파일이 올바른 이미지가 아닙니다.');
+  }
+  await ref.update({ status: 'uploaded', uploadedAt: now() });
+  return { imageId, ready: true };
+});
+
+const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const { roomId, imageId } = request.data || {}; const room = String(roomId || ''); const id = String(imageId || '');
+  const { meta, isOwner, member } = await requireRoomMember(p, room);
+  const snap = await db().ref(`${ROOT}/privateImages/${id}`).get(); const record = snap.val() || {};
+  const allowed = isOwner && record.ownerUid === p.uid || record.recipientUid === p.uid && Number(member && member.joinedAt || 0) <= Number(record.sentAt || 0);
+  if (!snap.exists() || record.roomId !== room || !allowed || record.status !== 'sent') throw new HttpsError('permission-denied', '이 비공개 이미지를 볼 권한이 없습니다.');
+  const recipientMember = (await roomRef(room).child(`members/${record.recipientUid}`).get()).val() || {};
+  if (recipientMember.status !== 'active') throw new HttpsError('permission-denied', '대화가 중단된 팬의 이미지는 볼 수 없습니다.');
+  if (now() - Number(record.createdAt || 0) > CHAT_RETENTION) throw new HttpsError('not-found', '이미지 보관 기간이 끝났습니다.');
+  const msg = (await db().ref(`${ROOT}/chat/${room}/streamerTimeline/${record.messageId}`).get()).val() || {};
+  if (msg.kind !== 'roomself' || msg.roomselfImageId !== id || msg.recipientUid !== record.recipientUid || msg.senderUid !== record.ownerUid) throw new HttpsError('not-found', '이미지를 찾을 수 없습니다.');
+  const object = await roomselfS3().send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
+  const bytes = await object.Body.transformToByteArray();
+  if (bytes.byteLength > ROOMSELF_MAX_BYTES) throw new HttpsError('resource-exhausted', '이미지 용량 제한을 초과했습니다.');
+  return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64'), streamerName: meta.streamerNickname || '' };
+});
+
+const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
@@ -545,7 +615,9 @@ const messengerSendMessage = onCall(async (request) => {
     const recipient = await roomRef(roomId).child(`members/${recipientUid}`).get();
     if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
   }
-  const text = kind === 'image' ? '' : safeText(data.text, MESSAGE_MAX, true);
+  const text = ['image', 'roomself'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
+  if (!['text', 'image', 'roomself'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
+  if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
   await applyMessageRate(p.uid, roomId, text, result.meta);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
@@ -559,6 +631,13 @@ const messengerSendMessage = onCall(async (request) => {
   if (kind === 'image') {
     const image = await galleryImageForChat(roomId, String(data.galleryImageId || ''));
     message = { ...common, kind: 'image', galleryImageId: image.imageId };
+  } else if (kind === 'roomself') {
+    const id = String(data.roomselfImageId || '');
+    if (!/^[a-f0-9]{32}$/.test(id)) throw new HttpsError('invalid-argument', '방셀 이미지가 선택되지 않았습니다.');
+    const imageRef = db().ref(`${ROOT}/privateImages/${id}`); const imageSnap = await imageRef.get(); const image = imageSnap.val() || {};
+    if (!imageSnap.exists() || image.roomId !== roomId || image.ownerUid !== p.uid || image.recipientUid !== recipientUid || image.status !== 'uploaded' || now() > Number(image.expiresAt)) throw new HttpsError('failed-precondition', '방셀 업로드가 만료되었거나 올바르지 않습니다. 다시 선택해 주세요.');
+    message = { ...common, kind: 'roomself', roomselfImageId: id };
+    message._roomselfImageRef = id;
   } else {
     message = { ...common, kind: 'text', text };
   }
@@ -577,6 +656,15 @@ const messengerSendMessage = onCall(async (request) => {
   message.senderAvatarUrl = profile.avatarUrl || '';
   message.scope = isOwner ? (recipientUid ? (message.replyToId ? 'reply' : 'direct') : 'broadcast') : 'fan';
   const updates = {};
+  if (message._roomselfImageRef) {
+    const id = message._roomselfImageRef;
+    delete message._roomselfImageRef;
+    message.roomselfImageId = id;
+    updates[`${ROOT}/privateImages/${id}/status`] = 'sent';
+    updates[`${ROOT}/privateImages/${id}/messageId`] = messageId;
+    updates[`${ROOT}/privateImages/${id}/sentAt`] = createdAt;
+    updates[`${ROOT}/privateImages/${id}/expiresAt`] = createdAt + CHAT_RETENTION;
+  }
   updates[`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`] = message;
   if (isOwner && !recipientUid) updates[`${ROOT}/chat/${roomId}/broadcast/${messageId}`] = message;
   else {
@@ -633,6 +721,7 @@ const messengerSubmitReport = onCall(async (request) => {
   visible.forEach((m) => {
     evidence[m.id] = m;
     if (m.kind === 'image' && m.galleryImageId) updates[`${ROOT}/reportImageRefs/${m.galleryImageId}/${reportId}/${m.id}`] = item.retainUntil;
+    if (m.kind === 'roomself' && m.roomselfImageId) updates[`${ROOT}/privateImageRefs/${m.roomselfImageId}/${reportId}`] = item.retainUntil;
   });
   const imageMessages = visible.filter((m) => m.kind === 'image' && m.galleryImageId);
   for (let offset = 0; offset < imageMessages.length; offset += 25) {
@@ -692,6 +781,19 @@ const messengerAdminGetReportDetail = onCall(async (request) => {
   return { report: reportSnap.val(), evidence };
 });
 
+const messengerAdminGetReportRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey] }, async (request) => {
+  await requireAdmin(request);
+  const { reportId, imageId } = request.data || {};
+  const report = (await db().ref(`${ROOT}/reports/${String(reportId || '')}`).get()).val() || {};
+  if (!report.id || Number(report.retainUntil) < now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
+  if (!await db().ref(`${ROOT}/privateImageRefs/${String(imageId || '')}/${String(reportId || '')}`).get().then((s) => s.exists())) throw new HttpsError('permission-denied', '이 신고에 포함된 이미지가 아닙니다.');
+  const record = (await db().ref(`${ROOT}/privateImages/${String(imageId || '')}`).get()).val() || {};
+  if (record.status !== 'sent' || record.roomId !== report.roomId) throw new HttpsError('not-found', '신고 이미지를 찾을 수 없습니다.');
+  const object = await roomselfS3().send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
+  const bytes = await object.Body.transformToByteArray();
+  return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64') };
+});
+
 const messengerAdminUpdateReport = onCall(async (request) => {
   const p = await requireAdmin(request);
   const { reportId, status } = request.data || {};
@@ -742,7 +844,7 @@ const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'A
   if (Object.keys(updates).length) await db().ref().update(updates);
 });
 
-const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1' }, async () => {
+const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1', secrets: [roomselfAccessKeyId, roomselfSecretAccessKey] }, async () => {
   const t = now(); const cutoff = t - CHAT_RETENTION;
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
   const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
@@ -772,15 +874,37 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
   const reports = reportsSnap.val() || {};
   for (const [id, report] of Object.entries(reports)) if (report && Number(report.retainUntil) < t) {
     updates[`${ROOT}/reports/${id}`] = null; updates[`${ROOT}/reportEvidence/${id}`] = null;
+    const evidence = (await db().ref(`${ROOT}/reportEvidence/${id}`).get()).val() || {};
+    for (const message of Object.values(evidence)) if (message && message.roomselfImageId) updates[`${ROOT}/privateImageRefs/${message.roomselfImageId}/${id}`] = null;
   }
   if (Object.keys(updates).length) await db().ref().update(updates);
+  const today = roomselfDateShard(t);
+  const daysSnap = await db().ref(`${ROOT}/privateImageDays`).orderByKey().endAt(today).limitToLast(23).get();
+  const s3 = roomselfS3();
+  for (const day of Object.keys(daysSnap.val() || {})) {
+    const daySnap = await db().ref(`${ROOT}/privateImageDays/${day}`).get();
+    const ids = Object.keys(daySnap.val() || {});
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      for (const id of batch) {
+        const ref = db().ref(`${ROOT}/privateImages/${id}`); const image = (await ref.get()).val();
+        if (!image || Number(image.expiresAt) >= t) continue;
+        const refs = (await db().ref(`${ROOT}/privateImageRefs/${id}`).get()).val() || {};
+        const retained = Object.values(refs).some((until) => Number(until) >= t);
+        if (retained) continue;
+        if (image.key) await s3.send(new DeleteObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: image.key }));
+        await db().ref().update({ [`${ROOT}/privateImages/${id}`]: null, [`${ROOT}/privateImageRefs/${id}`]: null, [`${ROOT}/privateImageDays/${day}/${id}`]: null });
+      }
+    }
+  }
 });
 
 module.exports = {
   messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
+  messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
-  messengerAdminGetBanStatus,
+  messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage,
   messengerExpireRequests, messengerPurgeExpiredData,
 };

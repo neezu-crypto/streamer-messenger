@@ -47,3 +47,7 @@
 @media(max-width:480px){.admin-summary{gap:7px}.admin-summary article{padding:11px}.admin-summary span{font-size:10px}.admin-summary strong{font-size:19px}.admin-tabs button{padding:9px 4px;font-size:11px}.admin-lookup-row{flex-wrap:wrap}.admin-lookup-row .text-input{flex-basis:100%}.admin-lookup-row .button{width:100%}}
 @media(max-width:360px){.topbar-actions #notification-button{display:none}.profile-button{max-width:94px}}
 @media(max-width:680px){.chat-aside:not([hidden]) .fan-contact-row{flex:0 0 auto}}
+#roomself-dialog{width:min(520px,calc(100% - 28px));max-width:520px;max-height:88vh;padding:0;overflow:visible}
+#roomself-dialog .roomself-card{width:100%;display:flex;flex-direction:column;gap:12px;color:var(--ink)}
+#roomself-dialog .roomself-preview{width:min(100%,360px);max-height:42vh;object-fit:contain;align-self:center;border-radius:14px;border:1px solid var(--line);background:#edf2fa}
+#roomself-dialog .roomself-preview[hidden]{display:none}
