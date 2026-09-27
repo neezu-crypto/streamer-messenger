@@ -788,7 +788,7 @@ function openRoomselfDialog(fan) {
 async function uploadAndSendRoomself() {
   const file = $('#roomself-file').files && $('#roomself-file').files[0];
   const recipientUid = state.roomselfTargetUid;
-  if (!file || !recipientUid || !state.room || file.size > 4 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return;
+  if (!file || !recipientUid || !state.room || file.size > 4 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) return;
   const button = $('#roomself-send'); const status = $('#roomself-status');
   button.disabled = true; button.textContent = '업로드 중…'; status.hidden = false; status.textContent = '비공개 버킷에 업로드하고 있습니다.';
   try {
@@ -1322,8 +1322,8 @@ function bindEvents() {
   $('#roomself-file').addEventListener('change', () => {
     const file = $('#roomself-file').files && $('#roomself-file').files[0]; const preview = $('#roomself-preview'); const button = $('#roomself-send'); const status = $('#roomself-status');
     if (!file) { preview.hidden = true; button.disabled = true; return; }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024) {
-      status.hidden = false; status.textContent = 'JPG, PNG, WebP 형식의 4MB 이하 이미지를 선택해 주세요.'; button.disabled = true; return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) || file.size > 4 * 1024 * 1024) {
+      status.hidden = false; status.textContent = 'JPG, PNG, WebP, GIF 형식의 4MB 이하 이미지를 선택해 주세요.'; button.disabled = true; return;
     }
     status.hidden = true; preview.src = URL.createObjectURL(file); preview.hidden = false; button.disabled = false; button.textContent = '선택한 팬에게 비공개 전송';
   });

@@ -50,6 +50,7 @@ function roomselfBytesMatchType(bytes, contentType) {
   if (contentType === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (contentType === 'image/png') return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
   if (contentType === 'image/webp') return bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+  if (contentType === 'image/gif') return ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6));
   return false;
 }
 
@@ -556,8 +557,8 @@ const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, r
   if (!isOwner) throw new HttpsError('permission-denied', '스트리머만 방셀 이미지를 보낼 수 있습니다.');
   const member = await roomRef(room).child(`members/${recipient}`).get();
   if (!member.exists() || member.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 방셀을 보낼 수 있습니다.');
-  const mimeExt = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-  if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP 형식의 4MB 이하 이미지를 선택해 주세요.');
+  const mimeExt = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+  if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP, GIF 형식의 4MB 이하 이미지를 선택해 주세요.');
   const id = crypto.randomUUID().replaceAll('-', ''); const key = roomselfKey(id, mimeExt[contentType]); const at = now();
   const record = { id, roomId: room, ownerUid: p.uid, recipientUid: recipient, uploaderUid: p.uid, key, contentType, size, status: 'upload_issued', createdAt: at, expiresAt: at + CHAT_RETENTION };
   await db().ref().update({ [`${ROOT}/privateImages/${id}`]: record, [`${ROOT}/privateImageDays/${roomselfDateShard(at)}/${id}`]: true });
