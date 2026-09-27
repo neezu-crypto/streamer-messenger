@@ -252,9 +252,9 @@ function publicRoom(meta, includeOperational = false) {
     streamerAvatarUrl: meta.streamerAvatarUrl || '',
     visibility: meta.visibility || 'public',
     locked: meta.locked === true,
-    memberCount: meta.visibility === 'private' && !includeOperational ? null : Number(meta.memberCount) || 0,
     updatedAt: Number(meta.updatedAt) || Number(meta.createdAt) || now(),
   };
+  if (meta.visibility !== 'private' || includeOperational) room.memberCount = Number(meta.memberCount) || 0;
   if (includeOperational) {
     room.galleryLinked = !!meta.galleryStreamerId;
     room.repeatTextDelaySeconds = Number(meta.repeatTextDelaySeconds) || 0;
