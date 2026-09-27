@@ -121,7 +121,7 @@ function renderRooms() {
     const desc = document.createElement('p'); desc.className = 'room-description'; desc.textContent = '스트리머가 신청을 확인한 뒤 대화에 초대해요.';
     const foot = document.createElement('div'); foot.className = 'room-card-foot';
     const badge = document.createElement('span'); badge.className = `room-state-pill${room.visibility === 'private' ? ' private' : ''}${room.locked ? ' locked' : ''}`; badge.textContent = room.locked ? '잠금' : (room.visibility === 'private' ? '비공개방' : '공개방');
-    const count = document.createElement('span'); count.textContent = `${room.memberCount || 0}명 참여`;
+    const count = document.createElement('span'); count.textContent = room.visibility === 'private' ? '참여 인원 비공개' : `${room.memberCount || 0}명 참여`;
     foot.append(badge, count); button.append(top, desc, foot);
     button.addEventListener('click', () => selectRoom(room)); list.appendChild(button);
   }

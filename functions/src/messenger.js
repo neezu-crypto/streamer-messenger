@@ -22,6 +22,9 @@ const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
 const CHAT_RETENTION = 7 * 24 * 60 * 60 * 1000;
 const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
 const ROOMSELF_MAX_BYTES = 15 * 1024 * 1024;
+const ROOMSELF_UPLOAD_WINDOW = 10 * 60 * 1000;
+const ROOMSELF_UPLOADS_PER_WINDOW = 5;
+const ROOMSELF_UPLOAD_FINALIZE_TTL = 15 * 60 * 1000;
 const ROOMSELF_BUCKET = 'streamer-messenger-private';
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
@@ -240,21 +243,24 @@ async function syncOwnerRoomAvatar(roomId, uid, avatarUrl, meta) {
   return updatedMeta;
 }
 
-function publicRoom(meta) {
-  return {
+function publicRoom(meta, includeOperational = false) {
+  const room = {
     roomId: meta.roomId,
     streamerNickname: meta.streamerNickname,
     streamerSoopId: meta.streamerSoopId,
     roomType: meta.roomType || 'streamer',
     streamerAvatarUrl: meta.streamerAvatarUrl || '',
-    galleryLinked: !!meta.galleryStreamerId,
     visibility: meta.visibility || 'public',
     locked: meta.locked === true,
-    repeatTextDelaySeconds: Number(meta.repeatTextDelaySeconds) || 0,
-    repeatLinkDelaySeconds: Number(meta.repeatLinkDelaySeconds) || 0,
-    memberCount: Number(meta.memberCount) || 0,
+    memberCount: meta.visibility === 'private' && !includeOperational ? null : Number(meta.memberCount) || 0,
     updatedAt: Number(meta.updatedAt) || Number(meta.createdAt) || now(),
   };
+  if (includeOperational) {
+    room.galleryLinked = !!meta.galleryStreamerId;
+    room.repeatTextDelaySeconds = Number(meta.repeatTextDelaySeconds) || 0;
+    room.repeatLinkDelaySeconds = Number(meta.repeatLinkDelaySeconds) || 0;
+  }
+  return room;
 }
 
 async function resolveGalleryStreamerId(streamerSoopId, streamerNickname) {
@@ -294,7 +300,7 @@ const messengerGetSession = onCall(async (request) => {
     const snap = await roomRef(ownRoomId).child('meta').get();
     if (snap.exists() && snap.val().ownerUid === p.uid) {
       const meta = await syncOwnerRoomAvatar(ownRoomId, p.uid, profile && profile.avatarUrl, snap.val());
-      ownRoom = publicRoom(meta);
+      ownRoom = publicRoom(meta, true);
     }
   }
   return { uid: p.uid, trusted: p.trusted, isRealAccount: p.real, isAdmin: p.admin, isVerifiedStreamer: !!p.streamer, streamer: p.streamer, profile, ownRoom };
@@ -311,7 +317,7 @@ const messengerGetRoomState = onCall(async (request) => {
   if (!metaSnap.exists()) throw new HttpsError('not-found', '채팅방을 찾을 수 없습니다.');
   let meta = metaSnap.val() || {};
   if (meta.ownerUid === p.uid) meta = await syncOwnerRoomAvatar(roomId, p.uid, (await profileFor(p.uid)).avatarUrl, meta);
-  return { room: publicRoom(meta), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
+  return { room: publicRoom(meta, meta.ownerUid === p.uid), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
 });
 
 const messengerEnsureRoom = onCall(async (request) => {
@@ -330,10 +336,10 @@ const messengerEnsureRoom = onCall(async (request) => {
     const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt: createdAt };
     await db().ref().update({ [`${ROOT}/rooms/${roomId}/meta`]: meta, [`${ROOT}/publicRooms/${roomId}`]: publicRoom(meta) });
     await writeAudit(p.uid, 'room.create', roomId);
-    return { room: publicRoom(meta), created: true };
+    return { room: publicRoom(meta, true), created: true };
   }
   const meta = await syncOwnerRoomAvatar(roomId, p.uid, await streamerAvatar(p.uid), current.val());
-  return { room: publicRoom(meta), created: false };
+  return { room: publicRoom(meta, true), created: false };
 });
 
 const messengerUpdateRoom = onCall(async (request) => {
@@ -377,7 +383,7 @@ const messengerUpdateRoom = onCall(async (request) => {
   updates[`${ROOT}/publicRooms/${roomId}`] = publicRoom(nextMeta);
   await db().ref().update(updates);
   await writeAudit(p.uid, 'room.update', roomId);
-  return { room: publicRoom(nextMeta), generatedPassword: generatedPassword || null };
+  return { room: publicRoom(nextMeta, true), generatedPassword: generatedPassword || null };
 });
 
 const messengerDiscardRoom = onCall(async (request) => {
@@ -559,8 +565,13 @@ const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, r
   if (!member.exists() || member.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 방셀을 보낼 수 있습니다.');
   const mimeExt = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
   if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP, GIF 형식의 15MB 이하 이미지를 선택해 주세요.');
+  const uploadWindow = Math.floor(now() / ROOMSELF_UPLOAD_WINDOW);
+  const uploadLimitRef = db().ref(`${ROOT}/rateLimits/roomselfUploads/${p.uid}/${uploadWindow}`);
+  const uploadCount = await uploadLimitRef.transaction((count) => (Number(count) || 0) < ROOMSELF_UPLOADS_PER_WINDOW ? (Number(count) || 0) + 1 : undefined);
+  await db().ref(`${ROOT}/rateLimits/roomselfUploads/${p.uid}/${uploadWindow - 2}`).remove().catch(() => {});
+  if (!uploadCount.committed) throw new HttpsError('resource-exhausted', '방셀 업로드는 10분에 5회까지 요청할 수 있습니다. 잠시 후 다시 시도해 주세요.');
   const id = crypto.randomUUID().replaceAll('-', ''); const key = roomselfKey(id, mimeExt[contentType]); const at = now();
-  const record = { id, roomId: room, ownerUid: p.uid, recipientUid: recipient, uploaderUid: p.uid, key, contentType, size, status: 'upload_issued', createdAt: at, expiresAt: at + CHAT_RETENTION };
+  const record = { id, roomId: room, ownerUid: p.uid, recipientUid: recipient, uploaderUid: p.uid, key, contentType, size, status: 'upload_issued', createdAt: at, expiresAt: at + ROOMSELF_UPLOAD_FINALIZE_TTL };
   await db().ref().update({ [`${ROOT}/privateImages/${id}`]: record, [`${ROOT}/privateImageDays/${roomselfDateShard(at)}/${id}`]: true });
   const uploadUrl = await getSignedUrl(roomselfS3(), new PutObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: key, ContentType: contentType, ContentLength: size }), { expiresIn: 300 });
   return { imageId: id, uploadUrl, expiresAt: at + 5 * 60 * 1000, streamerName: meta.streamerNickname || '' };
@@ -778,8 +789,10 @@ const messengerAdminGetReportDetail = onCall(async (request) => {
     db().ref(`${ROOT}/reports/${reportId}`).get(), db().ref(`${ROOT}/reportEvidence/${reportId}`).get(),
   ]);
   if (!reportSnap.exists()) throw new HttpsError('not-found', '신고를 찾을 수 없습니다.');
+  const report = reportSnap.val() || {};
+  if (!report.id || Number(report.retainUntil) <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
   const evidence = Object.values(evidenceSnap.val() || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  return { report: reportSnap.val(), evidence };
+  return { report, evidence };
 });
 
 const messengerAdminGetReportRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey] }, async (request) => {
@@ -833,15 +846,27 @@ const messengerAdminSetBan = onCall(async (request) => {
 });
 
 const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'Asia/Seoul', region: 'us-central1' }, async () => {
-  const snap = await db().ref(`${ROOT}/rooms`).get();
+  const [snap, publicRoomsSnap] = await Promise.all([
+    db().ref(`${ROOT}/rooms`).get(),
+    db().ref(`${ROOT}/publicRooms`).get(),
+  ]);
   const rooms = snap.val() || {};
+  const publicRooms = publicRoomsSnap.val() || {};
   const t = now(); const updates = {};
   for (const [roomId, room] of Object.entries(rooms)) {
+    if (room && room.meta) {
+      const projected = publicRoom(room.meta);
+      const currentProjection = publicRooms[roomId] || {};
+      if (Object.keys(projected).some((key) => currentProjection[key] !== projected[key]) || Object.keys(currentProjection).some((key) => !(key in projected))) {
+        updates[`${ROOT}/publicRooms/${roomId}`] = projected;
+      }
+    }
     const apps = room && room.applications || {};
     for (const [uid, app] of Object.entries(apps)) {
       if (app && app.status === 'pending' && Number(app.expiresAt) <= t) updates[`${ROOT}/rooms/${roomId}/applications/${uid}/status`] = 'expired';
     }
   }
+  for (const roomId of Object.keys(publicRooms)) if (!rooms[roomId] || !rooms[roomId].meta) updates[`${ROOT}/publicRooms/${roomId}`] = null;
   if (Object.keys(updates).length) await db().ref().update(updates);
 });
 

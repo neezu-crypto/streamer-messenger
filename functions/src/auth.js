@@ -1,7 +1,6 @@
 const { getDatabase } = require('firebase-admin/database');
 const { HttpsError } = require('firebase-functions/v2/https');
 
-const ADMIN_EMAIL = 'skftodwocks2@gmail.com';
 const SERVICE_ID = 'streamerMessenger';
 
 function requireAuth(request) {
@@ -14,10 +13,10 @@ function isRealAccount(request) {
   return provider !== 'anonymous';
 }
 
-async function isAdmin(uid, email) {
+async function isAdmin(uid) {
   const db = getDatabase();
   const snap = await db.ref(`adminCenter/adminUids/${uid}`).get();
-  return snap.val() === true || email === ADMIN_EMAIL;
+  return snap.val() === true;
 }
 
 async function getVerifiedStreamer(uid) {
@@ -44,7 +43,7 @@ async function assertNotBanned(uid) {
 async function getPrincipal(request, options = {}) {
   const uid = requireAuth(request);
   const email = request.auth.token && request.auth.token.email;
-  const admin = await isAdmin(uid, email);
+  const admin = await isAdmin(uid);
   const streamer = await getVerifiedStreamer(uid);
   const real = isRealAccount(request);
   const trusted = real || admin || !!streamer;
