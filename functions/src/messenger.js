@@ -21,7 +21,7 @@ const SPAM_VIOLATIONS_BEFORE_COOLDOWN = 3;
 const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
 const CHAT_RETENTION = 7 * 24 * 60 * 60 * 1000;
 const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
-const ROOMSELF_MAX_BYTES = 4 * 1024 * 1024;
+const ROOMSELF_MAX_BYTES = 15 * 1024 * 1024;
 const ROOMSELF_BUCKET = 'streamer-messenger-private';
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
@@ -558,7 +558,7 @@ const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, r
   const member = await roomRef(room).child(`members/${recipient}`).get();
   if (!member.exists() || member.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 방셀을 보낼 수 있습니다.');
   const mimeExt = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
-  if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP, GIF 형식의 4MB 이하 이미지를 선택해 주세요.');
+  if (!mimeExt[contentType] || !Number.isInteger(size) || size < 1 || size > ROOMSELF_MAX_BYTES) throw new HttpsError('invalid-argument', 'JPG, PNG, WebP, GIF 형식의 15MB 이하 이미지를 선택해 주세요.');
   const id = crypto.randomUUID().replaceAll('-', ''); const key = roomselfKey(id, mimeExt[contentType]); const at = now();
   const record = { id, roomId: room, ownerUid: p.uid, recipientUid: recipient, uploaderUid: p.uid, key, contentType, size, status: 'upload_issued', createdAt: at, expiresAt: at + CHAT_RETENTION };
   await db().ref().update({ [`${ROOT}/privateImages/${id}`]: record, [`${ROOT}/privateImageDays/${roomselfDateShard(at)}/${id}`]: true });
