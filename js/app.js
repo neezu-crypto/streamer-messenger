@@ -1316,7 +1316,7 @@ function bindEvents() {
   $('#export-text').addEventListener('click', () => exportConversation('text'));
   $('#export-image').addEventListener('click', () => exportConversation('image'));
   $('#submit-application').addEventListener('click', submitApplication);
-  $('#open-image-picker').addEventListener('click', openImagePicker);
+  $('#open-image-picker').addEventListener('click', () => openImagePicker());
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
   $('#close-roomself').addEventListener('click', () => closeDialog('roomself-dialog'));
   $('#roomself-file').addEventListener('change', () => {
