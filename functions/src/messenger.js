@@ -790,7 +790,8 @@ const messengerAdminGetReportDetail = onCall(async (request) => {
   ]);
   if (!reportSnap.exists()) throw new HttpsError('not-found', '신고를 찾을 수 없습니다.');
   const report = reportSnap.val() || {};
-  if (!report.id || Number(report.retainUntil) <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
+  const retainUntil = Number(report.retainUntil);
+  if (!report.id || !Number.isFinite(retainUntil) || retainUntil <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
   const evidence = Object.values(evidenceSnap.val() || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   return { report, evidence };
 });
@@ -799,7 +800,8 @@ const messengerAdminGetReportRoomselfImage = onCall({ secrets: [roomselfAccessKe
   await requireAdmin(request);
   const { reportId, imageId } = request.data || {};
   const report = (await db().ref(`${ROOT}/reports/${String(reportId || '')}`).get()).val() || {};
-  if (!report.id || Number(report.retainUntil) < now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
+  const retainUntil = Number(report.retainUntil);
+  if (!report.id || !Number.isFinite(retainUntil) || retainUntil <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
   if (!await db().ref(`${ROOT}/privateImageRefs/${String(imageId || '')}/${String(reportId || '')}`).get().then((s) => s.exists())) throw new HttpsError('permission-denied', '이 신고에 포함된 이미지가 아닙니다.');
   const record = (await db().ref(`${ROOT}/privateImages/${String(imageId || '')}`).get()).val() || {};
   if (record.status !== 'sent' || record.roomId !== report.roomId) throw new HttpsError('not-found', '신고 이미지를 찾을 수 없습니다.');
