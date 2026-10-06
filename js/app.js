@@ -1410,6 +1410,7 @@ function bindEvents() {
 }
 
 function handleSession(event) {
+  const previousSession = state.session;
   const previousUid = state.session && state.session.uid;
   state.session = event.detail.session || null;
   const nextUid = state.session && state.session.uid;
@@ -1418,6 +1419,11 @@ function handleSession(event) {
   }
   if (state.session && state.session.ownRoom) subscribeOwnerApplications(state.session.ownRoom);
   syncHeader();
+  if (previousSession && !previousSession.isVerifiedStreamer && state.session?.isVerifiedStreamer) {
+    const status = $('#verification-status');
+    if (status) { status.hidden = false; status.textContent = '✅ 관리자가 승인했어요. 인증 권한이 새로고침 없이 적용됐습니다.'; }
+    showToast('스트리머 인증이 승인됐어요.');
+  }
   if (state.session && state.session.trusted) {
     $('#profile-button').title = '공개 프로필 설정';
     if (state.isOwner && state.room && state.session.ownRoom && state.session.ownRoom.roomId === state.room.roomId) {

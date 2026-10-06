@@ -58,7 +58,38 @@ async function refreshSession(user) {
 // Registering the observer first can deliver a transient null user, which the
 // anonymous fallback would otherwise persist over the sibling-project login.
 let hasRestoredAccount = false;
+let streamerVerifiedUnsubscribe = null;
+let switchApprovalUnsubscribe = null;
+let switchHandoffInProgress = false;
+
+async function handleMessengerStreamerSwitchApproval(uid, requestId) {
+  if (!requestId || switchHandoffInProgress || auth.currentUser?.uid !== uid) return;
+  const lockKey = 'soop.streamerVerificationSwitch.' + requestId;
+  try {
+    const lastAttemptAt = Number(localStorage.getItem(lockKey) || 0);
+    if (lastAttemptAt && Date.now() - lastAttemptAt < 20000) return;
+    localStorage.setItem(lockKey, String(Date.now()));
+  } catch (_) { /* Private browsing may disable localStorage. */ }
+  switchHandoffInProgress = true;
+  try {
+    const result = await requestStreamerVerification({ checkOnly: true, switchRequestId: requestId });
+    if (result.action !== 'switch' || auth.currentUser?.uid !== uid) {
+      try { localStorage.removeItem(lockKey); } catch (_) {}
+      switchHandoffInProgress = false;
+      return;
+    }
+    // requestStreamerVerification가 커스텀 토큰으로 세션 전환 후 권한을 다시 읽는다.
+  } catch (error) {
+    try { localStorage.removeItem(lockKey); } catch (_) {}
+    switchHandoffInProgress = false;
+    console.error('승인된 스트리머 계정 자동 전환 실패:', error);
+  }
+}
+
 auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
+  if (streamerVerifiedUnsubscribe) { streamerVerifiedUnsubscribe(); streamerVerifiedUnsubscribe = null; }
+  if (switchApprovalUnsubscribe) { switchApprovalUnsubscribe(); switchApprovalUnsubscribe = null; }
+  switchHandoffInProgress = false;
   if (!user) {
     // Auth persistence may briefly emit null while another same-origin sibling
     // page is restoring/synchronizing the shared account. Never replace an
@@ -73,6 +104,23 @@ auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
     return;
   }
   hasRestoredAccount = true;
+  const uid = user.uid;
+  let hasInitialVerifiedValue = false;
+  let previousVerifiedValue = false;
+  streamerVerifiedUnsubscribe = onValue(ref(db, `users/${uid}/streamerVerified`), async (snapshot) => {
+    if (auth.currentUser?.uid !== uid) return;
+    const verified = snapshot.val() === true;
+    if (hasInitialVerifiedValue && previousVerifiedValue !== verified) {
+      try { await refreshSession(user); }
+      catch (error) { console.error('스트리머 인증 상태 변경 후 메신저 권한 갱신 실패:', error); }
+    }
+    previousVerifiedValue = verified;
+    hasInitialVerifiedValue = true;
+  }, (error) => console.error('스트리머 인증 상태 구독 실패:', error));
+  switchApprovalUnsubscribe = onValue(ref(db, `users/${uid}/streamerVerificationSwitchApproval`), (snapshot) => {
+    const requestId = snapshot.val() && snapshot.val().requestId;
+    if (requestId) handleMessengerStreamerSwitchApproval(uid, String(requestId));
+  }, (error) => console.error('계정 전환 승인 신호 구독 실패:', error));
   await refreshSession(user);
 }));
 
