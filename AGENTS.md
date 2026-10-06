@@ -6,10 +6,10 @@ RTDB `soop-stock-market-default-rtdb`를 사용하며, Cloud Functions codebase�
 
 ## RTDB 규칙 동기화 — 모든 자매 프로젝트 공통
 
-- 이 저장소는 `StreamBet-Market`, `soop-stock-market`, `interior-3d-viewer`,
-  `streamer-life-game`, `streamer-gallery`와 같은 Firebase 프로젝트 및 RTDB를 사용한다.
-  RTDB 규칙은 Firebase 프로젝트 전체에 적용되므로 여섯 저장소의
-  `database.rules.json`은 항상 바이트 단위로 동일해야 한다.
+- RTDB 규칙을 보유한 여섯 저장소는 `StreamBet-Market`, `soop-stock-market`,
+  `interior-3d-viewer`, `streamer-life-game`, `streamer-gallery`, `streamer-messenger`다.
+  모두 같은 Firebase 프로젝트 및 RTDB를 사용한다. RTDB 규칙은 Firebase 프로젝트 전체에 적용되므로
+  여섯 저장소의 `database.rules.json`은 항상 바이트 단위로 동일해야 한다.
 - `StreamBet-Market`은 기준 원본이지만 규칙 수정 전에는 여섯 파일의 실제 내용과 최근 변경
   이력을 대조해 가장 최신의 합의된 규칙을 판단한다. 메신저 전용 조건을 추가·수정할 때도
   전체 규칙에 반영한 뒤 나머지 다섯 사본에 동일하게 동기화한다.
