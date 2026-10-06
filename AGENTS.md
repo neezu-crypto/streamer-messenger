@@ -27,6 +27,12 @@ RTDB `soop-stock-market-default-rtdb`를 사용하며, Cloud Functions codebase�
 - RTDB 노드·필드는 실제 쓰기 코드와 대조하고, 함수·화면 변경 후 문법 검사와 흐름 검증을
   마친다.
 
+## 실시간 스트리머 인증 승인
+
+- 메신저는 `users/{uid}/streamerVerified`와 `users/{uid}/streamerVerificationSwitchApproval`을 현재 로그인한 본인 UID 범위에서 구독한다. 페이지가 연결된 상태에서 인증 승인·해제 UI가 갱신되고, 계정 전환 승인 신호가 오면 공유 `requestStreamerVerification` callable로 요청을 검증해 세션을 전환한다.
+- 전환 신호는 `{ requestId, approvedAt }`이며 서버가 승인 상태와 기존 인증 UID를 다시 확인한다. custom token은 RTDB에 저장하지 않고, 처리 후 승인 신호를 삭제한다. 경로·권한 변경은 공유 규칙 6개 사본과 모든 자매 클라이언트에 미치는 영향을 먼저 검토한다.
+- 이 흐름은 페이지가 열려 있고 연결된 경우 동작한다. 페이지가 닫힌 상태에서의 푸시 알림은 구현되어 있지 않다. 인증·전환 수정 시 일반 승인, 오프라인 복귀, 계정 전환까지 확인한다.
+
 ## 작업 완료 후 배포
 
 - 검증이 통과한 런타임 변경은 별도 확인 없이 작업 파일만 한글 커밋으로 커밋·push하고,
