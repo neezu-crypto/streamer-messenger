@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -233,10 +233,39 @@ async function loadRooms() {
     state.rooms = Object.values(data).filter((room) => room && room.roomId); sortRooms();
     renderRooms();
     subscribeApplicationResults();
+    await openLinkedStreamerRoom();
   } catch (error) {
     console.error('채팅방 목록을 불러오지 못했습니다.', error);
     $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>';
   }
+}
+
+async function openLinkedStreamerRoom() {
+  if (state.streamerLinkHandled) return;
+  const streamerSoopId = String(new URLSearchParams(window.location.search).get('streamer') || '').trim().toLowerCase();
+  if (!/^[a-z0-9]{2,30}$/.test(streamerSoopId)) return;
+  state.streamerLinkHandled = true;
+
+  const matchingRooms = state.rooms
+    .filter((room) => String(room.streamerSoopId || '').trim().toLowerCase() === streamerSoopId && (room.roomType || 'streamer') === 'streamer')
+    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+  const ownRoom = state.session && state.session.ownRoom;
+  const room = matchingRooms[0] || (ownRoom
+    && String(ownRoom.streamerSoopId || '').trim().toLowerCase() === streamerSoopId
+    && (ownRoom.roomType || 'streamer') === 'streamer' ? ownRoom : null);
+  if (!room) {
+    $('#room-search').value = streamerSoopId;
+    renderRooms();
+    showToast('아직 해당 스트리머의 채팅방이 열리지 않았어요.');
+    return;
+  }
+
+  if (!state.session || !state.session.trusted) {
+    state.pendingStreamerRoom = room;
+    openDialog('auth-dialog');
+    return;
+  }
+  await selectRoom(room);
 }
 
 async function selectRoom(room) {
@@ -1419,6 +1448,11 @@ function handleSession(event) {
   }
   if (state.session && state.session.ownRoom) subscribeOwnerApplications(state.session.ownRoom);
   syncHeader();
+  if (state.session && state.session.trusted && state.pendingStreamerRoom) {
+    const pendingRoom = state.pendingStreamerRoom;
+    state.pendingStreamerRoom = null;
+    selectRoom(pendingRoom);
+  }
   if (previousSession && !previousSession.isVerifiedStreamer && state.session?.isVerifiedStreamer) {
     const status = $('#verification-status');
     if (status) { status.hidden = false; status.textContent = '✅ 관리자가 승인했어요. 인증 권한이 새로고침 없이 적용됐습니다.'; }
