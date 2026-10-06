@@ -1286,6 +1286,50 @@ function showNewMessageNotification(message) {
   n.onclick = () => { window.focus(); n.close(); };
 }
 
+async function handleStreamerVerification(mode) {
+  const status = $('#verification-status');
+  const note = $('#verification-note');
+  const codeButton = $('#verification-note-code');
+  status.hidden = false;
+  const payload = mode === 'check' ? { checkOnly: true } : mode === 'renew' ? {} : {
+    nickname: $('#verification-nickname').value.trim(),
+    soopId: $('#verification-soop-id').value.trim(),
+  };
+  if (mode === 'submit' && (!payload.nickname || !/^[a-z0-9]{2,20}$/.test(payload.soopId))) {
+    status.textContent = '닉네임과 SOOP 아이디(영문 소문자/숫자 2~20자)를 확인해주세요.';
+    return;
+  }
+  const previousText = codeButton.textContent.trim();
+  const previousCode = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(previousText) ? previousText : '';
+  try {
+    const result = await api().requestStreamerVerification(payload);
+    if (result.action === 'already-verified' || result.action === 'auto-approved') {
+      note.hidden = true;
+      status.textContent = '스트리머 인증이 완료됐어요. 새로고침하면 방을 만들 수 있습니다.';
+      return;
+    }
+    if (result.action === 'switch') {
+      note.hidden = true;
+      status.textContent = '기존 인증 계정 전환이 승인됐어요. 원래 계정에서 다시 로그인해주세요.';
+      return;
+    }
+    note.hidden = !!result.isSwitch;
+    status.textContent = result.isSwitch
+      ? '계정 전환 신청은 관리자 수동 확인이 필요합니다.'
+      : 'SOOP 쪽지의 발신자 아이디와 코드를 대조해 자동 승인합니다.';
+    if (result.isSwitch) return;
+    const code = Number(result.verificationCodeExpiresAt) > Date.now()
+      ? result.verificationCode || (mode === 'check' ? previousCode : '') : '';
+    codeButton.textContent = code || '코드 없음';
+    codeButton.disabled = !code;
+    $('#verification-note-status').textContent = code ? '' : '코드가 없거나 만료됐어요. 새 코드를 발급해주세요.';
+    codeButton.onclick = async () => {
+      try { await navigator.clipboard.writeText(code); $('#verification-note-status').textContent = '복사했어요. 쪽지 본문에 붙여넣어 보내주세요.'; }
+      catch (_) { $('#verification-note-status').textContent = '코드를 선택해 직접 복사해주세요.'; }
+    };
+  } catch (error) { status.textContent = error.message || '인증 요청을 처리하지 못했습니다.'; }
+}
+
 function bindEvents() {
   $('#fan-search').addEventListener('input', () => {
     state.fanSearchQuery = $('#fan-search').value;
@@ -1355,7 +1399,9 @@ function bindEvents() {
   $('#google-login').addEventListener('click', async () => { try { await api().loginGoogle(); closeDialog('auth-dialog'); } catch (error) { showError(error); } });
   $('#kakao-login').addEventListener('click', async () => { try { await api().loginKakao(); closeDialog('auth-dialog'); } catch (error) { showError(error); } });
   $('#verify-streamer').addEventListener('click', () => { closeDialog('auth-dialog'); openDialog('verification-dialog'); });
-  $('#verification-submit').addEventListener('click', async () => { const status = $('#verification-status'); status.hidden = false; try { const result = await api().requestStreamerVerification({ nickname: $('#verification-nickname').value.trim(), soopId: $('#verification-soop-id').value.trim() }); status.textContent = result.action === 'already-verified' ? '이미 인증된 계정입니다.' : '인증 신청을 확인 중입니다. 관리자 승인 후 방을 만들 수 있어요.'; } catch (error) { status.textContent = error.message || '인증 요청을 처리하지 못했습니다.'; } });
+  $('#verification-submit').addEventListener('click', () => handleStreamerVerification('submit'));
+  $('#verification-check').addEventListener('click', () => handleStreamerVerification('check'));
+  $('#verification-renew').addEventListener('click', () => handleStreamerVerification('renew'));
   $('#save-profile').addEventListener('click', saveProfile);
   $('#profile-soop-id').addEventListener('input', updateProfilePreview);
   $('#generic-close').addEventListener('click', () => closeDialog('generic-dialog'));
