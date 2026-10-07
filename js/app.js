@@ -235,10 +235,14 @@ async function loadRooms() {
     subscribeApplicationResults();
     await ensureVerifiedStreamerRoom();
     if (state.session && state.session.isAdmin) {
-      await call('messengerAdminBackfillVerifiedRooms');
-      const refreshed = await get(ref(db, 'streamerMessenger/publicRooms'));
-      state.rooms = Object.values(refreshed.val() || {}).filter((room) => room && room.roomId);
-      sortRooms(); renderRooms(); subscribeApplicationResults();
+      try {
+        await call('messengerAdminBackfillVerifiedRooms');
+        const refreshed = await get(ref(db, 'streamerMessenger/publicRooms'));
+        state.rooms = Object.values(refreshed.val() || {}).filter((room) => room && room.roomId);
+        sortRooms(); renderRooms(); subscribeApplicationResults();
+      } catch (error) {
+        console.error('기존 인증 스트리머 방을 채우지 못했습니다.', error);
+      }
     }
     await openLinkedStreamerRoom();
   } catch (error) {
