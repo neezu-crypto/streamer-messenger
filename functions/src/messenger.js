@@ -2,11 +2,13 @@ const crypto = require('crypto');
 const { promisify } = require('util');
 const { getDatabase } = require('firebase-admin/database');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onValueWritten } = require('firebase-functions/v2/database');
+const logger = require('firebase-functions/logger');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { getPrincipal, requireAdmin, SERVICE_ID } = require('./auth');
+const { getPrincipal, getVerifiedStreamer, requireAdmin, SERVICE_ID } = require('./auth');
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
@@ -323,22 +325,84 @@ const messengerEnsureRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = principalRoomId(p);
   if (!roomId) throw new HttpsError('permission-denied', '인증된 스트리머 또는 관리자만 채팅방을 만들 수 있습니다.');
-  const ref = roomRef(roomId);
-  const current = await ref.child('meta').get();
-  if (current.exists() && current.val().ownerUid !== p.uid) throw new HttpsError('already-exists', '이 스트리머 아이디의 채팅방이 이미 존재합니다.');
-  if (!current.exists()) {
-    const createdAt = now();
-    const profile = await profileFor(p.uid);
-    const streamerNickname = p.streamer ? p.streamer.nickname : (profile.nickname || '관리자');
-    const streamerSoopId = p.streamer ? roomId : profile.soopId;
-    const galleryStreamerId = await resolveGalleryStreamerId(streamerSoopId, streamerNickname);
-    const meta = { roomId, ownerUid: p.uid, streamerId: p.streamer ? roomId : `admin:${p.uid}`, roomType: p.streamer ? 'streamer' : 'admin', galleryStreamerId: galleryStreamerId || null, streamerNickname, streamerSoopId, streamerAvatarUrl: profile.avatarUrl || '', visibility: 'public', locked: false, memberCount: 0, createdAt, updatedAt: createdAt };
-    await db().ref().update({ [`${ROOT}/rooms/${roomId}/meta`]: meta, [`${ROOT}/publicRooms/${roomId}`]: publicRoom(meta) });
-    await writeAudit(p.uid, 'room.create', roomId);
-    return { room: publicRoom(meta, true), created: true };
+  return ensureOwnedRoom(p.uid, roomId, p.streamer || null);
+});
+
+async function ensureOwnedRoom(uid, streamerRoomId, streamer = null) {
+  const roomId = String(streamerRoomId || '').trim().toLowerCase();
+  if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('permission-denied', '채팅방에 연결된 SOOP 아이디가 올바르지 않습니다.');
+
+  const profile = await profileFor(uid);
+  const roomType = streamer ? 'streamer' : 'admin';
+  const streamerNickname = String(streamer && streamer.nickname || profile.nickname || '관리자').trim().slice(0, 30);
+  const streamerSoopId = streamer ? roomId : profile.soopId;
+  const galleryStreamerId = await resolveGalleryStreamerId(streamerSoopId, streamerNickname);
+  const createdAt = now();
+  const candidate = {
+    roomId,
+    ownerUid: uid,
+    streamerId: streamer ? roomId : `admin:${uid}`,
+    roomType,
+    galleryStreamerId: galleryStreamerId || null,
+    streamerNickname,
+    streamerSoopId,
+    streamerAvatarUrl: profile.avatarUrl || '',
+    visibility: 'public',
+    locked: false,
+    memberCount: 0,
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  const metaRef = roomRef(roomId).child('meta');
+  const result = await metaRef.transaction((current) => current ? undefined : candidate, undefined, false);
+  const meta = result.snapshot.val() || {};
+  if (meta.ownerUid !== uid) throw new HttpsError('already-exists', '이 스트리머 아이디의 채팅방이 이미 존재합니다.');
+
+  let finalMeta = meta;
+  if (result.committed) {
+    await db().ref(`${ROOT}/publicRooms/${roomId}`).set(publicRoom(finalMeta));
+    await writeAudit(uid, 'room.create', roomId);
+  } else {
+    finalMeta = await syncOwnerRoomAvatar(roomId, uid, profile.avatarUrl, finalMeta);
+    finalMeta = await ensureGalleryLink(roomId, finalMeta);
+    const listing = await db().ref(`${ROOT}/publicRooms/${roomId}`).get();
+    if (!listing.exists()) await listing.ref.set(publicRoom(finalMeta));
   }
-  const meta = await syncOwnerRoomAvatar(roomId, p.uid, await streamerAvatar(p.uid), current.val());
-  return { room: publicRoom(meta, true), created: false };
+
+  return { room: publicRoom(finalMeta, true), created: result.committed };
+}
+
+// streamerVerifications is the shared verification ledger written by the
+// integrated admin center's approval flow (and sibling verification flows).
+// Creating the room here keeps approval server-side and idempotent; it does not
+// add members or approve any fan applications.
+const messengerAutoCreateVerifiedStreamerRoom = onValueWritten('/streamerVerifications/{recordId}', { retry: true }, async (event) => {
+  const before = event.data.before.val() || null;
+  const after = event.data.after.val() || null;
+  if (!after || !after.uid) return null;
+  if (before && before.uid === after.uid && before.nickname === after.nickname && before.soopId === after.soopId) return null;
+
+  const uid = String(after.uid);
+  const recordRef = db().ref(`streamerVerifications/${event.params.recordId}`);
+  const currentRecord = (await recordRef.get()).val() || {};
+  if (String(currentRecord.uid || '') !== uid) return null;
+  const verified = await getVerifiedStreamer(uid);
+  const roomId = String(verified && verified.soopId || '').trim().toLowerCase();
+  if (!verified || !/^[a-z0-9]{2,30}$/.test(roomId) || roomId !== String(currentRecord.soopId || '').trim().toLowerCase()) return null;
+
+  try {
+    const result = await ensureOwnedRoom(uid, roomId, verified);
+    logger.info('자동 인증 채팅방 확인 완료', { uid, roomId, created: result.created });
+  } catch (error) {
+    if (error && error.code === 'already-exists') {
+      logger.warn('기존 소유 채팅방이 있어 자동 생성하지 않았습니다.', { uid, roomId });
+      return null;
+    }
+    logger.error('인증 스트리머 채팅방 자동 생성 실패', { uid, roomId, error: error && error.message || String(error) });
+    throw error;
+  }
+  return null;
 });
 
 const messengerUpdateRoom = onCall(async (request) => {
@@ -930,7 +994,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 });
 
 module.exports = {
-  messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
+  messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,

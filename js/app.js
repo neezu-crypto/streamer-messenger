@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -233,11 +233,37 @@ async function loadRooms() {
     state.rooms = Object.values(data).filter((room) => room && room.roomId); sortRooms();
     renderRooms();
     subscribeApplicationResults();
+    await ensureVerifiedStreamerRoom();
     await openLinkedStreamerRoom();
   } catch (error) {
     console.error('채팅방 목록을 불러오지 못했습니다.', error);
     $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>';
   }
+}
+
+async function ensureVerifiedStreamerRoom() {
+  const session = state.session;
+  if (!session || !session.isVerifiedStreamer || session.ownRoom || !session.uid) return;
+  if (state.autoRoomEnsureUid === session.uid && state.autoRoomEnsurePromise) return state.autoRoomEnsurePromise;
+
+  const uid = session.uid;
+  state.autoRoomEnsureUid = uid;
+  state.autoRoomEnsurePromise = (async () => {
+    try {
+      const result = await call('messengerEnsureRoom');
+      if (!state.session || state.session.uid !== uid) return;
+      state.session.ownRoom = result.room;
+      subscribeOwnerApplications(result.room);
+      syncHeader();
+      upsertRoom(result.room);
+    } catch (error) {
+      console.warn('인증 스트리머 채팅방 자동 확인을 완료하지 못했습니다.', error);
+      if (state.autoRoomEnsureUid === uid) state.autoRoomEnsureUid = '';
+    } finally {
+      if (state.autoRoomEnsureUid === uid) state.autoRoomEnsurePromise = null;
+    }
+  })();
+  return state.autoRoomEnsurePromise;
 }
 
 async function openLinkedStreamerRoom() {
@@ -1445,6 +1471,7 @@ function handleSession(event) {
   const nextUid = state.session && state.session.uid;
   if (previousUid !== nextUid) {
     subscribeApplicationResults(); clearOwnerApplicationSubscription();
+    state.autoRoomEnsureUid = ''; state.autoRoomEnsurePromise = null;
   }
   if (state.session && state.session.ownRoom) subscribeOwnerApplications(state.session.ownRoom);
   syncHeader();
@@ -1457,6 +1484,9 @@ function handleSession(event) {
     const status = $('#verification-status');
     if (status) { status.hidden = false; status.textContent = '✅ 관리자가 승인했어요. 인증 권한이 새로고침 없이 적용됐습니다.'; }
     showToast('스트리머 인증이 승인됐어요.');
+  }
+  if (state.session && state.session.isVerifiedStreamer && !state.session.ownRoom) {
+    ensureVerifiedStreamerRoom();
   }
   if (state.session && state.session.trusted) {
     $('#profile-button').title = '공개 프로필 설정';
