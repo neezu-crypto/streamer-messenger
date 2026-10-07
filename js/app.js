@@ -111,7 +111,7 @@ function renderRooms() {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'room-card';
     const top = document.createElement('div'); top.className = 'room-card-top';
     const avatar = document.createElement('div'); avatar.className = 'room-avatar';
-    renderStreamerAvatar(avatar, room.streamerAvatarUrl, room.streamerNickname);
+    renderStreamerAvatar(avatar, room.streamerAvatarUrl || avatarUrl(room.streamerSoopId), room.streamerNickname);
     const identity = document.createElement('div'); identity.className = 'room-identity';
     const name = document.createElement('strong'); name.textContent = room.streamerNickname || '스트리머';
     const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : (room.roomType === 'admin' ? '관리자 운영' : '스트리머 인증 완료');
