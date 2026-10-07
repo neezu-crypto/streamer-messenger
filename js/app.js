@@ -1378,11 +1378,14 @@ async function handleStreamerVerification(mode) {
       status.textContent = '기존 인증 계정 전환이 승인됐어요. 원래 계정에서 다시 로그인해주세요.';
       return;
     }
-    note.hidden = !!result.isSwitch;
+    const canSendNote = result.noteEligible === true || (!result.isSwitch && result.noteEligible !== false);
+    note.hidden = !canSendNote;
     status.textContent = result.isSwitch
-      ? '계정 전환 신청은 관리자 수동 확인이 필요합니다.'
+      ? (canSendNote
+        ? '기존 인증 스트리머의 SOOP 아이디로 쪽지 코드를 보내면 확인 후 기존 계정으로 자동 전환됩니다.'
+        : '계정 전환 신청은 관리자 수동 확인이 필요합니다.')
       : 'SOOP 쪽지의 발신자 아이디와 코드를 대조해 자동 승인합니다.';
-    if (result.isSwitch) return;
+    if (!canSendNote) return;
     const code = Number(result.verificationCodeExpiresAt) > Date.now()
       ? result.verificationCode || (mode === 'check' ? previousCode : '') : '';
     codeButton.textContent = code || '코드 없음';
