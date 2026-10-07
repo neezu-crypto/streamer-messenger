@@ -234,6 +234,12 @@ async function loadRooms() {
     renderRooms();
     subscribeApplicationResults();
     await ensureVerifiedStreamerRoom();
+    if (state.session && state.session.isAdmin) {
+      await call('messengerAdminBackfillVerifiedRooms');
+      const refreshed = await get(ref(db, 'streamerMessenger/publicRooms'));
+      state.rooms = Object.values(refreshed.val() || {}).filter((room) => room && room.roomId);
+      sortRooms(); renderRooms(); subscribeApplicationResults();
+    }
     await openLinkedStreamerRoom();
   } catch (error) {
     console.error('채팅방 목록을 불러오지 못했습니다.', error);

@@ -405,6 +405,53 @@ const messengerAutoCreateVerifiedStreamerRoom = onValueWritten('/streamerVerific
   return null;
 });
 
+const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
+  const admin = await requireAdmin(request);
+  const statusRef = db().ref(`${ROOT}/admin/verifiedRoomBackfill`);
+  const lock = await statusRef.transaction((current) => {
+    const value = current || {};
+    if (Number(value.version) >= 1 || (value.status === 'running' && now() - Number(value.startedAt || 0) < 10 * 60 * 1000)) return;
+    return { status: 'running', startedAt: now(), startedBy: admin.uid };
+  }, undefined, false);
+  if (!lock.committed) {
+    const current = lock.snapshot.val() || {};
+    return { complete: Number(current.version) >= 1, inProgress: current.status === 'running', created: 0, existing: 0, skipped: 0 };
+  }
+
+  try {
+    const records = await db().ref('streamerVerifications').get();
+    const uids = new Set();
+    records.forEach((child) => {
+      const value = child.val() || {};
+      if (typeof value.uid === 'string' && value.uid) uids.add(value.uid);
+    });
+
+    const summary = { created: 0, existing: 0, skipped: 0 };
+    const accounts = Array.from(uids);
+    for (let offset = 0; offset < accounts.length; offset += 4) {
+      await Promise.all(accounts.slice(offset, offset + 4).map(async (uid) => {
+        const streamer = await getVerifiedStreamer(uid);
+        const roomId = String(streamer && streamer.soopId || '').trim().toLowerCase();
+        if (!streamer || !/^[a-z0-9]{2,30}$/.test(roomId)) { summary.skipped += 1; return; }
+        try {
+          const result = await ensureOwnedRoom(uid, roomId, streamer);
+          if (result.created) summary.created += 1;
+          else summary.existing += 1;
+        } catch (error) {
+          if (error && error.code === 'already-exists') { summary.skipped += 1; return; }
+          throw error;
+        }
+      }));
+    }
+
+    await statusRef.set({ version: 1, status: 'complete', startedAt: Number(lock.snapshot.val().startedAt) || now(), completedAt: now(), completedBy: admin.uid, ...summary });
+    return { complete: true, ...summary };
+  } catch (error) {
+    await statusRef.set({ version: 0, status: 'failed', failedAt: now(), failedBy: admin.uid, errorCode: String(error && error.code || 'unknown').slice(0, 80) });
+    throw error;
+  }
+});
+
 const messengerUpdateRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, visibility, password, regeneratePassword, locked, memberPolicy } = request.data || {};
@@ -994,7 +1041,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 });
 
 module.exports = {
-  messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
+  messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,

@@ -7,6 +7,7 @@ module.exports = {
   messengerGetSession: messenger.messengerGetSession,
   messengerEnsureRoom: messenger.messengerEnsureRoom,
   messengerAutoCreateVerifiedStreamerRoom: messenger.messengerAutoCreateVerifiedStreamerRoom,
+  messengerAdminBackfillVerifiedRooms: messenger.messengerAdminBackfillVerifiedRooms,
   messengerGetRoomState: messenger.messengerGetRoomState,
   messengerUpdateRoom: messenger.messengerUpdateRoom,
   messengerDiscardRoom: messenger.messengerDiscardRoom,
