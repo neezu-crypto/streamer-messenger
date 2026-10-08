@@ -1199,11 +1199,15 @@ function renderMessage(message) {
   stack.appendChild(bubble);
   const meta = document.createElement('div'); meta.className = 'message-meta';
   const time = document.createElement('span'); time.textContent = new Date(message.createdAt || Date.now()).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); meta.appendChild(time);
+  if (state.isOwner && message.senderRole === 'streamer' && message.recipientUid) {
+    const recipient = state.fans.find((fan) => fan.uid === message.recipientUid);
+    const recipientName = message.recipientName || recipient && recipient.profile && recipient.profile.nickname || (message.recipientUid === state.session.uid && state.session.profile && state.session.profile.nickname) || '팬';
+    const label = document.createElement('span'); label.className = 'message-kind'; label.textContent = `${recipientName}에게 보냄`; meta.appendChild(label);
+  }
   if (state.isOwner && message.senderRole === 'fan') {
     const reply = document.createElement('button'); reply.className = 'reply-action'; reply.type = 'button'; reply.textContent = '답변';
     reply.addEventListener('click', () => setReply(message)); meta.appendChild(reply);
   }
-  if (state.isOwner && message.scope === 'direct') { const label = document.createElement('span'); label.className = 'message-kind'; label.textContent = '다이렉트'; meta.appendChild(label); }
   if (message.pending) { const pending = document.createElement('span'); pending.className = 'message-delivery-status'; pending.textContent = '전송 중'; meta.appendChild(pending); }
   stack.appendChild(meta);
   row.append(avatar, stack);
@@ -1334,6 +1338,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
   const uid = state.session.uid;
   const isOwner = state.isOwner;
   const reply = state.currentReply;
+  const recipientFan = recipientUid ? state.fans.find((fan) => fan.uid === recipientUid) : null;
   const messageId = api().push(api().ref(api().db, `streamerMessenger/chat/${room.roomId}/streamerTimeline`)).key;
   const senderProfile = isOwner
     ? { nickname: room.streamerNickname || '스트리머', avatarUrl: room.streamerAvatarUrl || '' }
@@ -1342,6 +1347,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
     id: messageId, roomId: room.roomId, senderUid: uid,
     senderRole: isOwner ? 'streamer' : 'fan', senderName: senderProfile.nickname || (isOwner ? '스트리머' : '팬'),
     senderAvatarUrl: senderProfile.avatarUrl || '', createdAt: Date.now(), recipientUid: recipientUid || null,
+    ...(recipientUid && recipientFan && recipientFan.profile && recipientFan.profile.nickname ? { recipientName: recipientFan.profile.nickname } : {}),
     kind, ...(kind === 'image' ? { galleryImageId: imageId } : kind === 'roomself' ? { roomselfImageId: imageId } : { text }),
     scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
     ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),

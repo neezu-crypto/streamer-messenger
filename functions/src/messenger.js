@@ -967,9 +967,11 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const isOwner = result.isOwner;
   const kind = String(data.kind || 'text');
   const recipientUid = isOwner && data.recipientUid ? String(data.recipientUid) : '';
+  let recipientName = '';
   if (isOwner && recipientUid) {
     const recipient = await roomRef(roomId).child(`members/${recipientUid}`).get();
     if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
+    recipientName = String(recipient.val().profile && recipient.val().profile.nickname || '팬').slice(0, 30);
   }
   const text = ['image', 'roomself'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
   if (!['text', 'image', 'roomself'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
@@ -982,7 +984,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   if (requestedMessageId && (await db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get()).exists()) {
     throw new HttpsError('already-exists', '메시지가 이미 전송되었습니다. 대화 내용을 새로고침해 주세요.');
   }
-  const common = { id: messageId, roomId, senderUid: p.uid, senderRole: isOwner ? 'streamer' : 'fan', createdAt, recipientUid: recipientUid || null };
+  const common = { id: messageId, roomId, senderUid: p.uid, senderRole: isOwner ? 'streamer' : 'fan', createdAt, recipientUid: recipientUid || null, ...(recipientUid ? { recipientName } : {}) };
   let message;
   if (kind === 'image') {
     const image = await galleryImageForChat(roomId, String(data.galleryImageId || ''));
