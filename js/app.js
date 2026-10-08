@@ -352,6 +352,9 @@ async function openChat(room, isOwner) {
   subscribeTimeline();
   subscribeRoomMarket();
   state.activeView = 'chat';
+  // 모바일은 긴 방 목록의 스크롤 위치를 채팅 화면에 그대로 가져올 수 있어
+  // 채팅 상단의 공유 종목판이 화면 밖에 남지 않도록 진입 시 페이지를 올린다.
+  if (window.matchMedia('(max-width: 680px)').matches) window.scrollTo(0, 0);
 }
 
 function renderRoomState(room) {
