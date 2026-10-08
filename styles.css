@@ -117,7 +117,9 @@
 .my-rooms-dialog{width:min(480px,calc(100% - 24px));max-height:min(84dvh,680px)}
 .my-rooms-dialog .dialog-card{max-height:min(84dvh,680px);overflow:auto;padding:28px 22px 20px}
 .my-rooms-list{display:grid;gap:8px;max-height:min(58dvh,480px);overflow:auto;padding:2px}
+.my-room-entry{display:flex;align-items:stretch;gap:6px;min-width:0}
 .my-room-item{display:flex;width:100%;align-items:center;gap:11px;padding:11px;border:1px solid rgba(126,148,185,.18);border-radius:15px;background:rgba(255,255,255,.78);color:var(--ink);text-align:left;transition:border-color .15s,background .15s,transform .15s}
+.my-room-entry .my-room-item{min-width:0;flex:1}
 .my-room-item:hover,.my-room-item:focus-visible{border-color:#a9baff;background:#fff;transform:translateY(-1px);outline:none}
 .my-room-avatar{display:grid;width:42px;height:42px;flex:0 0 auto;place-items:center;overflow:hidden;border-radius:14px;background:linear-gradient(145deg,#e5edff,#dff7f0);color:#6683e9;font-size:14px;font-weight:800}
 .my-room-avatar img{width:100%;height:100%;object-fit:cover}
@@ -127,6 +129,8 @@
 .my-room-details small{color:#8b98af;font-size:10px}
 .my-room-status{flex:0 0 auto;padding:6px 8px;border-radius:999px;background:#edf3ff;color:#647ee2;font-size:9px;font-weight:700}
 .my-room-status.private{background:#fff5e7;color:#a77b32}
+.my-room-fanpage-link{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;padding:0 10px;border:1px solid rgba(104,132,232,.22);border-radius:13px;background:rgba(239,243,255,.82);color:#5874d8;font-size:10px;font-weight:700;text-decoration:none;white-space:nowrap;transition:border-color .15s,background .15s}
+.my-room-fanpage-link:hover,.my-room-fanpage-link:focus-visible{border-color:#9eafff;background:#e9eeff;outline:none}
 .my-rooms-state{display:grid;min-height:112px;align-content:center;justify-items:center;gap:8px;padding:18px;border:1px dashed rgba(133,151,183,.35);border-radius:15px;color:#8290a8;font-size:11px;text-align:center}
 .my-rooms-state strong{color:#53617d;font-size:13px}
 .my-rooms-state .button{margin-top:4px}
