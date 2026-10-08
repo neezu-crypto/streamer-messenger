@@ -407,7 +407,8 @@ async function openChat(room, isOwner) {
   $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : (room.roomType === 'admin' ? '나와 관리자만 보이는 대화' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`);
   const fanpageLink = $('#chat-fanpage-link');
   const streamerSoopId = String(room.streamerSoopId || '').trim();
-  const hasFanpage = room.roomType === 'streamer' && /^[a-z0-9_]{2,20}$/i.test(streamerSoopId);
+  const isOwnRoom = state.isOwner === true;
+  const hasFanpage = (room.roomType === 'streamer' || isOwnRoom) && /^[a-z0-9]{2,20}$/i.test(streamerSoopId);
   fanpageLink.hidden = !hasFanpage;
   if (hasFanpage) {
     fanpageLink.href = `https://neezu-crypto.github.io/streamer-fanpage/#/p/${encodeURIComponent(streamerSoopId.toLowerCase())}`;
