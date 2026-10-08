@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -445,6 +445,8 @@ function subscribeRoomMarket() {
   state.roomMarketStocks = {};
   state.roomMarketFeed = [];
   state.roomMarketQuotes = {};
+  state.roomMarketPriceHistory = {};
+  state.roomMarketSparklineSeeded = new Set();
   $('#room-market-stock-list').innerHTML = '<p class="room-market-empty">공유 종목을 불러오는 중…</p>';
   $('#room-market-feed').innerHTML = '<p class="room-market-empty">거래 내역을 불러오는 중…</p>';
   const { db, ref, onValue, query, orderByKey, limitToLast } = api();
@@ -478,12 +480,15 @@ function syncRoomMarketQuoteListeners() {
     unsubscribe();
     state.roomMarketQuoteUnsubscribers.delete(stockId);
     delete state.roomMarketQuotes[stockId];
+    delete state.roomMarketPriceHistory[stockId];
+    state.roomMarketSparklineSeeded.delete(stockId);
   }
   for (const stockId of stockIds) {
     if (state.roomMarketQuoteUnsubscribers.has(stockId)) continue;
     const unsubscribe = onValue(ref(db, `stocksPublic/${stockId}`), (snapshot) => {
       if (!state.room || state.room.roomId !== roomId) return;
       state.roomMarketQuotes[stockId] = snapshot.val() || null;
+      recordRoomMarketPriceTick(stockId, state.roomMarketQuotes[stockId]?.price);
       renderRoomMarketStocks();
       if (state.roomMarketSelectedStockId === stockId && $('#room-market-trade-dialog').open) {
         renderRoomMarketQuote(stockId);
@@ -492,7 +497,69 @@ function syncRoomMarketQuoteListeners() {
     }, (error) => console.warn('채팅방 종목 현재가를 구독하지 못했습니다.', error));
     state.roomMarketQuoteUnsubscribers.set(stockId, unsubscribe);
     state.unsubscribers.push(unsubscribe);
+    seedRoomMarketSparkline(stockId);
   }
+}
+
+const ROOM_MARKET_PRICE_HISTORY_MAX = 20;
+
+function recordRoomMarketPriceTick(stockId, rawPrice) {
+  const price = Number(rawPrice);
+  if (!Number.isFinite(price) || price <= 0) return;
+  const history = state.roomMarketPriceHistory[stockId] || (state.roomMarketPriceHistory[stockId] = []);
+  if (history[history.length - 1] !== price) {
+    history.push(price);
+    if (history.length > ROOM_MARKET_PRICE_HISTORY_MAX) history.shift();
+  }
+}
+
+async function seedRoomMarketSparkline(stockId) {
+  if (state.roomMarketSparklineSeeded.has(stockId)) return;
+  state.roomMarketSparklineSeeded.add(stockId);
+  const roomId = state.room?.roomId;
+  const { db, ref, get } = api();
+  try {
+    const snapshot = await get(ref(db, `sparklines/${stockId}`));
+    if (!state.room || state.room.roomId !== roomId || !state.roomMarketStocks[stockId]) return;
+    const savedHistory = (Array.isArray(snapshot.val()) ? snapshot.val() : [])
+      .map(Number).filter((price) => Number.isFinite(price) && price > 0)
+      .slice(-ROOM_MARKET_PRICE_HISTORY_MAX);
+    const liveHistory = state.roomMarketPriceHistory[stockId] || [];
+    if (!savedHistory.length || liveHistory.length >= 2) return;
+    const history = savedHistory.slice();
+    const latestLivePrice = Number(state.roomMarketQuotes[stockId]?.price || liveHistory[liveHistory.length - 1]);
+    if (Number.isFinite(latestLivePrice) && latestLivePrice > 0 && history[history.length - 1] !== latestLivePrice) {
+      history.push(latestLivePrice);
+    }
+    state.roomMarketPriceHistory[stockId] = history.slice(-ROOM_MARKET_PRICE_HISTORY_MAX);
+    renderRoomMarketStocks();
+  } catch (error) {
+    console.warn('채팅방 종목 가격 이력을 불러오지 못했습니다.', error);
+  }
+}
+
+function getRoomMarketChangePercent(stockId) {
+  const history = state.roomMarketPriceHistory[stockId] || [];
+  if (history.length < 2 || !history[0]) return '0.00';
+  return (((history[history.length - 1] - history[0]) / history[0]) * 100).toFixed(2);
+}
+
+function createRoomMarketSparkline(stockId, isUp) {
+  const history = state.roomMarketPriceHistory[stockId] || [];
+  const quotePrice = Number(state.roomMarketQuotes[stockId]?.price);
+  const points = history.length >= 2 ? history : (Number.isFinite(quotePrice) && quotePrice > 0 ? [quotePrice, quotePrice] : []);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', `room-market-sparkline${isUp ? ' up' : ' down'}`);
+  svg.setAttribute('viewBox', '0 0 80 28');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `${isUp ? '상승' : '하락'} 가격 흐름`);
+  if (points.length < 2) return svg;
+  const min = Math.min(...points);
+  const range = Math.max(...points) - min || 1;
+  const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  polyline.setAttribute('points', points.map((price, index) => `${(index / (points.length - 1)) * 80},${26 - ((price - min) / range) * 24}`).join(' '));
+  svg.appendChild(polyline);
+  return svg;
 }
 
 function renderRoomMarketStocks() {
@@ -511,7 +578,12 @@ function renderRoomMarketStocks() {
     const open = document.createElement('button'); open.type = 'button'; open.className = 'room-market-stock-card';
     const title = document.createElement('strong'); title.textContent = name;
     const price = document.createElement('small'); price.textContent = Number.isFinite(Number(quote.price)) ? `${Number(quote.price).toLocaleString('ko-KR')}원` : '현재가 불러오는 중';
-    open.append(title, price); open.addEventListener('click', () => openRoomMarketTrade(stockId));
+    const changeValue = Number(getRoomMarketChangePercent(stockId));
+    const isUp = changeValue >= 0;
+    const change = document.createElement('span'); change.className = `room-market-stock-change ${isUp ? 'up' : 'down'}`;
+    change.textContent = `${isUp ? '+' : ''}${changeValue.toFixed(2)}%`;
+    const metrics = document.createElement('div'); metrics.className = 'room-market-stock-metrics'; metrics.append(price, change);
+    open.append(title, metrics, createRoomMarketSparkline(stockId, isUp)); open.addEventListener('click', () => openRoomMarketTrade(stockId));
     wrap.appendChild(open);
     if (state.isOwner) {
       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'room-market-remove'; remove.textContent = '×'; remove.title = `${name} 공유 종목 제거`; remove.setAttribute('aria-label', `${name} 공유 종목 제거`);
