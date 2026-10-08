@@ -534,6 +534,7 @@ function setRoomMarketCollapsed(collapsed) {
 function subscribeRoomMarket() {
   const panel = $('#room-market-panel');
   const roomId = state.room && state.room.roomId;
+  setRoomMarketCollapsed(true);
   panel.hidden = !roomId;
   if (panel.hidden) return;
   state.roomMarketStocks = {};
