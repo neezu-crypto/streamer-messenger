@@ -26,6 +26,8 @@ const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
 const ROOMSELF_MAX_BYTES = 15 * 1024 * 1024;
 const ROOMSELF_UPLOAD_WINDOW = 10 * 1000;
 const ROOMSELF_UPLOAD_FINALIZE_TTL = 15 * 60 * 1000;
+const ADMIN_REPORT_PAGE_SIZE = 40;
+const ADMIN_BAN_PAGE_SIZE = 30;
 const ROOMSELF_BUCKET = 'streamer-messenger-private';
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
@@ -101,23 +103,144 @@ async function ensureMessengerBanIndex() {
   const adminRef = db().ref(`${ROOT}/admin`);
   const versionSnap = await adminRef.child('banIndexVersion').get();
   if (Number(versionSnap.val()) >= 1) return;
-
-  // One-time backfill from the shared ecosystem ban tree. Subsequent dashboard
-  // reads use only this service-scoped index and counter.
-  const bansSnap = await db().ref('bannedAccounts').get();
-  const updates = {};
-  let count = 0;
-  bansSnap.forEach((child) => {
-    const ban = child.child(`games/${SERVICE_ID}`).val();
-    if (!ban) return;
-    updates[`${ROOT}/admin/banIndex/${child.key}`] = ban;
-    count += 1;
-  });
-  const entries = Object.entries(updates);
-  for (let offset = 0; offset < entries.length; offset += 400) {
-    await db().ref().update(Object.fromEntries(entries.slice(offset, offset + 400)));
+  const stateRef = adminRef.child('banIndexBackfill');
+  const lock = await stateRef.transaction((value) => {
+    const state = value || {};
+    if (Number(state.version) >= 1 || (state.status === 'running' && now() - Number(state.startedAt || 0) < 10 * 60 * 1000)) return;
+    return { status: 'running', startedAt: now() };
+  }, undefined, false);
+  if (!lock.committed) {
+    const deadline = now() + 10000;
+    while (now() < deadline) {
+      const state = (await stateRef.get()).val() || {};
+      if (Number(state.version) >= 1) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new HttpsError('unavailable', '정지 계정 목록을 준비하고 있습니다. 잠시 후 다시 열어 주세요.');
   }
-  await adminRef.update({ activeBanCount: count, banIndexVersion: 1 });
+
+  try {
+    // One-time, key-paged backfill from the shared ban tree. Dashboard reads
+    // after this use only the service-scoped index and counter.
+    await adminRef.child('banIndex').set(null);
+    const source = db().ref('bannedAccounts').orderByKey();
+    let cursor = null;
+    let count = 0;
+    while (true) {
+      let query = source;
+      if (cursor) query = query.startAfter(cursor);
+      const page = await query.limitToFirst(400).get();
+      if (!page.exists()) break;
+      const updates = {};
+      let lastKey = null;
+      page.forEach((child) => {
+        lastKey = child.key;
+        const ban = child.child(`games/${SERVICE_ID}`).val();
+        if (ban) {
+          updates[`${ROOT}/admin/banIndex/${child.key}`] = ban;
+          count += 1;
+        }
+      });
+      if (Object.keys(updates).length) await db().ref().update(updates);
+      if (page.numChildren() < 400 || !lastKey) break;
+      cursor = lastKey;
+    }
+    await adminRef.update({ activeBanCount: count, banIndexVersion: 1 });
+    await stateRef.set({ version: 1, status: 'complete', startedAt: Number(lock.snapshot.val().startedAt) || now(), completedAt: now(), indexedBans: count });
+  } catch (error) {
+    await stateRef.set({ version: 0, status: 'failed', failedAt: now(), errorCode: String(error && error.code || 'unknown').slice(0, 80) });
+    throw error;
+  }
+}
+
+async function ensureReportStatuses() {
+  const stateRef = db().ref(`${ROOT}/admin/reportStatusBackfill`);
+  const current = (await stateRef.get()).val() || {};
+  if (Number(current.version) >= 1) return;
+
+  const lock = await stateRef.transaction((value) => {
+    const state = value || {};
+    if (Number(state.version) >= 1 || (state.status === 'running' && now() - Number(state.startedAt || 0) < 10 * 60 * 1000)) return;
+    return { status: 'running', startedAt: now() };
+  }, undefined, false);
+  if (!lock.committed) {
+    const deadline = now() + 10000;
+    while (now() < deadline) {
+      const state = (await stateRef.get()).val() || {};
+      if (Number(state.version) >= 1) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new HttpsError('unavailable', '신고 목록을 준비하고 있습니다. 잠시 후 다시 열어 주세요.');
+  }
+
+  try {
+    const source = db().ref(`${ROOT}/reports`).orderByKey();
+    let cursor = null;
+    let migratedReports = 0;
+    while (true) {
+      let query = source;
+      if (cursor) query = query.startAfter(cursor);
+      const page = await query.limitToFirst(400).get();
+      if (!page.exists()) break;
+      const updates = {};
+      let lastKey = null;
+      page.forEach((child) => {
+        lastKey = child.key;
+        const report = child.val() || {};
+        if (!report.status) {
+          updates[`${ROOT}/reports/${child.key}/status`] = 'pending';
+          migratedReports += 1;
+        }
+      });
+      if (Object.keys(updates).length) await db().ref().update(updates);
+      if (page.numChildren() < 400 || !lastKey) break;
+      cursor = lastKey;
+    }
+    await stateRef.set({ version: 1, status: 'complete', startedAt: Number(lock.snapshot.val().startedAt) || now(), completedAt: now(), migratedReports });
+  } catch (error) {
+    await stateRef.set({ version: 0, status: 'failed', failedAt: now(), errorCode: String(error && error.code || 'unknown').slice(0, 80) });
+    throw error;
+  }
+}
+
+async function getAdminReportPage(status, cursor, pageSize = ADMIN_REPORT_PAGE_SIZE) {
+  const reportsRef = db().ref(`${ROOT}/reports`);
+  let query;
+  if (status === 'all') {
+    query = reportsRef.orderByChild('createdAt');
+    if (cursor) query = query.endBefore(Number(cursor.createdAt), String(cursor.id));
+  } else {
+    query = reportsRef.orderByChild('status').startAt(status);
+    query = cursor ? query.endBefore(status, String(cursor.id)) : query.endAt(status);
+  }
+  const snap = await query.limitToLast(pageSize + 1).get();
+  const rows = [];
+  snap.forEach((child) => rows.push({ ...(child.val() || {}), id: child.key }));
+  const hasMore = rows.length > pageSize;
+  if (hasMore) rows.shift();
+  rows.reverse();
+  const oldest = rows[rows.length - 1];
+  return {
+    reports: rows,
+    hasMore,
+    nextCursor: hasMore && oldest ? { id: oldest.id, createdAt: Number(oldest.createdAt) || 0 } : null,
+  };
+}
+
+async function getAdminBanPage(cursor, pageSize = ADMIN_BAN_PAGE_SIZE) {
+  const bansRef = db().ref(`${ROOT}/admin/banIndex`).orderByKey();
+  const query = cursor ? bansRef.endBefore(String(cursor)) : bansRef;
+  const snap = await query.limitToLast(pageSize + 1).get();
+  const rows = [];
+  snap.forEach((child) => rows.push({ ...(child.val() || {}), uid: child.key }));
+  const hasMore = rows.length > pageSize;
+  if (hasMore) rows.shift();
+  rows.reverse();
+  return {
+    bans: rows,
+    hasMore,
+    nextCursor: hasMore && rows.length ? rows[rows.length - 1].uid : null,
+  };
 }
 
 async function passwordDigest(password, salt) {
@@ -969,38 +1092,64 @@ const messengerSubmitReport = onCall(async (request) => {
 
 const messengerAdminGetDashboard = onCall(async (request) => {
   const p = await requireAdmin(request);
+  const data = request.data || {};
   await ensureMessengerBanIndex();
-  const [reportsSnap, auditSnap, banCountSnap] = await Promise.all([
-    db().ref(`${ROOT}/reports`).orderByChild('createdAt').limitToLast(100).get(),
-    db().ref(`${ROOT}/auditLog`).limitToLast(100).get(),
+  const requestedStatus = String(data.reportStatus || 'pending');
+  if (!['pending', 'reviewed', 'dismissed', 'all'].includes(requestedStatus)) throw new HttpsError('invalid-argument', '신고 상태 필터가 올바르지 않습니다.');
+  const reportCursor = data.reportCursor && typeof data.reportCursor === 'object' ? data.reportCursor : null;
+  const banCursor = typeof data.banCursor === 'string' ? data.banCursor : null;
+  if (reportCursor && (!/^[A-Za-z0-9_-]{8,100}$/.test(String(reportCursor.id || '')) || (requestedStatus === 'all' && !Number.isFinite(Number(reportCursor.createdAt))))) {
+    throw new HttpsError('invalid-argument', '신고 페이지 위치가 올바르지 않습니다.');
+  }
+  if (banCursor && !/^[A-Za-z0-9:_-]{1,128}$/.test(banCursor)) throw new HttpsError('invalid-argument', '정지 계정 페이지 위치가 올바르지 않습니다.');
+  const includeBans = data.includeBans === true;
+  const includeReports = data.includeReports !== false;
+  if (includeReports) await ensureReportStatuses();
+  const [reportPage, pendingSnap, auditSnap, banCountSnap, banPage] = await Promise.all([
+    includeReports ? getAdminReportPage(requestedStatus, reportCursor) : Promise.resolve({ reports: [], hasMore: false, nextCursor: null }),
+    includeReports ? db().ref(`${ROOT}/reports`).orderByChild('status').equalTo('pending').get() : Promise.resolve(null),
+    includeReports ? db().ref(`${ROOT}/auditLog`).limitToLast(100).get() : Promise.resolve(null),
     db().ref(`${ROOT}/admin/activeBanCount`).get(),
+    includeBans ? getAdminBanPage(banCursor) : Promise.resolve({ bans: [], hasMore: false, nextCursor: null }),
   ]);
-  const reports = [];
-  reportsSnap.forEach((child) => reports.push({ ...(child.val() || {}), id: child.key }));
-  reports.sort((a, b) => b.createdAt - a.createdAt);
   const auditLog = [];
-  auditSnap.forEach((child) => auditLog.push({ ...(child.val() || {}), id: child.key }));
+  if (auditSnap) auditSnap.forEach((child) => auditLog.push({ ...(child.val() || {}), id: child.key }));
   auditLog.sort((a, b) => b.at - a.at);
   return {
-    reports,
+    reports: reportPage.reports,
+    reportPage: { hasMore: reportPage.hasMore, nextCursor: reportPage.nextCursor, status: requestedStatus },
+    bans: banPage.bans,
+    banPage: { hasMore: banPage.hasMore, nextCursor: banPage.nextCursor },
     auditLog,
     summary: {
-      pendingReports: reports.filter((report) => (report.status || 'pending') === 'pending').length,
+      pendingReports: pendingSnap ? pendingSnap.numChildren() : null,
       activeBans: Number(banCountSnap.val()) || 0,
     },
   };
 });
 
 const messengerAdminGetBanStatus = onCall(async (request) => {
-  await requireAdmin(request);
+  const p = await requireAdmin(request);
   const uid = String((request.data || {}).uid || '').trim();
   if (!/^[A-Za-z0-9:_-]{1,128}$/.test(uid)) throw new HttpsError('invalid-argument', '계정 UID를 확인해 주세요.');
-  const snap = await db().ref(`bannedAccounts/${uid}/games/${SERVICE_ID}`).get();
-  return { uid, ban: snap.val() || null };
+  const [snap, accountSnap] = await Promise.all([
+    db().ref(`bannedAccounts/${uid}/games/${SERVICE_ID}`).get(),
+    db().ref(`bannedAccounts/${uid}`).get(),
+  ]);
+  const adminSnap = await db().ref(`adminCenter/adminUids/${uid}`).get();
+  const account = accountSnap.val() || {};
+  const globalBan = account.all === true ? {
+    reason: String(account.allReason || ''),
+    at: Number(account.allBannedAt) || 0,
+    by: String(account.allBannedBy || ''),
+    byName: String(account.allBannedByName || ''),
+  } : null;
+  await writeAudit(p.uid, 'account.status.view', uid);
+  return { uid, ban: snap.val() || null, globalBan, isAdmin: adminSnap.val() === true };
 });
 
 const messengerAdminGetReportDetail = onCall(async (request) => {
-  await requireAdmin(request);
+  const p = await requireAdmin(request);
   const reportId = String((request.data || {}).reportId || '');
   if (!/^[A-Za-z0-9_-]{8,100}$/.test(reportId)) throw new HttpsError('invalid-argument', '신고 번호가 올바르지 않습니다.');
   const [reportSnap, evidenceSnap] = await Promise.all([
@@ -1011,32 +1160,41 @@ const messengerAdminGetReportDetail = onCall(async (request) => {
   const retainUntil = Number(report.retainUntil);
   if (!report.id || !Number.isFinite(retainUntil) || retainUntil <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
   const evidence = Object.values(evidenceSnap.val() || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  await writeAudit(p.uid, 'report.view', reportId);
   return { report, evidence };
 });
 
 const messengerAdminGetReportRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey] }, async (request) => {
-  await requireAdmin(request);
+  const p = await requireAdmin(request);
   const { reportId, imageId } = request.data || {};
-  const report = (await db().ref(`${ROOT}/reports/${String(reportId || '')}`).get()).val() || {};
+  if (typeof reportId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(reportId) || typeof imageId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(imageId)) throw new HttpsError('invalid-argument', '신고 이미지 정보가 올바르지 않습니다.');
+  const report = (await db().ref(`${ROOT}/reports/${reportId}`).get()).val() || {};
   const retainUntil = Number(report.retainUntil);
   if (!report.id || !Number.isFinite(retainUntil) || retainUntil <= now()) throw new HttpsError('not-found', '신고 증거 보관 기간이 끝났습니다.');
-  if (!await db().ref(`${ROOT}/privateImageRefs/${String(imageId || '')}/${String(reportId || '')}`).get().then((s) => s.exists())) throw new HttpsError('permission-denied', '이 신고에 포함된 이미지가 아닙니다.');
-  const record = (await db().ref(`${ROOT}/privateImages/${String(imageId || '')}`).get()).val() || {};
+  if (!await db().ref(`${ROOT}/privateImageRefs/${imageId}/${reportId}`).get().then((s) => s.exists())) throw new HttpsError('permission-denied', '이 신고에 포함된 이미지가 아닙니다.');
+  const record = (await db().ref(`${ROOT}/privateImages/${imageId}`).get()).val() || {};
   if (record.status !== 'sent' || record.roomId !== report.roomId) throw new HttpsError('not-found', '신고 이미지를 찾을 수 없습니다.');
   const object = await roomselfS3().send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
   const bytes = await object.Body.transformToByteArray();
+  await writeAudit(p.uid, 'report.private-image.view', `${reportId} · ${imageId}`);
   return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64') };
 });
 
 const messengerAdminUpdateReport = onCall(async (request) => {
   const p = await requireAdmin(request);
-  const { reportId, status } = request.data || {};
-  if (typeof reportId !== 'string' || !['reviewed', 'dismissed'].includes(status)) throw new HttpsError('invalid-argument', '신고 처리 정보가 올바르지 않습니다.');
+  const { reportId, status, reviewNote } = request.data || {};
+  if (typeof reportId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(reportId) || !['pending', 'reviewed', 'dismissed'].includes(status)) throw new HttpsError('invalid-argument', '신고 처리 정보가 올바르지 않습니다.');
+  const cleanNote = safeText(reviewNote || '', 500, true);
   const ref = db().ref(`${ROOT}/reports/${reportId}`);
-  const snap = await ref.get();
-  if (!snap.exists()) throw new HttpsError('not-found', '신고를 찾을 수 없습니다.');
-  await ref.update({ status, reviewedAt: now(), reviewedBy: p.uid });
-  await writeAudit(p.uid, `report.${status}`, reportId);
+  let previousStatus = 'pending';
+  const result = await ref.transaction((current) => {
+    if (!current) return;
+    previousStatus = current.status || 'pending';
+    return { ...current, status, reviewedAt: now(), reviewedBy: p.uid, reviewNote: cleanNote };
+  });
+  if (!result.committed) throw new HttpsError('not-found', '신고를 찾을 수 없습니다.');
+  const action = status === 'pending' ? 'report.reopened' : `report.${status}`;
+  await writeAudit(p.uid, action, `${reportId} · ${previousStatus} → ${status} · ${cleanNote}`);
   return { status };
 });
 
@@ -1044,6 +1202,8 @@ const messengerAdminSetBan = onCall(async (request) => {
   const p = await requireAdmin(request);
   const { uid, banned, reason } = request.data || {};
   if (typeof uid !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(uid) || typeof banned !== 'boolean') throw new HttpsError('invalid-argument', '계정 정지 정보가 올바르지 않습니다.');
+  if (uid === p.uid) throw new HttpsError('failed-precondition', '현재 로그인한 관리자 계정은 이 화면에서 정지할 수 없습니다.');
+  if ((await db().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) throw new HttpsError('failed-precondition', '관리자 계정은 이 화면에서 정지할 수 없습니다.');
   const cleanReason = banned ? safeText(String(reason || ''), 200, true) : '';
   await ensureMessengerBanIndex();
   const path = `bannedAccounts/${uid}/games/${SERVICE_ID}`;

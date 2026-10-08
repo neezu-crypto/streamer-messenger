@@ -177,3 +177,35 @@
   .room-market-collapse-button{width:32px;height:34px;font-size:18px}
   #add-room-stock{padding:0 8px;font-size:9px}
 }
+
+.admin-list-toolbar,.admin-list-heading{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
+.admin-list-toolbar .field-label{margin:0}
+.admin-list-toolbar select{width:min(220px,48vw);margin-right:auto}
+.admin-list-heading{margin-bottom:10px}
+.admin-list-heading h3{margin:0 0 4px}
+.admin-list-heading p{margin:0;color:#7786a0;font-size:11px;line-height:1.5}
+.admin-report-card{grid-template-columns:minmax(0,1fr) auto}
+.admin-report-card>div:first-child{min-width:0;overflow-wrap:anywhere}
+.admin-report-note{padding:8px 10px;border-radius:10px;background:#f3f6ff;color:#5269af!important}
+.admin-report-card .report-actions{flex-wrap:wrap;justify-content:flex-end}
+.admin-load-more{margin-top:12px}
+.admin-ban-directory{margin-top:14px}
+.admin-ban-list{display:grid;gap:8px;margin-top:12px}
+.admin-ban-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.82)}
+.admin-ban-row>div{min-width:0;overflow-wrap:anywhere}
+.admin-ban-row strong{font-size:11px}
+.admin-ban-row p{margin:4px 0 0;color:#7786a0;font-size:10px;line-height:1.5}
+.report-detail-meta{display:grid;gap:5px;margin:14px 0;padding:13px;border:1px solid var(--line);border-radius:13px;background:#f7f9fd}
+.report-detail-meta p{margin:0;color:#65748f;font-size:11px;line-height:1.55;overflow-wrap:anywhere}
+.report-evidence-heading{margin:14px 0 8px;font-size:13px}
+.report-review-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:12px}
+.report-review-actions .button{margin-top:0}
+@media(max-width:640px){
+  .admin-report-card{grid-template-columns:1fr}
+  .admin-report-card .report-actions{justify-content:flex-start}
+  .admin-list-toolbar{flex-wrap:wrap;justify-content:flex-start}
+  .admin-ban-row{align-items:flex-start;flex-direction:column}
+  .admin-ban-row .button{width:100%}
+  .report-review-actions{justify-content:stretch}
+  .report-review-actions .button{flex:1 1 45%}
+}

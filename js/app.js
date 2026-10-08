@@ -4,6 +4,7 @@ const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -1607,47 +1608,82 @@ function switchAside(tab) {
 async function showAdmin() {
   if (!state.session || !state.session.isAdmin) return;
   leaveChat(); $('#directory-view').hidden = true; $('#admin-view').hidden = false;
-  const host = $('#admin-report-list'); host.textContent = '신고 목록을 불러옵니다.';
+  adminState.reportStatus = $('#admin-report-status').value || 'pending';
+  adminState.reports = []; adminState.reportCursor = null; adminState.reportHasMore = false;
+  adminState.bans = []; adminState.banCursor = null; adminState.banHasMore = false; adminState.bansLoaded = false;
+  $('#admin-report-list').textContent = '신고 목록을 불러옵니다.';
+  $('#admin-audit-list').textContent = '관리 기록을 불러옵니다.';
+  $('#admin-ban-status').textContent = 'UID를 확인하면 메신저 및 전체 서비스 정지 상태가 표시됩니다.';
+  $('#admin-ban-actions').hidden = true;
+  $('#admin-ban-uid').value = ''; $('#admin-ban-reason').value = '';
+  $('#admin-ban-list').textContent = '계정 탭을 열면 목록을 불러옵니다.';
+  switchAdminTab('reports');
+  await loadAdminReportPage(true);
+}
+
+async function loadAdminReportPage(reset = false) {
+  if (adminState.reportsLoading) return;
+  if (reset) {
+    adminState.reportStatus = $('#admin-report-status').value || 'pending';
+    adminState.reports = []; adminState.reportCursor = null; adminState.reportHasMore = false;
+    $('#admin-report-list').textContent = '신고 목록을 불러옵니다.';
+  }
+  adminState.reportsLoading = true;
+  $('#admin-report-refresh').disabled = true; $('#admin-report-load-more').disabled = true;
   try {
-    const result = await call('messengerAdminGetDashboard');
+    const result = await call('messengerAdminGetDashboard', {
+      reportStatus: adminState.reportStatus,
+      reportCursor: reset ? null : adminState.reportCursor,
+    });
     $('#admin-pending-count').textContent = String(result.summary && result.summary.pendingReports || 0);
     $('#admin-ban-count').textContent = String(result.summary && result.summary.activeBans || 0);
-    renderAdminReports(result.reports || []);
     renderAdminAudit(result.auditLog || []);
-    $('#admin-ban-status').textContent = 'UID를 확인하면 메신저 정지 상태가 표시됩니다.';
-    $('#admin-ban-actions').hidden = true;
-    $('#admin-ban-uid').value = '';
-    $('#admin-ban-reason').value = '';
-    switchAdminTab('reports');
-  } catch (error) { host.textContent = error.message || '관리 현황을 불러오지 못했습니다.'; }
+    adminState.reports.push(...(Array.isArray(result.reports) ? result.reports : []));
+    adminState.reportCursor = result.reportPage && result.reportPage.nextCursor || null;
+    adminState.reportHasMore = !!(result.reportPage && result.reportPage.hasMore);
+    renderAdminReports(adminState.reports);
+    $('#admin-report-load-more').hidden = !adminState.reportHasMore;
+  } catch (error) {
+    if (reset) $('#admin-report-list').textContent = error.message || '신고 목록을 불러오지 못했습니다.';
+    else showError(error);
+  } finally {
+    adminState.reportsLoading = false;
+    $('#admin-report-refresh').disabled = false; $('#admin-report-load-more').disabled = false;
+  }
 }
 
 function renderAdminReports(reports) {
   const host = $('#admin-report-list'); host.replaceChildren();
-  const pending = reports.filter((report) => (report.status || 'pending') === 'pending');
-  const ordered = [...pending, ...reports.filter((report) => (report.status || 'pending') !== 'pending')];
-  if (!ordered.length) { host.textContent = '접수된 신고가 없습니다.'; return; }
-  for (const report of ordered) {
-      const card = document.createElement('article'); card.className = 'admin-report-card';
-      const copy = document.createElement('div'); const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[report.status || 'pending'] || report.status; const title = document.createElement('strong'); title.textContent = `신고 · ${statusLabel}`; const reasonLabels = { harassment: '욕설·괴롭힘', spam: '도배·스팸·광고', privacy: '개인정보 노출', sexual: '성적 콘텐츠', impersonation: '사칭·기만', other: '기타' }; const reasonLabel = reasonLabels[report.reasonCategory] || report.reason || '사유 없음'; const meta = document.createElement('p'); meta.textContent = `${new Date(report.createdAt).toLocaleString('ko-KR')} · ${reasonLabel}${report.reasonDetail ? ` · ${report.reasonDetail}` : ''}`; const detail = document.createElement('p'); detail.textContent = `신고 대상 UID: ${report.targetUid || '확인 불가'} · 범위: ${new Date(report.rangeStart).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd).toLocaleString('ko-KR')}`; copy.append(title, meta, detail);
-      const actions = document.createElement('div'); actions.className = 'report-actions';
-      const evidenceButton = document.createElement('button'); evidenceButton.type = 'button'; evidenceButton.textContent = '대화 보기'; evidenceButton.addEventListener('click', async () => { try { await showReportEvidence(report.id); } catch (error) { showError(error); } }); actions.appendChild(evidenceButton);
-      if (report.status === 'pending' || !report.status) {
-        const restrictButton = document.createElement('button'); restrictButton.type = 'button'; restrictButton.textContent = '계정 제한'; restrictButton.addEventListener('click', () => { $('#admin-ban-uid').value = report.targetUid || ''; switchAdminTab('accounts'); if (report.targetUid) checkMessengerBan(); }); actions.appendChild(restrictButton);
-        for (const [status, label] of [['reviewed', '확인 완료'], ['dismissed', '기각']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; if (status === 'dismissed') button.className = 'danger'; button.addEventListener('click', async () => { try { await call('messengerAdminUpdateReport', { reportId: report.id, status }); await showAdmin(); } catch (error) { showError(error); } }); actions.appendChild(button); }
-      }
-      card.append(copy, actions); host.appendChild(card);
+  if (!reports.length) { host.textContent = adminState.reportStatus === 'pending' ? '대기 중인 신고가 없습니다.' : '이 상태의 신고가 없습니다.'; return; }
+  const reasonLabels = { harassment: '욕설·괴롭힘', spam: '도배·스팸·광고', privacy: '개인정보 노출', sexual: '성적 콘텐츠', impersonation: '사칭·기만', other: '기타' };
+  for (const report of reports) {
+    const card = document.createElement('article'); card.className = 'admin-report-card';
+    const copy = document.createElement('div');
+    const status = report.status || 'pending';
+    const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[status] || status;
+    const title = document.createElement('strong'); title.textContent = `신고 ${statusLabel} · ${new Date(report.createdAt || 0).toLocaleString('ko-KR')}`;
+    const reason = document.createElement('p'); reason.textContent = `${reasonLabels[report.reasonCategory] || report.reason || '사유 없음'}${report.reasonDetail ? ` · ${report.reasonDetail}` : ''}`;
+    const details = document.createElement('p'); details.textContent = `신고 ID ${report.id} · 신고자 ${report.reporterUid || '확인 불가'} · 대상 ${report.targetUid || '확인 불가'} · 방 ${report.roomId || '확인 불가'}`;
+    const range = document.createElement('p'); range.textContent = `대화 범위 ${new Date(report.rangeStart || 0).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd || 0).toLocaleString('ko-KR')}`;
+    copy.append(title, reason, details, range);
+    if (report.reviewNote) { const note = document.createElement('p'); note.className = 'admin-report-note'; note.textContent = `최근 처리 의견: ${report.reviewNote}`; copy.appendChild(note); }
+    const actions = document.createElement('div'); actions.className = 'report-actions';
+    const detailButton = document.createElement('button'); detailButton.type = 'button'; detailButton.textContent = '증거·처리 보기'; detailButton.addEventListener('click', async () => { try { await showReportEvidence(report.id); } catch (error) { showError(error); } }); actions.appendChild(detailButton);
+    if (status === 'pending' && report.targetUid) {
+      const restrictButton = document.createElement('button'); restrictButton.type = 'button'; restrictButton.textContent = '계정 제한 확인'; restrictButton.addEventListener('click', () => { $('#admin-ban-uid').value = report.targetUid; switchAdminTab('accounts'); checkMessengerBan(); }); actions.appendChild(restrictButton);
+    }
+    card.append(copy, actions); host.appendChild(card);
   }
 }
 
 function renderAdminAudit(entries) {
   const host = $('#admin-audit-list'); host.replaceChildren();
   if (!entries.length) { host.textContent = '관리 기록이 없습니다.'; return; }
-  const labels = { 'report.submit': '신고 접수', 'report.reviewed': '신고 확인 완료', 'report.dismissed': '신고 기각', 'account.ban': '메신저 이용 정지', 'account.unban': '메신저 이용 정지 해제' };
+  const labels = { 'report.submit': '신고 접수', 'report.view': '신고 증거 열람', 'report.private-image.view': '비공개 이미지 증거 열람', 'report.reviewed': '신고 확인 완료', 'report.dismissed': '신고 기각', 'report.reopened': '신고 재검토 대기', 'account.status.view': '계정 제한 상태 조회', 'account.ban': '메신저 이용 정지', 'account.unban': '메신저 이용 정지 해제' };
   for (const entry of entries) {
     const row = document.createElement('article'); row.className = 'admin-audit-card';
     const title = document.createElement('strong'); title.textContent = labels[entry.action] || entry.action || '관리 조치';
-    const meta = document.createElement('p'); meta.textContent = `${new Date(entry.at || 0).toLocaleString('ko-KR')} · 관리자 UID ${entry.actorUid || '확인 불가'}`;
+    const meta = document.createElement('p'); meta.textContent = `${new Date(entry.at || 0).toLocaleString('ko-KR')} · 작업자 UID ${entry.actorUid || '확인 불가'}`;
     const detail = document.createElement('small'); detail.textContent = entry.detail || '';
     row.append(title, meta, detail); host.appendChild(row);
   }
@@ -1656,6 +1692,44 @@ function renderAdminAudit(entries) {
 function switchAdminTab(tab) {
   document.querySelectorAll('[data-admin-tab]').forEach((button) => button.classList.toggle('active', button.dataset.adminTab === tab));
   ['reports', 'accounts', 'audit'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
+  if (tab === 'accounts' && !adminState.bansLoaded && !adminState.bansLoading) loadAdminBanPage(true);
+}
+
+async function loadAdminBanPage(reset = false) {
+  if (adminState.bansLoading) return;
+  if (reset) {
+    adminState.bans = []; adminState.banCursor = null; adminState.banHasMore = false;
+    $('#admin-ban-list').textContent = '정지 계정 목록을 불러옵니다.';
+  }
+  adminState.bansLoading = true;
+  $('#admin-ban-refresh').disabled = true; $('#admin-ban-load-more').disabled = true;
+  try {
+    const result = await call('messengerAdminGetDashboard', { includeBans: true, includeReports: false, banCursor: reset ? null : adminState.banCursor });
+    adminState.bans.push(...(Array.isArray(result.bans) ? result.bans : []));
+    adminState.banCursor = result.banPage && result.banPage.nextCursor || null;
+    adminState.banHasMore = !!(result.banPage && result.banPage.hasMore);
+    adminState.bansLoaded = true;
+    $('#admin-ban-count').textContent = String(result.summary && result.summary.activeBans || 0);
+    renderAdminBans();
+    $('#admin-ban-load-more').hidden = !adminState.banHasMore;
+  } catch (error) { $('#admin-ban-list').textContent = error.message || '정지 계정 목록을 불러오지 못했습니다.'; }
+  finally { adminState.bansLoading = false; $('#admin-ban-refresh').disabled = false; $('#admin-ban-load-more').disabled = false; }
+}
+
+function renderAdminBans() {
+  const host = $('#admin-ban-list'); host.replaceChildren();
+  const query = $('#admin-ban-search').value.trim().toLowerCase();
+  const filtered = adminState.bans.filter((ban) => !query || String(ban.uid || '').toLowerCase().includes(query));
+  if (!filtered.length) { host.textContent = query ? '불러온 페이지에 일치하는 UID가 없습니다. 다음 페이지도 확인해 주세요.' : '메신저 전용 정지 계정이 없습니다.'; return; }
+  for (const ban of filtered) {
+    const row = document.createElement('article'); row.className = 'admin-ban-row';
+    const copy = document.createElement('div');
+    const uid = document.createElement('strong'); uid.textContent = ban.uid;
+    const detail = document.createElement('p'); detail.textContent = `${ban.reason || '사유 없음'} · ${new Date(ban.at || 0).toLocaleString('ko-KR')}`;
+    copy.append(uid, detail);
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'button button-quiet'; button.textContent = '상태 확인'; button.addEventListener('click', () => { $('#admin-ban-uid').value = ban.uid; checkMessengerBan(); });
+    row.append(copy, button); host.appendChild(row);
+  }
 }
 
 async function checkMessengerBan() {
@@ -1665,10 +1739,16 @@ async function checkMessengerBan() {
   try {
     const result = await call('messengerAdminGetBanStatus', { uid });
     const ban = result.ban;
-    status.textContent = ban ? `메신저 이용 정지 상태 · ${ban.reason || '사유 없음'} · ${new Date(ban.at || 0).toLocaleString('ko-KR')}` : '메신저 이용 정지 상태가 아닙니다.';
-    $('#admin-ban-submit').hidden = !!ban; $('#admin-unban-submit').hidden = !ban;
+    const lines = [];
+    if (result.globalBan) lines.push(`전체 서비스 정지 중 · ${result.globalBan.reason || '사유 없음'} · ${new Date(result.globalBan.at || 0).toLocaleString('ko-KR')} (해제는 통합관리센터에서 처리)`);
+    else lines.push('전체 서비스 정지 상태가 아닙니다.');
+    if (ban) lines.push(`메신저 전용 정지 중 · ${ban.reason || '사유 없음'} · ${new Date(ban.at || 0).toLocaleString('ko-KR')}`);
+    else lines.push('메신저 전용 정지 상태가 아닙니다.');
+    if (result.isAdmin) lines.push('관리자 계정은 메신저 이용 정지 대상이 아닙니다.');
+    status.textContent = lines.join(' ');
+    $('#admin-ban-submit').hidden = !!ban || !!result.isAdmin; $('#admin-unban-submit').hidden = !ban;
     $('#admin-ban-reason').value = '';
-    actions.hidden = false;
+    actions.hidden = !!result.isAdmin;
   } catch (error) { status.textContent = error.message || '계정 상태를 확인하지 못했습니다.'; }
 }
 
@@ -1691,6 +1771,28 @@ async function setMessengerBan(banned) {
 
 async function showReportEvidence(reportId) {
   const result = await call('messengerAdminGetReportDetail', { reportId });
+  adminState.currentReport = result.report;
+  const report = result.report || {};
+  const status = report.status || 'pending';
+  const statusLabel = ({ pending: '대기', reviewed: '확인 완료', dismissed: '기각' })[status] || status;
+  const reasonLabels = { harassment: '욕설·괴롭힘', spam: '도배·스팸·광고', privacy: '개인정보 노출', sexual: '성적 콘텐츠', impersonation: '사칭·기만', other: '기타' };
+  const meta = $('#report-detail-meta'); meta.replaceChildren();
+  const summary = [
+    `상태: ${statusLabel}`,
+    `신고 ID: ${report.id || reportId}`,
+    `신고자 UID: ${report.reporterUid || '확인 불가'}`,
+    `대상 UID: ${report.targetUid || '확인 불가'}`,
+    `방 ID: ${report.roomId || '확인 불가'}`,
+    `접수 시각: ${new Date(report.createdAt || 0).toLocaleString('ko-KR')}`,
+    `신고 사유: ${reasonLabels[report.reasonCategory] || report.reason || '사유 없음'}${report.reasonDetail ? ` · ${report.reasonDetail}` : ''}`,
+    `대화 범위: ${new Date(report.rangeStart || 0).toLocaleString('ko-KR')} – ${new Date(report.rangeEnd || 0).toLocaleString('ko-KR')}`,
+  ];
+  if (report.reviewedAt) summary.push(`최근 처리: ${new Date(report.reviewedAt).toLocaleString('ko-KR')} · 작업자 UID ${report.reviewedBy || '확인 불가'}${report.reviewNote ? ` · ${report.reviewNote}` : ''}`);
+  summary.forEach((text) => { const line = document.createElement('p'); line.textContent = text; meta.appendChild(line); });
+  $('#report-review-note').value = '';
+  $('#report-mark-reviewed').hidden = status !== 'pending';
+  $('#report-mark-dismissed').hidden = status !== 'pending';
+  $('#report-reopen').hidden = status === 'pending';
   const host = $('#report-evidence-list'); host.replaceChildren();
   for (const message of result.evidence || []) {
     const row = document.createElement('article'); row.className = 'report-evidence-item';
@@ -1710,6 +1812,26 @@ async function showReportEvidence(reportId) {
   }
   if (!host.children.length) host.textContent = '보관된 대화 증거가 없습니다.';
   openDialog('report-detail-dialog');
+}
+
+async function updateAdminReportStatus(status) {
+  const report = adminState.currentReport;
+  if (!report || !report.id) return;
+  const note = $('#report-review-note').value.trim();
+  if (!note) { showError({ message: '처리 의견을 입력해 주세요.' }); return; }
+  const action = ({ reviewed: '확인 완료', dismissed: '기각', pending: '대기 상태로 되돌리기' })[status] || '처리';
+  if (!window.confirm(`신고를 ${action}로 처리할까요?\n처리 의견: ${note}`)) return;
+  const buttons = ['#report-mark-reviewed', '#report-mark-dismissed', '#report-reopen'].map((selector) => $(selector));
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    await call('messengerAdminUpdateReport', { reportId: report.id, status, reviewNote: note });
+    closeDialog('report-detail-dialog');
+    adminState.currentReport = null;
+    if (status === 'pending') $('#admin-report-status').value = 'pending';
+    showToast(status === 'pending' ? '신고를 대기 상태로 되돌렸습니다.' : `신고를 ${action} 처리했습니다.`);
+    await loadAdminReportPage(true);
+  } catch (error) { showError(error); }
+  finally { buttons.forEach((button) => { button.disabled = false; }); }
 }
 
 function openProfile() {
@@ -1835,6 +1957,15 @@ function bindEvents() {
   $('#admin-check-ban').addEventListener('click', checkMessengerBan);
   $('#admin-ban-submit').addEventListener('click', () => setMessengerBan(true));
   $('#admin-unban-submit').addEventListener('click', () => setMessengerBan(false));
+  $('#admin-report-status').addEventListener('change', () => loadAdminReportPage(true));
+  $('#admin-report-refresh').addEventListener('click', () => loadAdminReportPage(true));
+  $('#admin-report-load-more').addEventListener('click', () => loadAdminReportPage(false));
+  $('#admin-ban-refresh').addEventListener('click', () => loadAdminBanPage(true));
+  $('#admin-ban-load-more').addEventListener('click', () => loadAdminBanPage(false));
+  $('#admin-ban-search').addEventListener('input', renderAdminBans);
+  $('#report-mark-reviewed').addEventListener('click', () => updateAdminReportStatus('reviewed'));
+  $('#report-mark-dismissed').addEventListener('click', () => updateAdminReportStatus('dismissed'));
+  $('#report-reopen').addEventListener('click', () => updateAdminReportStatus('pending'));
   $('#close-admin').addEventListener('click', () => { $('#admin-view').hidden = true; $('#directory-view').hidden = false; });
   $('#room-search').addEventListener('input', renderRooms);
   $('#my-rooms-button').addEventListener('click', openMyRoomsDialog);
