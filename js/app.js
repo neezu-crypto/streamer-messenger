@@ -147,11 +147,11 @@ function renderMyRooms() {
     button.append(avatar, details, status);
     button.addEventListener('click', () => { closeDialog('my-rooms-dialog'); selectRoom(room); });
     entry.appendChild(button);
-    const soopId = String(room.streamerSoopId || '').trim();
-    if (room.roomType === 'streamer' && /^[a-z0-9_]{2,20}$/i.test(soopId)) {
+    const streamerSoopId = String(room.streamerSoopId || '').trim();
+    if (room.roomType === 'streamer' && /^[a-z0-9_]{2,20}$/i.test(streamerSoopId)) {
       const fanpage = document.createElement('a');
       fanpage.className = 'my-room-fanpage-link';
-      fanpage.href = `https://neezu-crypto.github.io/streamer-fanpage/#/p/${encodeURIComponent(soopId.toLowerCase())}`;
+      fanpage.href = `https://neezu-crypto.github.io/streamer-fanpage/#/p/${encodeURIComponent(streamerSoopId.toLowerCase())}`;
       fanpage.target = '_blank'; fanpage.rel = 'noopener noreferrer';
       fanpage.setAttribute('aria-label', `${room.streamerNickname || '스트리머'} 팬페이지 열기`);
       fanpage.title = '스트리머 팬페이지 열기'; fanpage.textContent = '팬페이지 ↗';
