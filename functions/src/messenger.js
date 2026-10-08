@@ -502,7 +502,7 @@ const messengerDiscardRoom = onCall(async (request) => {
   const { meta, isOwner } = await requireRoomMember(p, roomId);
   if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 방을 폐기할 수 있습니다.');
   const reports = await db().ref(`${ROOT}/reports`).orderByChild('roomId').equalTo(roomId).get();
-  const updates = { [`${ROOT}/rooms/${roomId}`]: null, [`${ROOT}/publicRooms/${roomId}`]: null, [`${ROOT}/chat/${roomId}`]: null };
+  const updates = { [`${ROOT}/rooms/${roomId}`]: null, [`${ROOT}/publicRooms/${roomId}`]: null, [`${ROOT}/chat/${roomId}`]: null, [`${ROOT}/roomMarkets/${roomId}`]: null };
   reports.forEach((child) => {
     const report = child.val() || {};
     if (Number(report.retainUntil) < now()) {
@@ -612,6 +612,47 @@ const messengerSetMemberStatus = onCall(async (request) => {
   await db().ref().update(updates);
   await writeAudit(p.uid, `member.${status}`, `${roomId}/${uid}`);
   return { status };
+});
+
+const ROOM_MARKET_STOCK_LIMIT = 12;
+const messengerRoomMarketUpdate = onCall(async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const { roomId: rawRoomId, stockId: rawStockId, action } = request.data || {};
+  const roomId = String(rawRoomId || '');
+  const stockId = String(rawStockId || '');
+  if (!['add', 'remove'].includes(action)) throw new HttpsError('invalid-argument', '요청이 올바르지 않습니다.');
+  if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
+  const { isOwner } = await requireRoomMember(p, roomId);
+  const meta = (await roomRef(roomId).child('meta').get()).val() || {};
+  if (meta.roomType === 'admin') throw new HttpsError('failed-precondition', '스트리머 채팅방에서만 종목을 공유할 수 있습니다.');
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(stockId)) throw new HttpsError('invalid-argument', '종목 정보가 올바르지 않습니다.');
+  const stocksRef = db().ref(`${ROOT}/roomMarkets/${roomId}/stocks`);
+
+  if (action === 'remove') {
+    if (!isOwner) throw new HttpsError('permission-denied', '스트리머만 공유 종목을 제거할 수 있습니다.');
+    await stocksRef.child(stockId).remove();
+    try { await writeAudit(p.uid, 'roomMarket.stock.remove', `${roomId}/${stockId}`); }
+    catch (error) { logger.warn('공유 종목 제거 감사 기록 실패', error); }
+    return { action, removed: true };
+  }
+
+  const publicStockSnap = await db().ref(`stocksPublic/${stockId}`).get();
+  const stockSnap = await db().ref(`stocks/${stockId}`).get();
+  if (!publicStockSnap.exists() || !stockSnap.exists()) throw new HttpsError('not-found', '현재 거래할 수 있는 종목이 아닙니다.');
+  const stock = publicStockSnap.val() || {};
+  const addedAt = now();
+  let alreadyAdded = false;
+  const result = await stocksRef.transaction((current) => {
+    const stocks = current || {};
+    alreadyAdded = Object.prototype.hasOwnProperty.call(stocks, stockId);
+    if (alreadyAdded) return stocks;
+    if (Object.keys(stocks).length >= ROOM_MARKET_STOCK_LIMIT) return;
+    return { ...stocks, [stockId]: { stockId, name: String(stock.name || stockId).slice(0, 80), addedAt } };
+  });
+  if (!result.committed) throw new HttpsError('resource-exhausted', `채팅방에는 종목을 최대 ${ROOM_MARKET_STOCK_LIMIT}개까지 공유할 수 있습니다.`);
+  try { await writeAudit(p.uid, 'roomMarket.stock.add', `${roomId}/${stockId}`); }
+  catch (error) { logger.warn('공유 종목 추가 감사 기록 실패', error); }
+  return { action, stock: result.snapshot.child(stockId).val(), alreadyAdded };
 });
 
 async function galleryImageForChat(roomId, imageId) {
@@ -1043,6 +1084,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 module.exports = {
   messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
+  messengerRoomMarketUpdate,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,

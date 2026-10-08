@@ -16,6 +16,7 @@ module.exports = {
   messengerApplyToRoom: messenger.messengerApplyToRoom,
   messengerReviewApplication: messenger.messengerReviewApplication,
   messengerSetMemberStatus: messenger.messengerSetMemberStatus,
+  messengerRoomMarketUpdate: messenger.messengerRoomMarketUpdate,
   messengerSendMessage: messenger.messengerSendMessage,
   messengerGetGalleryImages: messenger.messengerGetGalleryImages,
   messengerGetGalleryImage: messenger.messengerGetGalleryImage,

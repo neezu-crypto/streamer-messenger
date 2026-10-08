@@ -82,6 +82,11 @@
             <div class="chat-header-actions"><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
           </div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
+          <section class="room-market-panel" id="room-market-panel" aria-labelledby="room-market-title" hidden>
+            <header class="room-market-heading"><div><p class="eyebrow">ROOM MARKET</p><h3 id="room-market-title">채팅방 공유 종목</h3><p>주식시장과 같은 가격·잔고로 거래해요.</p></div><button class="button button-quiet" id="add-room-stock" type="button">＋ 종목 공유</button></header>
+            <div class="room-market-stock-list" id="room-market-stock-list" aria-live="polite"><p class="room-market-empty">공유된 종목이 없습니다.</p></div>
+            <div class="room-market-feed-wrap"><div class="room-market-feed-heading"><strong>실시간 거래</strong><span>최근 100건</span></div><div class="room-market-feed" id="room-market-feed" aria-live="polite"><p class="room-market-empty">아직 채팅방 거래가 없습니다.</p></div></div>
+          </section>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
           <div class="chat-composer-wrap">
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
@@ -206,6 +211,32 @@
       <img id="roomself-preview" class="roomself-preview" alt="전송할 방셀 미리보기" hidden>
       <button class="button button-primary full-width" id="roomself-send" type="button" disabled>이미지를 선택해 주세요</button>
       <p class="gallery-inline-status" id="roomself-status" role="status" aria-live="polite" hidden></p>
+    </section>
+  </dialog>
+
+  <dialog class="app-dialog room-market-dialog" id="room-market-add-dialog">
+    <section class="dialog-card" aria-labelledby="room-market-add-title">
+      <button class="dialog-close" id="close-room-market-add" type="button" aria-label="닫기">×</button>
+      <p class="eyebrow">ROOM MARKET</p><h2 id="room-market-add-title">채팅방에 종목 공유</h2>
+      <p class="dialog-copy">공유한 종목은 채팅방 참여자가 함께 보고 거래할 수 있어요. 종목은 방마다 최대 12개까지 등록할 수 있습니다.</p>
+      <label class="room-market-search"><span aria-hidden="true">⌕</span><input id="room-market-search" type="search" placeholder="종목명 검색" autocomplete="off" aria-label="종목명 검색"></label>
+      <div class="room-market-search-results" id="room-market-search-results" aria-live="polite"><p class="room-market-empty">종목 목록을 불러오는 중…</p></div>
+      <p class="dialog-error" id="room-market-add-status" role="status" aria-live="polite" hidden></p>
+    </section>
+  </dialog>
+
+  <dialog class="app-dialog room-market-dialog" id="room-market-trade-dialog">
+    <section class="dialog-card" aria-labelledby="room-market-trade-title">
+      <button class="dialog-close" id="close-room-market-trade" type="button" aria-label="닫기">×</button>
+      <p class="eyebrow">LIVE ROOM MARKET</p><h2 id="room-market-trade-title">종목</h2>
+      <div class="room-market-quote"><strong id="room-market-live-price">—</strong><span id="room-market-live-change">실시간 현재가</span></div>
+      <div class="room-market-personal-position"><span>내 게임머니 <strong id="room-market-personal-cash">—</strong></span><span>내 보유 <strong id="room-market-personal-qty">—</strong></span></div>
+      <div class="room-market-chart" id="room-market-chart" aria-label="최근 주가 흐름"><span>차트를 불러오는 중…</span></div>
+      <p class="room-market-trade-note">주식시장과 동일한 게임머니, 보유 주식, 거래 수수료 및 가격 변동이 적용됩니다.</p>
+      <label class="field-label" for="room-market-qty">거래 수량</label><input class="text-input" id="room-market-qty" type="number" min="1" max="10" step="1" value="1">
+      <label class="room-market-nickname-option"><input id="room-market-show-nickname" type="checkbox"><span>내 공개 프로필 닉네임을 거래 피드에 표시</span></label>
+      <p class="room-market-trade-status" id="room-market-trade-status" role="status" aria-live="polite" hidden></p>
+      <div class="dialog-actions"><button class="button button-quiet" id="room-market-sell" type="button">매도</button><button class="button button-primary" id="room-market-buy" type="button">매수</button></div>
     </section>
   </dialog>
 
