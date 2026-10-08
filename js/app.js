@@ -568,7 +568,12 @@ function renderRoomMarketStocks() {
   const entries = Object.entries(state.roomMarketStocks || {});
   $('#add-room-stock').disabled = entries.length >= 12;
   if (!entries.length) {
-    const empty = document.createElement('p'); empty.className = 'room-market-empty'; empty.textContent = '공유된 종목이 없습니다. 종목을 공유해 대화 중 함께 거래해 보세요.'; host.appendChild(empty); return;
+    const empty = document.createElement('div'); empty.className = 'room-market-empty room-market-empty-stock';
+    const icon = document.createElement('span'); icon.className = 'room-market-empty-icon'; icon.textContent = '↗'; icon.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('span'); copy.className = 'room-market-empty-copy';
+    const title = document.createElement('strong'); title.textContent = '공유 종목이 아직 없어요';
+    const description = document.createElement('small'); description.textContent = '종목을 추가해 채팅방에서 함께 거래해 보세요.';
+    copy.append(title, description); empty.append(icon, copy); host.appendChild(empty); return;
   }
   entries.sort((a, b) => String(a[1]?.name || '').localeCompare(String(b[1]?.name || ''), 'ko'));
   for (const [stockId, saved] of entries) {
