@@ -111,6 +111,27 @@
 .room-market-stock-change.down{color:#3b82f6}
 .room-market-sparkline.up polyline{stroke:#ef4444}
 .room-market-sparkline.down polyline{stroke:#3b82f6}
+.my-rooms-button{position:relative;display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 12px;white-space:nowrap;font-weight:700}
+.my-rooms-button-icon{font-size:16px;color:#5c78df}
+.my-rooms-count{display:inline-grid;min-width:19px;height:19px;place-items:center;padding:0 5px;border-radius:999px;background:#edf2ff;color:#5874df;font-size:10px}
+.my-rooms-dialog{width:min(480px,calc(100% - 24px));max-height:min(84dvh,680px)}
+.my-rooms-dialog .dialog-card{max-height:min(84dvh,680px);overflow:auto;padding:28px 22px 20px}
+.my-rooms-list{display:grid;gap:8px;max-height:min(58dvh,480px);overflow:auto;padding:2px}
+.my-room-item{display:flex;width:100%;align-items:center;gap:11px;padding:11px;border:1px solid rgba(126,148,185,.18);border-radius:15px;background:rgba(255,255,255,.78);color:var(--ink);text-align:left;transition:border-color .15s,background .15s,transform .15s}
+.my-room-item:hover,.my-room-item:focus-visible{border-color:#a9baff;background:#fff;transform:translateY(-1px);outline:none}
+.my-room-avatar{display:grid;width:42px;height:42px;flex:0 0 auto;place-items:center;overflow:hidden;border-radius:14px;background:linear-gradient(145deg,#e5edff,#dff7f0);color:#6683e9;font-size:14px;font-weight:800}
+.my-room-avatar img{width:100%;height:100%;object-fit:cover}
+.my-room-details{display:grid;min-width:0;flex:1;gap:4px}
+.my-room-details strong,.my-room-details small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.my-room-details strong{font-size:12px}
+.my-room-details small{color:#8b98af;font-size:10px}
+.my-room-status{flex:0 0 auto;padding:6px 8px;border-radius:999px;background:#edf3ff;color:#647ee2;font-size:9px;font-weight:700}
+.my-room-status.private{background:#fff5e7;color:#a77b32}
+.my-rooms-state{display:grid;min-height:112px;align-content:center;justify-items:center;gap:8px;padding:18px;border:1px dashed rgba(133,151,183,.35);border-radius:15px;color:#8290a8;font-size:11px;text-align:center}
+.my-rooms-state strong{color:#53617d;font-size:13px}
+.my-rooms-state .button{margin-top:4px}
+@media(max-width:680px){.my-rooms-button{width:auto;min-width:0;justify-content:center;padding:0 9px;gap:5px}.my-rooms-button-label{position:static;width:auto;height:auto;overflow:visible;clip:auto;font-size:10px}.my-rooms-button-icon{font-size:15px}.my-rooms-count{position:static;transform:none;min-width:16px;height:16px;padding:0 3px;font-size:9px}.my-rooms-dialog .dialog-card{padding:25px 16px 16px}}
+@media(max-width:360px){.my-rooms-button{gap:0;padding:0 7px}.my-rooms-button-icon{display:none}.my-rooms-count{margin-left:4px}}
 .room-market-remove{background:rgba(15,23,42,.88);color:#94a3b8}
 .room-market-remove:hover{background:#334155;color:#fca5a5}
 .room-market-feed-wrap{margin-top:1px;padding:10px 10px 8px;border:1px solid #334155;border-radius:12px;background:rgba(30,41,59,.72)}

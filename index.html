@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261008-room-market-toggle">
+  <link rel="stylesheet" href="styles.css?v=20261008-my-room-shortcut">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -28,6 +28,7 @@
     <div class="topbar-actions">
       <button class="icon-button" id="notification-button" type="button" aria-label="브라우저 알림 켜기" title="브라우저 알림">♧</button>
       <button class="profile-button" id="profile-button" type="button">로그인</button>
+      <button class="button button-quiet my-rooms-button" id="my-rooms-button" type="button" aria-label="참여 중인 방 빠른 이동" title="참여 중인 방 빠른 이동" hidden><span class="my-rooms-button-icon" aria-hidden="true">↔</span><span class="my-rooms-button-label">참여방</span><span class="my-rooms-count" id="my-rooms-count">0</span></button>
       <button class="button button-primary" id="create-room-button" type="button" hidden><span class="desktop-action-label" id="create-room-desktop-label">내 채팅방</span><span class="mobile-action-label" id="create-room-mobile-label">내 방</span></button>
       <button class="icon-button admin-tab-button" id="admin-tab-button" type="button" hidden aria-label="관리자" title="관리자"><span class="desktop-action-label">관리자</span><span class="mobile-admin-icon" aria-hidden="true">⚙</span></button>
     </div>
@@ -264,6 +265,7 @@
   </dialog>
 
   <dialog class="app-dialog" id="generic-dialog"><div class="dialog-card"><button class="dialog-close" id="generic-close" type="button" aria-label="닫기">×</button><p class="dialog-copy" id="generic-message"></p><div class="dialog-actions"><button class="button button-quiet" id="generic-cancel" type="button">취소</button><button class="button button-primary" id="generic-confirm" type="button">확인</button></div></div></dialog>
+  <dialog class="app-dialog my-rooms-dialog" id="my-rooms-dialog" aria-labelledby="my-rooms-title"><section class="dialog-card"><button class="dialog-close" id="close-my-rooms" type="button" aria-label="닫기">×</button><p class="eyebrow">YOUR ROOMS</p><h2 id="my-rooms-title">참여 중인 채팅방</h2><p class="dialog-copy">방을 누르면 바로 이동합니다.</p><div class="my-rooms-list" id="my-rooms-list" aria-live="polite"><div class="my-rooms-state">참여 중인 방을 불러오는 중…</div></div></section></dialog>
   <dialog class="app-dialog" id="report-detail-dialog"><div class="dialog-card report-detail-card"><button class="dialog-close" id="report-detail-close" type="button" aria-label="닫기">×</button><p class="eyebrow">ADMIN REVIEW</p><h2>신고 대화 범위</h2><div id="report-evidence-list" class="report-evidence-list"></div></div></dialog>
   <dialog class="app-dialog" id="report-submit-dialog">
     <form method="dialog" class="dialog-card">
@@ -299,6 +301,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261008-room-market-toggle"></script>
+  <script type="module" src="js/app.js?v=20261008-my-room-shortcut"></script>
 </body>
 </html>

@@ -47,6 +47,7 @@ const safeText = (value, max, required = false) => {
   return text;
 };
 const roomRef = (roomId) => db().ref(`${ROOT}/rooms/${roomId}`);
+const userRoomIndexPath = (uid, roomId) => `${ROOT}/userRoomIndex/${uid}/${roomId}`;
 const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
 const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
 const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
@@ -264,6 +265,30 @@ function publicRoom(meta, includeOperational = false) {
   return room;
 }
 
+async function ensureUserRoomIndex(uid) {
+  const markerRef = db().ref(`${ROOT}/userRoomIndexBackfill/${uid}`);
+  const marker = await markerRef.get();
+  if (Number(marker.val()?.version) >= 1) return;
+
+  // The reverse index did not exist before this feature. Backfill this account
+  // once from room memberships so existing participants also get the shortcut.
+  const roomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
+  const roomIds = [];
+  roomsSnap.forEach((child) => { if (child.key && /^[a-z0-9]{2,30}$/.test(child.key)) roomIds.push(child.key); });
+  for (let offset = 0; offset < roomIds.length; offset += 25) {
+    const batch = roomIds.slice(offset, offset + 25);
+    const matches = await Promise.all(batch.map(async (roomId) => {
+      const memberSnap = await roomRef(roomId).child(`members/${uid}`).get();
+      const member = memberSnap.val() || {};
+      return member.status === 'active' ? [roomId, { joinedAt: Number(member.joinedAt) || 0 }] : null;
+    }));
+    const updates = {};
+    matches.filter(Boolean).forEach(([roomId, value]) => { updates[userRoomIndexPath(uid, roomId)] = value; });
+    if (Object.keys(updates).length) await db().ref().update(updates);
+  }
+  await markerRef.set({ version: 1, backfilledAt: now() });
+}
+
 async function resolveGalleryStreamerId(streamerSoopId, streamerNickname) {
   const normalizedId = String(streamerSoopId || '').trim().toLowerCase();
   if (/^[a-z0-9]{2,30}$/.test(normalizedId)) {
@@ -319,6 +344,36 @@ const messengerGetRoomState = onCall(async (request) => {
   let meta = metaSnap.val() || {};
   if (meta.ownerUid === p.uid) meta = await syncOwnerRoomAvatar(roomId, p.uid, (await profileFor(p.uid)).avatarUrl, meta);
   return { room: publicRoom(meta, meta.ownerUid === p.uid), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
+});
+
+const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  await ensureUserRoomIndex(p.uid);
+  const indexRef = db().ref(`${ROOT}/userRoomIndex/${p.uid}`);
+  const indexSnap = await indexRef.get();
+  const entries = Object.entries(indexSnap.val() || {}).sort((a, b) => (Number(b[1]?.joinedAt) || 0) - (Number(a[1]?.joinedAt) || 0));
+  const rooms = [];
+  const stale = {};
+  for (let offset = 0; offset < entries.length; offset += 25) {
+    const batch = entries.slice(offset, offset + 25);
+    const results = await Promise.all(batch.map(async ([roomId, indexed]) => {
+      if (!/^[a-z0-9]{2,30}$/.test(roomId)) return { roomId, stale: true };
+      const [metaSnap, memberSnap] = await Promise.all([
+        roomRef(roomId).child('meta').get(), roomRef(roomId).child(`members/${p.uid}`).get(),
+      ]);
+      const meta = metaSnap.val() || {};
+      const member = memberSnap.val() || {};
+      if (!metaSnap.exists() || member.status !== 'active') return { roomId, stale: true };
+      return { room: publicRoom(meta), joinedAt: Number(member.joinedAt) || Number(indexed?.joinedAt) || 0 };
+    }));
+    results.forEach((result) => {
+      if (result.stale) stale[userRoomIndexPath(p.uid, result.roomId)] = null;
+      else rooms.push({ ...result.room, joinedAt: result.joinedAt });
+    });
+  }
+  if (Object.keys(stale).length) await db().ref().update(stale);
+  rooms.sort((a, b) => b.joinedAt - a.joinedAt || String(a.streamerNickname || '').localeCompare(String(b.streamerNickname || ''), 'ko'));
+  return { rooms };
 });
 
 const messengerEnsureRoom = onCall(async (request) => {
@@ -485,7 +540,12 @@ const messengerUpdateRoom = onCall(async (request) => {
   if (passwordChanged && memberPolicy === 'remove') {
     const membersSnap = await roomRef(roomId).child('members').get();
     const members = membersSnap.val() || {};
-    Object.keys(members).forEach((uid) => { if (members[uid] && members[uid].status === 'active') updates[`${ROOT}/rooms/${roomId}/members/${uid}/status`] = 'removed'; });
+    Object.keys(members).forEach((uid) => {
+      if (members[uid] && members[uid].status === 'active') {
+        updates[`${ROOT}/rooms/${roomId}/members/${uid}/status`] = 'removed';
+        updates[userRoomIndexPath(uid, roomId)] = null;
+      }
+    });
     metaPatch.memberCount = 0;
   }
   const nextMeta = { ...meta, ...metaPatch };
@@ -501,8 +561,12 @@ const messengerDiscardRoom = onCall(async (request) => {
   const roomId = String((request.data || {}).roomId || '');
   const { meta, isOwner } = await requireRoomMember(p, roomId);
   if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 방을 폐기할 수 있습니다.');
-  const reports = await db().ref(`${ROOT}/reports`).orderByChild('roomId').equalTo(roomId).get();
+  const [reports, membersSnap] = await Promise.all([
+    db().ref(`${ROOT}/reports`).orderByChild('roomId').equalTo(roomId).get(),
+    roomRef(roomId).child('members').get(),
+  ]);
   const updates = { [`${ROOT}/rooms/${roomId}`]: null, [`${ROOT}/publicRooms/${roomId}`]: null, [`${ROOT}/chat/${roomId}`]: null, [`${ROOT}/roomMarkets/${roomId}`]: null };
+  membersSnap.forEach((child) => { if (child.key) updates[userRoomIndexPath(child.key, roomId)] = null; });
   reports.forEach((child) => {
     const report = child.val() || {};
     if (Number(report.retainUntil) < now()) {
@@ -585,6 +649,7 @@ const messengerReviewApplication = onCall(async (request) => {
   if (decision === 'approved') {
     const member = { uid, status: 'active', joinedAt: at, profile: application.profile };
     updates[`${ROOT}/rooms/${roomId}/members/${uid}`] = member;
+    updates[userRoomIndexPath(uid, roomId)] = { joinedAt: at };
     updates[`${ROOT}/rooms/${roomId}/meta/memberCount`] = (Number(result.meta.memberCount) || 0) + 1;
     updates[`${ROOT}/publicRooms/${roomId}/memberCount`] = (Number(result.meta.memberCount) || 0) + 1;
   } else updates[`${ROOT}/rooms/${roomId}/applications/${uid}/reapplyAt`] = at + APPLICATION_EXPIRE;
@@ -601,6 +666,7 @@ const messengerSetMemberStatus = onCall(async (request) => {
   const updates = {};
   updates[`${ROOT}/rooms/${roomId}/members/${uid}/status`] = status;
   updates[`${ROOT}/rooms/${roomId}/members/${uid}/updatedAt`] = now();
+  updates[userRoomIndexPath(uid, roomId)] = null;
   if (status === 'blocked') {
     updates[`${ROOT}/rooms/${roomId}/blocked/${uid}`] = { at: now(), by: p.uid };
     updates[`${ROOT}/rooms/${roomId}/meta/memberCount`] = Math.max(0, (Number(result.meta.memberCount) || 0) - (memberSnap.val() && memberSnap.val().status === 'active' ? 1 : 0));
@@ -1080,7 +1146,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 });
 
 module.exports = {
-  messengerGetSession, messengerGetRoomState, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
+  messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,

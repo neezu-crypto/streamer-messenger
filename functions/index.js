@@ -9,6 +9,7 @@ module.exports = {
   messengerAutoCreateVerifiedStreamerRoom: messenger.messengerAutoCreateVerifiedStreamerRoom,
   messengerAdminBackfillVerifiedRooms: messenger.messengerAdminBackfillVerifiedRooms,
   messengerGetRoomState: messenger.messengerGetRoomState,
+  messengerListMyRooms: messenger.messengerListMyRooms,
   messengerUpdateRoom: messenger.messengerUpdateRoom,
   messengerDiscardRoom: messenger.messengerDiscardRoom,
   messengerListApplications: messenger.messengerListApplications,

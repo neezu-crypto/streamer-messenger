@@ -3,8 +3,8 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog'];
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 let toastTimer = 0;
@@ -96,6 +96,72 @@ function syncHeader() {
   const hasRoom = (session.isVerifiedStreamer || session.isAdmin) && !!session.ownRoom;
   $('#create-room-desktop-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
   $('#create-room-mobile-label').textContent = hasRoom ? '내 방' : '방 만들기';
+  $('#my-rooms-button').hidden = !session.trusted;
+  $('#my-rooms-count').textContent = String(state.myRooms.length);
+  $('#my-rooms-button').setAttribute('aria-label', `참여 중인 방 ${state.myRooms.length}개 빠른 이동`);
+  $('#my-rooms-button').title = `참여 중인 방 ${state.myRooms.length}개 빠른 이동`;
+}
+
+async function loadMyRooms(force = false) {
+  const uid = state.session && state.session.uid;
+  if (!state.session || !state.session.trusted || !uid) return [];
+  if (!force && state.myRoomsLoaded && state.myRoomsUid === uid) return state.myRooms;
+  if (state.myRoomsPromise && state.myRoomsUid === uid) {
+    if (!force) return state.myRoomsPromise;
+    await state.myRoomsPromise.catch(() => {});
+    if (!state.session || !state.session.trusted || state.session.uid !== uid) return [];
+  }
+  state.myRoomsUid = uid;
+  const request = (async () => {
+    const result = await call('messengerListMyRooms');
+    if (!state.session || !state.session.trusted || state.session.uid !== uid) return [];
+    state.myRooms = (Array.isArray(result.rooms) ? result.rooms : []).filter((room) => room && room.roomId);
+    state.myRoomsLoaded = true;
+    syncHeader();
+    return state.myRooms;
+  })();
+  state.myRoomsPromise = request;
+  try { return await request; }
+  finally { if (state.myRoomsPromise === request) state.myRoomsPromise = null; }
+}
+
+function renderMyRooms() {
+  const host = $('#my-rooms-list');
+  host.replaceChildren();
+  if (!state.myRooms.length) {
+    const empty = document.createElement('div'); empty.className = 'my-rooms-state';
+    empty.innerHTML = '<strong>참여 중인 방이 없어요</strong><span>스트리머가 초대를 승인하면 이곳에서 바로 이동할 수 있어요.</span>';
+    host.appendChild(empty); return;
+  }
+  state.myRooms.forEach((room) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'my-room-item';
+    const avatar = document.createElement('span'); avatar.className = 'my-room-avatar';
+    renderStreamerAvatar(avatar, room.streamerAvatarUrl || avatarUrl(room.streamerSoopId), room.streamerNickname);
+    const details = document.createElement('span'); details.className = 'my-room-details';
+    const name = document.createElement('strong'); name.textContent = room.streamerNickname || '스트리머';
+    const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : '스트리머 채팅방';
+    details.append(name, soopId);
+    const status = document.createElement('span'); status.className = `my-room-status${room.visibility === 'private' ? ' private' : ''}`;
+    status.textContent = room.visibility === 'private' ? '🔒 비공개' : '바로 이동';
+    button.append(avatar, details, status);
+    button.addEventListener('click', () => { closeDialog('my-rooms-dialog'); selectRoom(room); });
+    host.appendChild(button);
+  });
+}
+
+async function openMyRoomsDialog() {
+  const host = $('#my-rooms-list');
+  host.innerHTML = '<div class="my-rooms-state">참여 중인 방을 불러오는 중…</div>';
+  openDialog('my-rooms-dialog');
+  try { await loadMyRooms(true); renderMyRooms(); }
+  catch (error) {
+    host.replaceChildren();
+    const failed = document.createElement('div'); failed.className = 'my-rooms-state';
+    const message = document.createElement('span'); message.textContent = '참여 중인 방 목록을 불러오지 못했어요.';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'button button-quiet'; retry.textContent = '다시 불러오기';
+    retry.addEventListener('click', openMyRoomsDialog);
+    failed.append(message, retry); host.appendChild(failed);
+  }
 }
 
 function renderRooms() {
@@ -1757,6 +1823,8 @@ function bindEvents() {
   $('#admin-unban-submit').addEventListener('click', () => setMessengerBan(false));
   $('#close-admin').addEventListener('click', () => { $('#admin-view').hidden = true; $('#directory-view').hidden = false; });
   $('#room-search').addEventListener('input', renderRooms);
+  $('#my-rooms-button').addEventListener('click', openMyRoomsDialog);
+  $('#close-my-rooms').addEventListener('click', () => closeDialog('my-rooms-dialog'));
   $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));
@@ -1824,11 +1892,20 @@ function handleSession(event) {
   state.session = event.detail.session || null;
   const nextUid = state.session && state.session.uid;
   if (previousUid !== nextUid) {
+    state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
+  }
+  if (!state.session || !state.session.trusted) {
+    state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
+  }
+  if (previousUid !== nextUid) {
     subscribeApplicationResults(); clearOwnerApplicationSubscription();
     state.autoRoomEnsureUid = ''; state.autoRoomEnsurePromise = null;
   }
   if (state.session && state.session.ownRoom) subscribeOwnerApplications(state.session.ownRoom);
   syncHeader();
+  if (state.session && state.session.trusted && nextUid && (!state.myRoomsLoaded || state.myRoomsUid !== nextUid)) {
+    loadMyRooms().catch((error) => console.warn('참여 중인 채팅방 목록을 불러오지 못했습니다.', error));
+  }
   if (state.session && state.session.trusted && state.pendingStreamerRoom) {
     const pendingRoom = state.pendingStreamerRoom;
     state.pendingStreamerRoom = null;
