@@ -331,22 +331,25 @@ async function checkRepeatedMessage(uid, roomId, text, repeatTextDelaySeconds, r
   if (!linkResult.committed) await recordMessageViolation(uid, '같은 링크를 반복해서 보낼 수 없습니다.');
 }
 
-async function applyMessageRate(uid, roomId, text, meta) {
-  const moderationRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
-  const moderation = (await moderationRef.get()).val() || {};
-  if (Number(moderation.cooldownUntil) > now()) throw cooldownError(moderation.cooldownUntil);
-  const lastRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/lastAt`);
-  const result = await lastRef.transaction((last) => {
-    const t = now();
-    if (last && t - last < MESSAGE_COOLDOWN) return;
-    return t;
-  });
-  if (!result.committed) await recordMessageViolation(uid, '메시지는 2초에 한 번씩 보낼 수 있습니다.');
-  const slot = Math.floor(now() / 60000);
-  const countRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/minute/${slot}`);
-  const count = await countRef.transaction((value) => (Number(value) || 0) < MESSAGE_LIMIT_PER_MINUTE ? (Number(value) || 0) + 1 : undefined);
-  if (!count.committed) await recordMessageViolation(uid, '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
-  await db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
+async function applyMessageRate(uid, roomId, text, meta, isOwner = false) {
+  if (!isOwner) {
+    const moderationRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
+    const moderation = (await moderationRef.get()).val() || {};
+    if (Number(moderation.cooldownUntil) > now()) throw cooldownError(moderation.cooldownUntil);
+    const lastRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/lastAt`);
+    const result = await lastRef.transaction((last) => {
+      const t = now();
+      if (last && t - last < MESSAGE_COOLDOWN) return;
+      return t;
+    });
+    if (!result.committed) await recordMessageViolation(uid, '메시지는 2초에 한 번씩 보낼 수 있습니다.');
+    const slot = Math.floor(now() / 60000);
+    const countRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/minute/${slot}`);
+    const count = await countRef.transaction((value) => (Number(value) || 0) < MESSAGE_LIMIT_PER_MINUTE ? (Number(value) || 0) + 1 : undefined);
+    if (!count.committed) await recordMessageViolation(uid, '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
+    await db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
+  }
+  // Owners can send rapid updates; room-configured repeated text/link limits still apply.
   await checkRepeatedMessage(uid, roomId, text, Number(meta.repeatTextDelaySeconds) || 0, Number(meta.repeatLinkDelaySeconds) || 0);
 }
 
@@ -971,7 +974,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const text = ['image', 'roomself'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
   if (!['text', 'image', 'roomself'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
   if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
-  await applyMessageRate(p.uid, roomId, text, result.meta);
+  await applyMessageRate(p.uid, roomId, text, result.meta, isOwner);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
