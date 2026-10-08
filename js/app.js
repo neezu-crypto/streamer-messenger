@@ -8,7 +8,56 @@ const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore:
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
+const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
 let toastTimer = 0;
+
+function tooltipText(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
+
+function inferTooltip(element) {
+  const ariaLabel = tooltipText(element.getAttribute('aria-label'));
+  if (ariaLabel) return ariaLabel;
+  if (element.labels && element.labels.length) {
+    const label = tooltipText(Array.from(element.labels, (item) => item.innerText || item.textContent).join(' '));
+    if (label) return label;
+  }
+  const ownText = tooltipText(element.innerText || element.textContent);
+  if (ownText) return ownText;
+  const value = tooltipText(element.value);
+  if (value) return value;
+  const placeholder = tooltipText(element.getAttribute('placeholder'));
+  if (placeholder) return placeholder;
+  const selectedOption = element instanceof HTMLSelectElement ? tooltipText(element.selectedOptions[0]?.textContent) : '';
+  if (selectedOption) return selectedOption;
+  const id = tooltipText(element.id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ');
+  return id ? id.charAt(0).toLocaleUpperCase('ko-KR') + id.slice(1) : '';
+}
+
+function ensureTooltip(element) {
+  const customTooltip = tooltipText(element.dataset.tooltip);
+  if (customTooltip) {
+    element.title = customTooltip;
+    return;
+  }
+  if (element.hasAttribute('title') && element.dataset.autoTooltip !== 'true') return;
+  const label = inferTooltip(element);
+  if (!label) return;
+  element.title = label;
+  element.dataset.autoTooltip = 'true';
+}
+
+function ensureTooltipsIn(root) {
+  if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
+  if (root.nodeType === Node.ELEMENT_NODE && root.matches(TOOLTIP_SELECTOR)) ensureTooltip(root);
+  root.querySelectorAll(TOOLTIP_SELECTOR).forEach(ensureTooltip);
+}
+
+ensureTooltipsIn(document);
+new MutationObserver((records) => {
+  records.forEach((record) => {
+    if (record.type === 'characterData') ensureTooltipsIn(record.target.parentElement);
+    else record.addedNodes.forEach(ensureTooltipsIn);
+  });
+}).observe(document.body, { childList: true, characterData: true, subtree: true });
 
 async function registerGalleryImageWithRetry(payload, onRetry) {
   const deadline = Date.now() + 180000;
