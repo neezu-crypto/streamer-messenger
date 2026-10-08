@@ -440,7 +440,7 @@ function mergeFanMessages() {
 function subscribeRoomMarket() {
   const panel = $('#room-market-panel');
   const roomId = state.room && state.room.roomId;
-  panel.hidden = !roomId || state.room.roomType === 'admin';
+  panel.hidden = !roomId;
   if (panel.hidden) return;
   state.roomMarketStocks = {};
   state.roomMarketFeed = [];
@@ -541,7 +541,7 @@ function renderRoomMarketFeed() {
 }
 
 async function openRoomMarketAddDialog() {
-  if (!state.room || state.room.roomType === 'admin') return;
+  if (!state.room) return;
   $('#room-market-search').value = '';
   $('#room-market-add-status').hidden = true;
   $('#room-market-search-results').innerHTML = '<p class="room-market-empty">종목 목록을 불러오는 중…</p>';

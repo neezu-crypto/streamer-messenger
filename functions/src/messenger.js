@@ -623,8 +623,6 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
   if (!['add', 'remove'].includes(action)) throw new HttpsError('invalid-argument', '요청이 올바르지 않습니다.');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
   const { isOwner } = await requireRoomMember(p, roomId);
-  const meta = (await roomRef(roomId).child('meta').get()).val() || {};
-  if (meta.roomType === 'admin') throw new HttpsError('failed-precondition', '스트리머 채팅방에서만 종목을 공유할 수 있습니다.');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(stockId)) throw new HttpsError('invalid-argument', '종목 정보가 올바르지 않습니다.');
   const stocksRef = db().ref(`${ROOT}/roomMarkets/${roomId}/stocks`);
 
