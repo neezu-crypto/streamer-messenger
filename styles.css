@@ -83,11 +83,16 @@
   content:"";
 }
 .room-market-heading{align-items:center;padding-bottom:11px;border-bottom:1px solid #334155}
+.room-market-heading>div:first-child{min-width:0}
+.room-market-header-actions{display:flex;flex:0 0 auto;align-items:center;gap:6px}
 .room-market-heading .eyebrow{display:inline-flex;align-items:center;gap:5px;margin:0 0 7px;padding:4px 8px;border:1px solid rgba(56,189,248,.24);border-radius:999px;background:rgba(56,189,248,.1);color:#38bdf8;font-size:8px;letter-spacing:.13em}
 .room-market-heading .eyebrow::before{content:"↗";font-size:10px;letter-spacing:0}
 #room-market-title{color:#f8fafc}
 .room-market-heading h3{font-size:15px;font-weight:800;letter-spacing:-.035em}
 .room-market-heading p:not(.eyebrow){margin-top:4px;color:#94a3b8;font-size:10px}
+.room-market-collapse-button{display:grid;width:36px;height:38px;flex:0 0 auto;place-items:center;padding:0;border:1px solid #475569;border-radius:10px;background:#1e293b;color:#cbd5e1;font-size:20px;line-height:1;transition:border-color .16s ease,color .16s ease,background .16s ease}
+.room-market-collapse-button:hover{border-color:#38bdf8;background:#26364a;color:#38bdf8}
+.room-market-collapse-button:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
 #add-room-stock{height:38px;padding:0 13px;border:1px solid #38bdf8;border-radius:10px;background:linear-gradient(135deg,#38bdf8,#0ea5e9);box-shadow:0 5px 14px rgba(56,189,248,.18);color:#0f172a;font-size:11px;font-weight:800}
 #add-room-stock:hover{filter:brightness(1.08);box-shadow:0 7px 18px rgba(56,189,248,.26)}
 #add-room-stock:disabled{opacity:.55;box-shadow:none;cursor:not-allowed}
@@ -118,12 +123,16 @@
 .room-market-feed-item .buy{color:#ef4444}
 .room-market-feed-item .sell{color:#3b82f6}
 .room-market-feed>.room-market-empty{padding:7px 2px;color:#94a3b8;font-size:9px}
+.room-market-panel.is-collapsed{max-height:none;padding-bottom:12px}
+.room-market-panel.is-collapsed .room-market-heading{padding-bottom:0;border-bottom:0}
+.room-market-panel.is-collapsed .room-market-heading .eyebrow,.room-market-panel.is-collapsed .room-market-heading p:not(.eyebrow){display:none}
 @media(max-width:680px){
   .room-market-panel{max-height:290px;margin:9px 9px 4px;padding:13px 11px 10px;border-radius:16px}
   .room-market-panel::before{left:14px;right:14px}
   .room-market-heading{gap:7px;padding-bottom:9px}
   .room-market-heading h3{font-size:14px}
   .room-market-heading p:not(.eyebrow){font-size:9px}
+  .room-market-collapse-button{width:34px;height:36px}
   #add-room-stock{height:36px;padding:0 10px;border-radius:11px;font-size:10px}
   .room-market-stock-list{min-height:55px;padding:9px 0 8px}
   .room-market-empty-stock{min-height:53px;padding:8px}
@@ -138,5 +147,6 @@
   .room-market-heading{gap:5px}
   .room-market-heading h3{font-size:13px}
   .room-market-heading p:not(.eyebrow){font-size:8px}
+  .room-market-collapse-button{width:32px;height:34px;font-size:18px}
   #add-room-stock{padding:0 8px;font-size:9px}
 }

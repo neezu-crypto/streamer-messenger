@@ -437,6 +437,19 @@ function mergeFanMessages() {
   renderTimeline();
 }
 
+function setRoomMarketCollapsed(collapsed) {
+  const panel = $('#room-market-panel');
+  const content = $('#room-market-content');
+  const toggle = $('#toggle-room-market');
+  const label = collapsed ? '공유 종목 영역 펼치기' : '공유 종목 영역 접기';
+  content.hidden = collapsed;
+  panel.classList.toggle('is-collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  toggle.querySelector('[aria-hidden="true"]').textContent = collapsed ? '⌄' : '⌃';
+}
+
 function subscribeRoomMarket() {
   const panel = $('#room-market-panel');
   const roomId = state.room && state.room.roomId;
@@ -1744,6 +1757,7 @@ function bindEvents() {
   $('#admin-unban-submit').addEventListener('click', () => setMessengerBan(false));
   $('#close-admin').addEventListener('click', () => { $('#admin-view').hidden = true; $('#directory-view').hidden = false; });
   $('#room-search').addEventListener('input', renderRooms);
+  $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));
   $('#close-room-market-trade').addEventListener('click', () => closeDialog('room-market-trade-dialog'));
