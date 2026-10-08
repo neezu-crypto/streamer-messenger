@@ -147,16 +147,6 @@ function renderMyRooms() {
     button.append(avatar, details, status);
     button.addEventListener('click', () => { closeDialog('my-rooms-dialog'); selectRoom(room); });
     entry.appendChild(button);
-    const streamerSoopId = String(room.streamerSoopId || '').trim();
-    if (room.roomType === 'streamer' && /^[a-z0-9_]{2,20}$/i.test(streamerSoopId)) {
-      const fanpage = document.createElement('a');
-      fanpage.className = 'my-room-fanpage-link';
-      fanpage.href = `https://neezu-crypto.github.io/streamer-fanpage/#/p/${encodeURIComponent(streamerSoopId.toLowerCase())}`;
-      fanpage.target = '_blank'; fanpage.rel = 'noopener noreferrer';
-      fanpage.setAttribute('aria-label', `${room.streamerNickname || '스트리머'} 팬페이지 열기`);
-      fanpage.title = '스트리머 팬페이지 열기'; fanpage.textContent = '팬페이지 ↗';
-      entry.appendChild(fanpage);
-    }
     host.appendChild(entry);
   });
 }
@@ -415,6 +405,17 @@ async function openChat(room, isOwner) {
   $('#member-action').hidden = true;
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
   $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : (room.roomType === 'admin' ? '나와 관리자만 보이는 대화' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`);
+  const fanpageLink = $('#chat-fanpage-link');
+  const streamerSoopId = String(room.streamerSoopId || '').trim();
+  const hasFanpage = room.roomType === 'streamer' && /^[a-z0-9_]{2,20}$/i.test(streamerSoopId);
+  fanpageLink.hidden = !hasFanpage;
+  if (hasFanpage) {
+    fanpageLink.href = `https://neezu-crypto.github.io/streamer-fanpage/#/p/${encodeURIComponent(streamerSoopId.toLowerCase())}`;
+    fanpageLink.setAttribute('aria-label', `${room.streamerNickname || '스트리머'} 팬페이지 열기`);
+    fanpageLink.title = `${room.streamerNickname || '스트리머'} 팬페이지 열기`;
+  } else {
+    fanpageLink.removeAttribute('href');
+  }
   const src = room.streamerAvatarUrl || avatarUrl(room.streamerSoopId);
   renderStreamerAvatar($('#chat-avatar'), src, room.streamerNickname);
   renderRoomState(room);
