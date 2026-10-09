@@ -1136,7 +1136,20 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     if (!/^[a-f0-9]{24}$/.test(gameId) || !Number.isInteger(participantIndex) || participantIndex < 0 || participantIndex >= LADDER_PLAYER_LIMIT) {
       throw new HttpsError('invalid-argument', '선택한 사다리 참가자 정보가 올바르지 않습니다.');
     }
+    const observed = (await gameRef.get()).val();
+    const isSelectableLadder = (game) => !!game && game.gameType === 'ladder' && game.status === 'active'
+      && Number.isFinite(Number(game.expiresAt)) && Number(game.expiresAt) > now()
+      && Array.isArray(game.players) && participantIndex < game.players.length
+      && !game.finishClaim && String(game.gameId || '') === gameId;
+    if (!isSelectableLadder(observed)) {
+      return { miniGame: observed && observed.gameType === 'ladder' && observed.status === 'active' ? observed : null, stale: true };
+    }
+    let seededFromServerSnapshot = false;
     const selected = await gameRef.transaction((current) => {
+      if (!current && !seededFromServerSnapshot) {
+        current = observed;
+        seededFromServerSnapshot = true;
+      }
       if (!current || current.gameType !== 'ladder' || current.status !== 'active' || !Number.isFinite(Number(current.expiresAt)) || Number(current.expiresAt) <= now()
         || current.gameId !== gameId || current.finishClaim || !Array.isArray(current.players) || participantIndex >= current.players.length) return;
       return { ...current, selectedLane: participantIndex, selectedBy: p.uid, selectedAt: now() };

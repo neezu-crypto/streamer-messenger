@@ -1023,7 +1023,10 @@ async function updateMiniGame(action, participantIndex = -1) {
       renderMiniGame();
     }
     if (result && result.stale) {
-      showToast(state.miniGame ? '사다리 종료를 확정하지 못했어요. 최신 상태를 확인한 뒤 다시 시도해 주세요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
+      const staleMessage = action === 'select'
+        ? state.miniGame ? '사다리 상태가 바뀌어 경로를 표시하지 못했어요. 최신 상태에서 다시 선택해 주세요.' : '사다리 게임이 종료되어 참가자를 선택할 수 없어요.'
+        : state.miniGame ? '사다리 종료를 확정하지 못했어요. 최신 상태를 확인한 뒤 다시 시도해 주세요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.';
+      showToast(staleMessage);
       return;
     }
     if (action === 'start') {
