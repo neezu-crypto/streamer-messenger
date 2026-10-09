@@ -259,6 +259,28 @@
 
 @media(max-width:680px){.message-link-preview{grid-template-columns:76px minmax(0,1fr);gap:8px;width:min(100%,300px);padding:6px}.message-link-preview-image{width:76px;height:58px}.message-video-preview{width:min(100%,300px)}}
 
+.room-tools-pip-bar{display:none}
+@media(min-width:900px){
+  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));max-height:calc(100dvh - 104px);overflow:auto;margin:0;padding:10px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+  .room-tools-sticky-slot.is-dragging{user-select:none;transition:none}
+  .room-tools-pip-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin-bottom:8px;padding:0 1px}
+  .room-tools-pip-drag-handle{display:flex;align-items:center;gap:9px;min-width:0;min-height:32px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#344260;font-size:11px;font-weight:800;text-align:left;cursor:grab;touch-action:none;user-select:none}
+  .room-tools-pip-drag-handle:active{cursor:grabbing}
+  .room-tools-pip-drag-handle:focus-visible,.room-tools-pip-collapse:focus-visible{outline:2px solid #8da5ff;outline-offset:2px}
+  .room-tools-pip-grip{color:#9aa8bf;font-size:18px;letter-spacing:-5px;transform:rotate(90deg)}
+  .room-tools-pip-drag-hint{color:#96a2b7;font-size:9px;font-weight:600}
+  .room-tools-pip-collapse{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;border:1px solid rgba(126,148,185,.22);border-radius:10px;background:rgba(255,255,255,.78);color:#60718e;font-size:15px}
+  .room-tools-pip-collapse:hover{border-color:#94a9f4;color:#4f6fe1}
+  .room-tools-content{width:100%;min-width:0}
+  .room-tools-switcher{width:100%;margin:0 0 8px}
+  .room-tools-viewport{width:100%;margin:0}
+  .room-tool-slide{width:100%}
+  .room-tools-sticky-slot .room-market-panel,.room-tools-sticky-slot .mini-game-live-panel{width:100%;max-width:100%;margin:0;border:1px solid rgba(126,148,185,.2);border-radius:15px;box-shadow:0 8px 22px rgba(31,48,83,.1)}
+  .room-tools-sticky-slot.is-pip-collapsed{width:max-content;min-width:175px;max-width:calc(100vw - 36px);padding:7px 9px;border-radius:15px}
+  .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-bar{min-height:30px;margin:0}
+  .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-drag-hint{display:none}
+}
+
 .app-tooltip{position:fixed;z-index:20000;max-width:min(280px,calc(100vw - 16px));padding:7px 10px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:#17233b;color:#fff;box-shadow:0 8px 24px rgba(18,30,55,.25);font-size:11px;font-weight:600;line-height:1.45;text-align:center;white-space:normal;overflow-wrap:anywhere;pointer-events:none;opacity:0;animation:tooltip-appear .12s ease-out forwards}
 .app-tooltip[hidden]{display:none!important}
 @keyframes tooltip-appear{to{opacity:1}}

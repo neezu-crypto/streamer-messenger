@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -600,6 +600,7 @@ async function openChat(room, isOwner) {
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.miniGameCollapsed = false;
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  resetRoomToolsPip();
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
@@ -838,6 +839,75 @@ function canManageMiniGame() {
   return !!state.room && (state.isOwner || (state.session && state.session.isAdmin && state.room.roomType === 'admin'));
 }
 
+function isDesktopRoomToolsPip() {
+  return window.matchMedia('(min-width: 900px)').matches;
+}
+
+function updateRoomToolsPipTitle() {
+  const title = $('#room-tools-pip-title');
+  if (!title) return;
+  const activeSlide = availableRoomToolSlides().find((slide) => slide.dataset.roomTool === state.activeRoomTool);
+  title.textContent = state.roomToolsPipCollapsed
+    ? (activeSlide && activeSlide.dataset.roomToolLabel || '채팅 도구')
+    : '채팅 도구';
+}
+
+function setRoomToolsPipCollapsed(collapsed) {
+  state.roomToolsPipCollapsed = !!collapsed && isDesktopRoomToolsPip();
+  const slot = $('#room-tools-sticky-slot');
+  const content = $('#room-tools-content');
+  const toggle = $('#toggle-room-tools-pip');
+  if (!slot || !content || !toggle) return;
+  slot.classList.toggle('is-pip-collapsed', state.roomToolsPipCollapsed);
+  content.hidden = state.roomToolsPipCollapsed;
+  toggle.setAttribute('aria-expanded', String(!state.roomToolsPipCollapsed));
+  const label = state.roomToolsPipCollapsed ? '채팅 도구 패널 펼치기' : '채팅 도구 패널 접기';
+  toggle.setAttribute('aria-label', label);
+  toggle.title = state.roomToolsPipCollapsed
+    ? '주식시장과 미니게임 패널을 펼칩니다'
+    : '주식시장과 미니게임 패널을 접습니다';
+  toggle.querySelector('[aria-hidden="true"]').textContent = state.roomToolsPipCollapsed ? '⌄' : '⌃';
+  updateRoomToolsPipTitle();
+  if (!state.roomToolsPipCollapsed && isDesktopRoomToolsPip() && slot.style.left) {
+    requestAnimationFrame(() => {
+      const rect = slot.getBoundingClientRect();
+      setRoomToolsPipPosition(rect.left, rect.top);
+    });
+  }
+}
+
+function resetRoomToolsPip() {
+  const slot = $('#room-tools-sticky-slot');
+  if (slot) {
+    slot.style.removeProperty('left');
+    slot.style.removeProperty('top');
+    slot.style.removeProperty('right');
+    slot.classList.remove('is-dragging');
+  }
+  setRoomToolsPipCollapsed(false);
+}
+
+function setRoomToolsPipPosition(left, top) {
+  if (!isDesktopRoomToolsPip()) return;
+  const slot = $('#room-tools-sticky-slot');
+  if (!slot) return;
+  const rect = slot.getBoundingClientRect();
+  const min = 8;
+  const maxLeft = Math.max(min, window.innerWidth - rect.width - min);
+  const maxTop = Math.max(min, window.innerHeight - rect.height - min);
+  slot.style.right = 'auto';
+  slot.style.left = `${Math.min(maxLeft, Math.max(min, left))}px`;
+  slot.style.top = `${Math.min(maxTop, Math.max(min, top))}px`;
+}
+
+function focusRoomTool(key) {
+  setRoomToolsPipCollapsed(false);
+  selectRoomTool(key);
+  if (!isDesktopRoomToolsPip()) {
+    $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
 function setMiniGameCollapsed(collapsed) {
   state.miniGameCollapsed = !!collapsed;
   const panel = $('#mini-game-active');
@@ -864,6 +934,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
     slot.hidden = true;
     switcher.hidden = true;
     track.style.transform = '';
+    updateRoomToolsPipTitle();
     return;
   }
 
@@ -903,6 +974,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
   if (preferredKey && keys.includes(preferredKey)) state.activeRoomTool = preferredKey;
   if (!keys.includes(state.activeRoomTool)) state.activeRoomTool = keys[0];
   const activeIndex = keys.indexOf(state.activeRoomTool);
+  updateRoomToolsPipTitle();
   slides.forEach((slide, index) => {
     const selected = index === activeIndex;
     const key = slide.dataset.roomTool;
@@ -947,6 +1019,60 @@ function switchRoomToolBySwipe(direction) {
 function bindRoomToolControls() {
   const switcher = $('#room-tools-switcher');
   const viewport = $('#room-tools-viewport');
+  const slot = $('#room-tools-sticky-slot');
+  const dragHandle = $('#room-tools-pip-drag-handle');
+  $('#toggle-room-tools-pip').addEventListener('click', () => setRoomToolsPipCollapsed(!state.roomToolsPipCollapsed));
+
+  let dragOrigin = null;
+  dragHandle.addEventListener('pointerdown', (event) => {
+    if (!isDesktopRoomToolsPip() || event.button !== 0 || slot.hidden) return;
+    const rect = slot.getBoundingClientRect();
+    dragOrigin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+    slot.style.right = 'auto';
+    slot.style.left = `${rect.left}px`;
+    slot.style.top = `${rect.top}px`;
+    slot.classList.add('is-dragging');
+    dragHandle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  dragHandle.addEventListener('pointermove', (event) => {
+    if (!dragOrigin || event.pointerId !== dragOrigin.pointerId) return;
+    setRoomToolsPipPosition(dragOrigin.left + event.clientX - dragOrigin.x, dragOrigin.top + event.clientY - dragOrigin.y);
+  });
+  const stopDragging = (event) => {
+    if (!dragOrigin || (event && event.pointerId !== dragOrigin.pointerId)) return;
+    const pointerId = dragOrigin.pointerId;
+    dragOrigin = null;
+    slot.classList.remove('is-dragging');
+    if (dragHandle.hasPointerCapture(pointerId)) dragHandle.releasePointerCapture(pointerId);
+  };
+  dragHandle.addEventListener('pointerup', stopDragging);
+  dragHandle.addEventListener('pointercancel', stopDragging);
+  dragHandle.addEventListener('lostpointercapture', stopDragging);
+  dragHandle.addEventListener('keydown', (event) => {
+    if (!isDesktopRoomToolsPip()) return;
+    const distance = event.shiftKey ? 8 : 24;
+    const offset = {
+      ArrowLeft: [-distance, 0], ArrowRight: [distance, 0],
+      ArrowUp: [0, -distance], ArrowDown: [0, distance]
+    }[event.key];
+    if (!offset) return;
+    event.preventDefault();
+    const rect = slot.getBoundingClientRect();
+    setRoomToolsPipPosition(rect.left + offset[0], rect.top + offset[1]);
+  });
+  window.addEventListener('resize', () => {
+    if (!isDesktopRoomToolsPip()) {
+      slot.style.removeProperty('left');
+      slot.style.removeProperty('top');
+      slot.style.removeProperty('right');
+      if (state.roomToolsPipCollapsed) setRoomToolsPipCollapsed(false);
+    } else if (slot.style.left) {
+      const rect = slot.getBoundingClientRect();
+      setRoomToolsPipPosition(rect.left, rect.top);
+    }
+  }, { passive: true });
+
   switcher.addEventListener('click', (event) => {
     const tab = event.target.closest('[data-room-tool-tab]');
     if (tab) selectRoomTool(tab.dataset.roomToolTab);
@@ -1003,6 +1129,7 @@ function renderMiniGame(errorMessage = '') {
   const gameId = game && game.gameId || '';
   const gameStarted = !!gameId && gameId !== state.renderedMiniGameId;
   const gameFinished = !gameId && !!state.renderedMiniGameId && state.activeRoomTool === 'mini-game';
+  if (gameStarted) setRoomToolsPipCollapsed(false);
   state.renderedMiniGameId = gameId;
   setMiniGameCollapsed(state.miniGameCollapsed);
   start.disabled = state.miniGameMutationPending;
@@ -1131,8 +1258,7 @@ function renderMiniGame(errorMessage = '') {
 function openMiniGameDialog() {
   if (!state.room) return;
   if (state.miniGame) {
-    selectRoomTool('mini-game');
-    $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    focusRoomTool('mini-game');
     return;
   }
   if (!canManageMiniGame()) {
@@ -1193,10 +1319,9 @@ async function updateMiniGame(action, participantIndex = -1) {
       return;
     }
     if (action === 'start') {
-      selectRoomTool('mini-game');
+      focusRoomTool('mini-game');
       closeDialog('mini-game-dialog');
       showToast('사다리 게임을 채팅창에 시작했어요.');
-      $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else if (action === 'finish') showToast('사다리 결과를 채팅방에 공유했어요.');
   } catch (error) {
     let staleGame = false;
@@ -1207,9 +1332,8 @@ async function updateMiniGame(action, participantIndex = -1) {
         const latest = applyMiniGameState(serverState && serverState.miniGame);
         if (action === 'start' && latest) {
           renderMiniGame();
-          selectRoomTool('mini-game');
+          focusRoomTool('mini-game');
           closeDialog('mini-game-dialog');
-          $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           showToast('이미 진행 중인 사다리 게임을 화면에 표시했어요.');
           return;
         }
@@ -2503,6 +2627,7 @@ function leaveChat() {
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  resetRoomToolsPip();
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
