@@ -1393,7 +1393,7 @@ function subscribeRoomMarket() {
   const panel = $('#room-market-panel');
   const marketSlide = $('#room-tool-market-slide');
   const roomId = state.room && state.room.roomId;
-  setRoomMarketCollapsed(true);
+  setRoomMarketCollapsed(false);
   panel.hidden = !roomId;
   marketSlide.hidden = panel.hidden;
   renderRoomToolSwitcher();
