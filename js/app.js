@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
@@ -662,6 +662,7 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  resetRoomToolVideo();
   state.asideTab = 'fans';
   setAsideDrawerOpen(false, false);
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
@@ -671,6 +672,7 @@ async function openChat(room, isOwner) {
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
+  $('#room-tool-video-slide').hidden = true;
   $('#room-market-panel').hidden = true;
   $('#mini-game-active').hidden = true;
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
@@ -932,8 +934,8 @@ function setRoomToolsPipCollapsed(collapsed) {
   const label = state.roomToolsPipCollapsed ? '채팅 도구 패널 펼치기' : '채팅 도구 패널 접기';
   toggle.setAttribute('aria-label', label);
   toggle.title = state.roomToolsPipCollapsed
-    ? '주식시장과 미니게임 패널을 펼칩니다'
-    : '주식시장과 미니게임 패널을 접습니다';
+    ? '채팅 도구 패널을 펼칩니다'
+    : '채팅 도구 패널을 접습니다';
   toggle.querySelector('[aria-hidden="true"]').textContent = state.roomToolsPipCollapsed ? '⌄' : '⌃';
   updateRoomToolsPipTitle();
   if (!state.roomToolsPipCollapsed && isDesktopRoomToolsPip() && slot.style.left) {
@@ -1007,6 +1009,7 @@ function syncRoomToolsViewportHeight() {
 function renderRoomToolSwitcher(preferredKey = '') {
   const slot = $('#room-tools-sticky-slot');
   const switcher = $('#room-tools-switcher');
+  const viewport = $('#room-tools-viewport');
   const track = $('#room-tools-track');
   const slides = availableRoomToolSlides();
   if (!state.room || !slides.length) {
@@ -1107,6 +1110,7 @@ function bindRoomToolControls() {
   const slot = $('#room-tools-sticky-slot');
   const dragHandle = $('#room-tools-pip-drag-handle');
   $('#toggle-room-tools-pip').addEventListener('click', () => setRoomToolsPipCollapsed(!state.roomToolsPipCollapsed));
+  $('#room-video-close').addEventListener('click', closeRoomToolVideo);
 
   let dragOrigin = null;
   dragHandle.addEventListener('pointerdown', (event) => {
@@ -2175,21 +2179,106 @@ function isDirectVideoUrl(href) {
   catch (_) { return false; }
 }
 
+function resetRoomToolVideo() {
+  const player = $('#room-video-player');
+  const panel = $('#room-video-tool-panel');
+  const slide = $('#room-tool-video-slide');
+  if (player) player.replaceChildren();
+  if (panel) panel.hidden = true;
+  if (slide) slide.hidden = true;
+  if (state.roomVideoSourceCard) state.roomVideoSourceCard.classList.remove('is-playing-in-tool');
+  state.roomVideoSourceCard = null;
+}
+
+function openRoomToolVideo({ kind, videoId = '', href = '', sourceCard = null }) {
+  if (!isDesktopRoomToolsPip() || !state.room) return false;
+  const player = $('#room-video-player');
+  const panel = $('#room-video-tool-panel');
+  const slide = $('#room-tool-video-slide');
+  const link = $('#room-video-open-link');
+  const title = $('#room-video-tool-title');
+  const caption = $('#room-video-tool-caption');
+  if (!player || !panel || !slide || !link || !title || !caption) return false;
+
+  if (state.roomVideoSourceCard) state.roomVideoSourceCard.classList.remove('is-playing-in-tool');
+  let media;
+  if (kind === 'youtube' && videoId) {
+    media = document.createElement('iframe');
+    media.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0`;
+    media.title = 'YouTube 영상';
+    media.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    media.allowFullscreen = true;
+    media.referrerPolicy = 'strict-origin-when-cross-origin';
+    title.textContent = 'YouTube 영상';
+    caption.textContent = '선택한 YouTube 영상을 채팅 도구에서 재생합니다.';
+    link.href = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  } else if (kind === 'direct' && isDirectVideoUrl(href)) {
+    media = document.createElement('video');
+    media.src = href;
+    media.controls = true;
+    media.autoplay = true;
+    media.playsInline = true;
+    media.preload = 'auto';
+    media.title = '채팅 영상';
+    media.dataset.roomToolPlayer = 'true';
+    title.textContent = '채팅 영상';
+    caption.textContent = '선택한 영상을 채팅 도구에서 재생합니다.';
+    link.href = href;
+  } else return false;
+
+  media.className = 'room-video-player-media';
+  player.replaceChildren(media);
+  panel.hidden = false;
+  slide.hidden = false;
+  if (sourceCard) {
+    sourceCard.classList.add('is-playing-in-tool');
+    state.roomVideoSourceCard = sourceCard;
+  }
+  setRoomToolsPipCollapsed(false);
+  renderRoomToolSwitcher('video');
+  if (media instanceof HTMLVideoElement) media.play().catch(() => {});
+  requestAnimationFrame(() => {
+    const slot = $('#room-tools-sticky-slot');
+    if (slot && slot.style.left) {
+      const rect = slot.getBoundingClientRect();
+      setRoomToolsPipPosition(rect.left, rect.top);
+    }
+  });
+  return true;
+}
+
+function closeRoomToolVideo() {
+  const wasActive = state.activeRoomTool === 'video';
+  resetRoomToolVideo();
+  if (state.room) renderRoomToolSwitcher(wasActive ? 'market' : '');
+}
+
 function youtubePreview(videoId) {
   const card = document.createElement('div'); card.className = 'message-video-preview youtube-video-preview';
   const image = document.createElement('img'); image.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`; image.alt = 'YouTube 동영상 미리보기'; image.loading = 'lazy';
   const play = document.createElement('button'); play.className = 'video-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅방에서 YouTube 영상 재생'; play.setAttribute('aria-label', '채팅방에서 YouTube 영상 재생');
   play.addEventListener('click', () => {
+    if (openRoomToolVideo({ kind: 'youtube', videoId, sourceCard: card })) return;
     const frame = document.createElement('iframe'); frame.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`; frame.title = 'YouTube 영상'; frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'; frame.allowFullscreen = true; frame.referrerPolicy = 'strict-origin-when-cross-origin';
     card.replaceChildren(frame);
-  }, { once: true });
+  });
   card.append(image, play); return card;
 }
 
 function directVideoPreview(href) {
-  const card = document.createElement('div'); card.className = 'message-video-preview';
+  const card = document.createElement('div'); card.className = 'message-video-preview direct-video-preview';
   const video = document.createElement('video'); video.src = href; video.controls = true; video.playsInline = true; video.preload = 'none'; video.title = '채팅방에서 영상 재생';
-  card.appendChild(video); return card;
+  video.addEventListener('play', () => {
+    if (!isDesktopRoomToolsPip() || video.dataset.roomToolPlayer === 'true') return;
+    video.pause();
+    openRoomToolVideo({ kind: 'direct', href, sourceCard: card });
+  });
+  const play = document.createElement('button'); play.className = 'video-play-button direct-video-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅 도구에서 영상 재생'; play.setAttribute('aria-label', '채팅 도구에서 영상 재생');
+  play.addEventListener('click', () => {
+    if (openRoomToolVideo({ kind: 'direct', href, sourceCard: card })) return;
+    video.play().catch(() => {});
+  });
+  card.append(video, play); return card;
 }
 
 function previewCacheKey(roomId, href) { return `${roomId}\n${href}`; }
@@ -2712,6 +2801,7 @@ async function discardRoom() {
 function leaveChat() {
   setAsideDrawerOpen(false, false);
   clearSubscriptions();
+  resetRoomToolVideo();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
@@ -2719,6 +2809,7 @@ function leaveChat() {
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
+  $('#room-tool-video-slide').hidden = true;
   $('#room-market-panel').hidden = true;
   $('#mini-game-active').hidden = true;
   closeDialog('mini-game-dialog');
