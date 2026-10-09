@@ -4,6 +4,7 @@ const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -925,6 +926,17 @@ function availableRoomToolSlides() {
   return Array.from($('#room-tools-track').querySelectorAll('.room-tool-slide')).filter((slide) => !slide.hidden);
 }
 
+function syncRoomToolsViewportHeight() {
+  const viewport = $('#room-tools-viewport');
+  const activeSlide = availableRoomToolSlides().find((slide) => slide.dataset.roomTool === state.activeRoomTool);
+  if (!viewport || !activeSlide) {
+    if (viewport) viewport.style.removeProperty('height');
+    return;
+  }
+  const height = Math.ceil(activeSlide.getBoundingClientRect().height);
+  if (height > 0 && viewport.style.height !== `${height}px`) viewport.style.height = `${height}px`;
+}
+
 function renderRoomToolSwitcher(preferredKey = '') {
   const slot = $('#room-tools-sticky-slot');
   const switcher = $('#room-tools-switcher');
@@ -934,6 +946,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
     slot.hidden = true;
     switcher.hidden = true;
     track.style.transform = '';
+    viewport.style.removeProperty('height');
     updateRoomToolsPipTitle();
     return;
   }
@@ -988,6 +1001,11 @@ function renderRoomToolSwitcher(preferredKey = '') {
     } else slide.removeAttribute('aria-labelledby');
   });
   track.style.transform = `translate3d(-${activeIndex * 100}%, 0, 0)`;
+  if (typeof ResizeObserver === 'function') {
+    if (!roomToolsSlideResizeObserver) roomToolsSlideResizeObserver = new ResizeObserver(syncRoomToolsViewportHeight);
+    slides.forEach((slide) => roomToolsSlideResizeObserver.observe(slide));
+  }
+  requestAnimationFrame(syncRoomToolsViewportHeight);
   if (slides.length >= 3) {
     const activeTab = switcher.querySelector(`[data-room-tool-tab="${state.activeRoomTool}"]`);
     if (activeTab) {
