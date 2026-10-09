@@ -1089,7 +1089,11 @@ function createLadderRungs(laneCount) {
 function ladderResultText(game) {
   const players = Array.isArray(game.players) ? game.players.map((value) => safeText(value, 24, true)) : [];
   const outcomes = Array.isArray(game.outcomes) ? game.outcomes.map((value) => safeText(value, 24, true)) : [];
-  const rungs = Array.isArray(game.rungs) ? game.rungs.slice(0, LADDER_ROW_COUNT).map((row) => Array.isArray(row) ? row : []) : [];
+  const rungs = Array.isArray(game.rungs)
+    ? Array.from({ length: Math.min(game.rungs.length, LADDER_ROW_COUNT) }, (_, index) => (
+      Array.isArray(game.rungs[index]) ? game.rungs[index] : []
+    ))
+    : [];
   if (players.length < 2 || players.length > LADDER_PLAYER_LIMIT || outcomes.length !== players.length || !rungs.length) {
     throw new HttpsError('failed-precondition', '사다리 결과 데이터가 올바르지 않아 결과를 공유할 수 없습니다.');
   }

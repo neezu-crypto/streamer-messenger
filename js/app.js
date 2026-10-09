@@ -862,7 +862,9 @@ function renderMiniGame(errorMessage = '') {
 
   const players = game.players.slice(0, 8);
   const outcomes = game.outcomes.slice(0, 8);
-  const rungs = game.rungs.slice(0, 10).map((row) => Array.isArray(row) ? row : []);
+  const rungs = Array.from({ length: Math.min(game.rungs.length, 10) }, (_, index) => (
+    Array.isArray(game.rungs[index]) ? game.rungs[index] : []
+  ));
   if (players.length < 2 || players.length > 8 || outcomes.length !== players.length) {
     liveError.textContent = '사다리 데이터 형식이 올바르지 않습니다.';
     liveError.hidden = false;
