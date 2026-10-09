@@ -1638,6 +1638,7 @@ async function seedRoomMarketSparkline(stockId) {
     }
     state.roomMarketPriceHistory[stockId] = history.slice(-ROOM_MARKET_PRICE_HISTORY_MAX);
     renderRoomMarketStocks();
+    if (state.roomMarketSelectedStockId === stockId && $('#room-market-trade-dialog').open) renderRoomMarketChart(stockId);
   } catch (error) {
     console.warn('채팅방 종목 가격 이력을 불러오지 못했습니다.', error);
   }
@@ -1649,10 +1650,16 @@ function getRoomMarketChangePercent(stockId) {
   return (((history[history.length - 1] - history[0]) / history[0]) * 100).toFixed(2);
 }
 
-function createRoomMarketSparkline(stockId, isUp) {
+function getRoomMarketPricePoints(stockId) {
   const history = state.roomMarketPriceHistory[stockId] || [];
   const quotePrice = Number(state.roomMarketQuotes[stockId]?.price);
-  const points = history.length >= 2 ? history : (Number.isFinite(quotePrice) && quotePrice > 0 ? [quotePrice, quotePrice] : []);
+  return history.length >= 2
+    ? history.slice(-ROOM_MARKET_PRICE_HISTORY_MAX)
+    : (Number.isFinite(quotePrice) && quotePrice > 0 ? [quotePrice, quotePrice] : []);
+}
+
+function createRoomMarketSparkline(stockId, isUp) {
+  const points = getRoomMarketPricePoints(stockId);
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', `room-market-sparkline${isUp ? ' up' : ' down'}`);
   svg.setAttribute('viewBox', '0 0 80 28');
@@ -1779,10 +1786,10 @@ async function openRoomMarketTrade(stockId) {
   $('#room-market-trade-status').hidden = true;
   $('#room-market-trade-title').textContent = state.roomMarketQuotes[stockId]?.name || state.roomMarketStocks[stockId].name || stockId;
   renderRoomMarketQuote(stockId);
-  $('#room-market-chart').textContent = '차트를 불러오는 중…';
+  renderRoomMarketChart(stockId);
   openDialog('room-market-trade-dialog');
   $('#room-market-personal-cash').textContent = '불러오는 중…'; $('#room-market-personal-qty').textContent = '불러오는 중…';
-  await Promise.all([loadRoomMarketCandles(stockId), loadRoomMarketPersonalPosition(stockId)]);
+  await Promise.all([seedRoomMarketSparkline(stockId), loadRoomMarketPersonalPosition(stockId)]);
 }
 
 async function loadRoomMarketPersonalPosition(stockId) {
@@ -1813,30 +1820,15 @@ function renderRoomMarketQuote(stockId) {
 function renderRoomMarketChart(stockId) {
   const host = $('#room-market-chart');
   if (state.roomMarketSelectedStockId !== stockId || !host) return;
-  const values = (state.roomMarketCandles || []).map((candle) => Number(candle.c)).filter((value) => Number.isFinite(value) && value > 0);
-  const current = Number(state.roomMarketQuotes[stockId]?.price);
-  if (Number.isFinite(current) && current > 0 && values[values.length - 1] !== current) values.push(current);
+  const values = getRoomMarketPricePoints(stockId);
   if (!values.length) { host.textContent = '아직 표시할 주가 기록이 없습니다.'; return; }
-  const points = values.slice(-90); const width = 600; const height = 150; const padding = 14;
+  const points = values.slice(-ROOM_MARKET_PRICE_HISTORY_MAX); const width = 600; const height = 150; const padding = 14;
   const min = Math.min(...points); const max = Math.max(...points); const span = Math.max(max - min, Math.abs(max) * 0.002, 1);
   const coords = points.map((value, index) => `${padding + index * (width - padding * 2) / Math.max(points.length - 1, 1)},${height - padding - (value - min) / span * (height - padding * 2)}`);
-  const ns = 'http://www.w3.org/2000/svg'; const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', '최근 분봉 종가와 현재가');
+  const ns = 'http://www.w3.org/2000/svg'; const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', `최근 가격 흐름, 최대 ${ROOM_MARKET_PRICE_HISTORY_MAX}개 누적`);
   for (let i = 1; i <= 3; i += 1) { const line = document.createElementNS(ns, 'line'); const y = padding + i * (height - padding * 2) / 4; line.setAttribute('x1', String(padding)); line.setAttribute('x2', String(width - padding)); line.setAttribute('y1', String(y)); line.setAttribute('y2', String(y)); line.setAttribute('stroke', '#e8edf7'); line.setAttribute('stroke-width', '1'); svg.appendChild(line); }
   const path = document.createElementNS(ns, 'polyline'); path.setAttribute('points', coords.join(' ')); path.setAttribute('fill', 'none'); path.setAttribute('stroke', points[points.length - 1] >= points[0] ? '#5878ed' : '#d86c76'); path.setAttribute('stroke-width', '3'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); svg.appendChild(path);
   host.replaceChildren(svg);
-}
-
-async function loadRoomMarketCandles(stockId) {
-  try {
-    const { db, ref, get } = api();
-    const snapshot = await get(ref(db, `candlesticks/${stockId}`));
-    if (state.roomMarketSelectedStockId !== stockId || !$('#room-market-trade-dialog').open) return;
-    state.roomMarketCandles = Object.values(snapshot.val() || {}).filter((candle) => candle && Number.isFinite(Number(candle.t)) && Number.isFinite(Number(candle.c))).sort((a, b) => Number(a.t) - Number(b.t));
-    renderRoomMarketChart(stockId);
-  } catch (error) {
-    state.roomMarketCandles = [];
-    renderRoomMarketChart(stockId);
-  }
 }
 
 async function executeRoomMarketTrade(type) {
