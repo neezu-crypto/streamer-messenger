@@ -6,11 +6,12 @@ const MESSAGE_PAGE_SIZE = 100;
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
 let toastTimer = 0;
+let imageViewerToken = 0;
 let asideSwipeStart = null;
 let asideSwipeSuppressClickUntil = 0;
 
@@ -1941,11 +1942,41 @@ function trackNotifications(messages) {
   }
 }
 
-async function getImageUrl(imageId) {
-  if (state.imageUrls.has(imageId)) return state.imageUrls.get(imageId);
-  const promise = call('messengerGetGalleryImage', { roomId: state.room.roomId, imageId }).then((image) => image.thumbUrl || image.imageUrl).catch(() => '');
+async function getImageUrl(imageId, original = false) {
+  if (state.imageUrls.has(imageId)) {
+    const image = await state.imageUrls.get(imageId);
+    return original ? image.originalUrl : image.previewUrl;
+  }
+  const promise = call('messengerGetGalleryImage', { roomId: state.room.roomId, imageId }).then((image) => ({
+    previewUrl: image.thumbUrl || image.imageUrl || '', originalUrl: image.imageUrl || image.thumbUrl || '',
+  })).catch(() => ({ previewUrl: '', originalUrl: '' }));
   state.imageUrls.set(imageId, promise);
-  return promise;
+  const image = await promise;
+  return original ? image.originalUrl : image.previewUrl;
+}
+
+function openImageViewer(src, alt, loadOriginal = null) {
+  if (!src) return;
+  const dialog = $('#image-viewer-dialog');
+  const image = $('#image-viewer-image');
+  if (!dialog || !image) return;
+  const token = ++imageViewerToken;
+  image.src = src;
+  image.alt = alt || '채팅 이미지 크게 보기';
+  openDialog('image-viewer-dialog');
+  if (loadOriginal) Promise.resolve().then(loadOriginal).then((originalUrl) => {
+    if (originalUrl && dialog.open && token === imageViewerToken) image.src = originalUrl;
+  }).catch(() => {});
+}
+
+function createZoomableMessageImage(alt, loadOriginal = null) {
+  const button = document.createElement('button');
+  button.className = 'message-image-open'; button.type = 'button'; button.title = '이미지를 클릭해 크게 보기';
+  button.setAttribute('aria-label', `${alt} 크게 보기`);
+  const image = document.createElement('img'); image.className = 'message-image'; image.alt = alt; image.loading = 'lazy'; image.src = '';
+  button.addEventListener('click', () => openImageViewer(image.currentSrc || image.src, alt, loadOriginal ? () => loadOriginal() : null));
+  button.appendChild(image);
+  return { button, image };
 }
 
 async function getRoomselfImageUrl(message) {
@@ -2491,15 +2522,17 @@ function renderMessage(message) {
   if (!isMine) { const name = document.createElement('p'); name.className = 'message-name'; name.textContent = message.senderName || (isStreamerMessage ? '스트리머' : '팬'); stack.appendChild(name); }
   const bubble = document.createElement('div'); bubble.className = 'message-bubble';
   if (message.kind === 'image') {
-    const img = document.createElement('img'); img.className = 'message-image'; img.alt = '스트리머 갤러리 이미지'; img.loading = 'lazy'; img.src = '';
+    const alt = '스트리머 갤러리 이미지';
+    const { button, image: img } = createZoomableMessageImage(alt, () => getImageUrl(message.galleryImageId, true));
     getImageUrl(message.galleryImageId).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '갤러리 이미지에 접근할 수 없어요.'; bubble.replaceChildren(unavailable); } });
-    bubble.appendChild(img);
+    bubble.appendChild(button);
   } else if (message.kind === 'roomself') {
     if (message.pending) bubble.textContent = '비공개 이미지 전송 중…';
     else {
-      const img = document.createElement('img'); img.className = 'message-image'; img.alt = '비공개 방셀 이미지'; img.loading = 'lazy';
+      const alt = '비공개 방셀 이미지';
+      const { button, image: img } = createZoomableMessageImage(alt);
       getRoomselfImageUrl(message).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '비공개 이미지를 불러오지 못했어요.'; bubble.replaceChildren(unavailable); } });
-      bubble.appendChild(img);
+      bubble.appendChild(button);
     }
   } else renderTextWithLinks(message, bubble);
   stack.appendChild(bubble);
@@ -3429,6 +3462,9 @@ function bindEvents() {
   $('#submit-application').addEventListener('click', submitApplication);
   $('#open-image-picker').addEventListener('click', () => openImagePicker());
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
+  $('#image-viewer-close').addEventListener('click', () => closeDialog('image-viewer-dialog'));
+  $('#image-viewer-dialog').addEventListener('click', (event) => { if (event.target === $('#image-viewer-dialog')) closeDialog('image-viewer-dialog'); });
+  $('#image-viewer-dialog').addEventListener('close', () => { imageViewerToken += 1; $('#image-viewer-image').removeAttribute('src'); });
   $('#close-roomself').addEventListener('click', () => closeDialog('roomself-dialog'));
   $('#roomself-file').addEventListener('change', () => {
     const file = $('#roomself-file').files && $('#roomself-file').files[0]; const preview = $('#roomself-preview'); const button = $('#roomself-send'); const status = $('#roomself-status');

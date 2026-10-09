@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261010-gallery-upload-chat-progress">
+  <link rel="stylesheet" href="styles.css?v=20261010-chat-image-viewer">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -249,6 +249,13 @@
     </section>
   </dialog>
 
+  <dialog class="app-dialog image-viewer-dialog" id="image-viewer-dialog" aria-label="채팅 이미지 크게 보기">
+    <section class="image-viewer-stage">
+      <button class="image-viewer-close" id="image-viewer-close" type="button" aria-label="이미지 보기 닫기" title="이미지 크게 보기 닫기">×</button>
+      <img class="image-viewer-image" id="image-viewer-image" alt="채팅 이미지 크게 보기">
+    </section>
+  </dialog>
+
   <dialog class="app-dialog" id="roomself-dialog">
     <section class="dialog-card roomself-card" aria-labelledby="roomself-title">
       <button class="dialog-close" id="close-roomself" type="button" aria-label="닫기">×</button>
@@ -379,6 +386,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261010-gallery-upload-chat-progress"></script>
+  <script type="module" src="js/app.js?v=20261010-chat-image-viewer"></script>
 </body>
 </html>
