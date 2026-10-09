@@ -1021,7 +1021,7 @@ async function updateMiniGame(action, participantIndex = -1) {
       renderMiniGame();
     }
     if (result && result.stale) {
-      showToast(state.miniGame ? '최신 사다리 상태로 화면을 갱신했어요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
+      showToast(state.miniGame ? '사다리 종료를 확정하지 못했어요. 최신 상태를 확인한 뒤 다시 시도해 주세요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
       return;
     }
     if (action === 'start') {

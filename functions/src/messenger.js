@@ -1144,34 +1144,76 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     return { miniGame: selected.snapshot.val() };
   }
   if (action === 'finish' || action === 'clear') {
-    const gameId = String(data.gameId || '');
-    if (gameId && !/^[a-f0-9]{24}$/.test(gameId)) throw new HttpsError('invalid-argument', '사다리 게임 식별자가 올바르지 않습니다.');
     const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
     const candidateMessageId = timelineRef.push().key;
     const candidateFinishedAt = now();
-    const finished = await gameRef.transaction((current) => {
-      if (!current || current.gameType !== 'ladder' || current.status !== 'active'
-        || !Number.isFinite(Number(current.expiresAt)) || Number(current.expiresAt) <= now()) return;
-      if (current.finishClaim && current.finishClaim.messageId && current.finishClaim.text) return current;
-      return {
-        ...current,
-        finishClaim: {
-          messageId: candidateMessageId,
-          createdAt: candidateFinishedAt,
-          text: ladderResultText(current),
-        },
-      };
-    });
-    if (!finished.committed) {
-      const latestSnapshot = await gameRef.get();
-      const current = latestSnapshot.val();
-      const active = current && current.gameType === 'ladder' && current.status === 'active'
-        && Number.isFinite(Number(current.expiresAt)) && Number(current.expiresAt) > now()
-        && Array.isArray(current.players) && Array.isArray(current.outcomes) && Array.isArray(current.rungs)
-        ? current : null;
-      return { miniGame: active, stale: true };
+    const isActiveLadder = (game) => !!game && game.gameType === 'ladder' && game.status === 'active'
+      && Number.isFinite(Number(game.expiresAt)) && Number(game.expiresAt) > now()
+      && Array.isArray(game.players) && Array.isArray(game.outcomes) && Array.isArray(game.rungs);
+    let observed = (await gameRef.get()).val();
+    if (!isActiveLadder(observed)) return { miniGame: null, stale: true };
+    const expectedGameId = String(observed.gameId || '');
+    if (!/^[a-f0-9]{24}$/.test(expectedGameId)) {
+      throw new HttpsError('failed-precondition', '사다리 게임 식별자를 확인할 수 없습니다. 다시 불러와 주세요.');
     }
-    const game = finished.snapshot.val() || {};
+    let game = null;
+    let finished = null;
+    let transactionRuns = 0;
+    let transactionAbortReason = '';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      finished = await gameRef.transaction((current) => {
+        transactionRuns += 1;
+        if (!current) { transactionAbortReason = 'missing'; return; }
+        if (current.gameType !== 'ladder') { transactionAbortReason = 'wrong-game-type'; return; }
+        if (current.status !== 'active') { transactionAbortReason = 'not-active'; return; }
+        if (!Number.isFinite(Number(current.expiresAt)) || Number(current.expiresAt) <= now()) {
+          transactionAbortReason = 'expired';
+          return;
+        }
+        if (!Array.isArray(current.players) || !Array.isArray(current.outcomes) || !Array.isArray(current.rungs)) {
+          transactionAbortReason = 'invalid-game-data';
+          return;
+        }
+        if (String(current.gameId || '') !== expectedGameId) { transactionAbortReason = 'game-changed'; return; }
+        if (current.finishClaim && current.finishClaim.messageId && current.finishClaim.text) return current;
+        return {
+          ...current,
+          finishClaim: {
+            messageId: candidateMessageId,
+            createdAt: candidateFinishedAt,
+            text: ladderResultText(current),
+          },
+        };
+      });
+      if (finished.committed) {
+        game = finished.snapshot.val() || null;
+        break;
+      }
+
+      observed = (await gameRef.get()).val();
+      if (!isActiveLadder(observed) || String(observed.gameId || '') !== expectedGameId) {
+        return { miniGame: isActiveLadder(observed) ? observed : null, stale: true };
+      }
+      if (observed.finishClaim && observed.finishClaim.messageId && observed.finishClaim.text) {
+        game = observed;
+        break;
+      }
+    }
+    if (!game) {
+      logger.warn('미니게임 종료 트랜잭션 재시도 후에도 확정되지 않았습니다.', {
+        roomId,
+        gameId: expectedGameId,
+        transactionRuns,
+        transactionAbortReason,
+        committed: !!(finished && finished.committed),
+        observedStatus: observed && observed.status,
+        observedGameType: observed && observed.gameType,
+        observedGameId: observed && observed.gameId,
+        observedExpiresAt: observed && observed.expiresAt,
+        hasFinishClaim: !!(observed && observed.finishClaim),
+      });
+      return { miniGame: isActiveLadder(observed) ? observed : null, stale: true };
+    }
     const claim = game.finishClaim || {};
     if (!/^[A-Za-z0-9_-]{20}$/.test(String(claim.messageId || '')) || typeof claim.text !== 'string') {
       throw new HttpsError('failed-precondition', '사다리 결과를 확인할 수 없습니다. 다시 시도해 주세요.');
