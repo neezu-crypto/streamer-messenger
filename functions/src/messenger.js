@@ -1106,7 +1106,7 @@ function ladderResultText(game) {
     }
     return `${player} → ${outcomes[lane]}`;
   });
-  return `사다리타기 결과: ${pairs.join(' · ')}`;
+  return `사다리타기 결과:\n${pairs.join('\n')}`;
 }
 
 const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => {
