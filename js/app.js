@@ -1200,13 +1200,21 @@ async function updateMiniGame(action, participantIndex = -1) {
     } else if (action === 'finish') showToast('사다리 결과를 채팅방에 공유했어요.');
   } catch (error) {
     let staleGame = false;
-    if (action !== 'start' && payload.gameId && state.room && state.room.roomId === payload.roomId) {
+    if ((action === 'start' || payload.gameId) && state.room && state.room.roomId === payload.roomId) {
       try {
         const serverState = await call('messengerMiniGameUpdate', { roomId: payload.roomId, action: 'sync' });
         if (!state.room || state.room.roomId !== payload.roomId) return;
         const latest = applyMiniGameState(serverState && serverState.miniGame);
+        if (action === 'start' && latest) {
+          renderMiniGame();
+          selectRoomTool('mini-game');
+          closeDialog('mini-game-dialog');
+          $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          showToast('이미 진행 중인 사다리 게임을 화면에 표시했어요.');
+          return;
+        }
         staleGame = !latest || latest.gameId !== payload.gameId;
-        if (staleGame) {
+        if (action !== 'start' && staleGame) {
           $('#mini-game-live-error').hidden = true;
           renderMiniGame();
           showToast(latest ? '사다리 상태가 바뀌어 최신 게임으로 화면을 갱신했어요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
