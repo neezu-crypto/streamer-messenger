@@ -148,16 +148,6 @@
 .chat-donation-link{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 10px;border-color:rgba(220,163,69,.3);background:#fff8e9;color:#a36c18;text-decoration:none;white-space:nowrap;font-size:10px;font-weight:700}
 .chat-donation-link:hover,.chat-donation-link:focus-visible{border-color:#e9bd70;background:#fff0d2;outline:none}
 .donation-shortcut-compact{display:none}
-.donation-dialog{width:min(820px,calc(100vw - 24px));max-width:820px;max-height:min(92dvh,900px);overflow:hidden}
-.donation-dialog .donation-card{display:flex;width:100%;height:min(88dvh,840px);max-height:100%;flex-direction:column;gap:0;overflow:hidden;padding:25px 26px 18px}
-.donation-dialog .eyebrow{margin:0 0 7px}
-.donation-dialog h2{padding-right:40px}
-.donation-dialog .dialog-copy{margin-bottom:14px}
-.donation-frame{display:block;width:100%;min-height:260px;flex:1;border:1px solid rgba(126,148,185,.2);border-radius:15px;background:#fff}
-.donation-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px}
-.donation-footer .fine-print{margin:0}
-.donation-external-link{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;height:34px;padding:0 12px;text-decoration:none;font-size:10px}
-.donation-external-link:hover,.donation-external-link:focus-visible{border-color:#9eafff;background:#e9eeff;outline:none}
 .chat-fanpage-link{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 10px;color:#5874d8;text-decoration:none;white-space:nowrap;font-size:10px}
 .chat-fanpage-link:hover,.chat-fanpage-link:focus-visible{border-color:#9eafff;background:#e9eeff;outline:none}
 .fanpage-shortcut-compact{display:none}
@@ -166,7 +156,6 @@
 .my-rooms-state .button{margin-top:4px}
 @media(max-width:680px){.my-rooms-button{width:auto;min-width:0;justify-content:center;padding:0 9px;gap:5px}.my-rooms-button-label{position:static;width:auto;height:auto;overflow:visible;clip:auto;font-size:10px}.my-rooms-button-icon{font-size:15px}.my-rooms-count{position:static;transform:none;min-width:16px;height:16px;padding:0 3px;font-size:9px}.my-rooms-dialog .dialog-card{padding:25px 16px 16px}}
 @media(max-width:680px){.chat-header-actions{gap:4px}.chat-header-actions .chat-donation-link,.chat-header-actions .chat-fanpage-link{height:32px;padding:0 8px;font-size:10px}.donation-shortcut-wide,.fanpage-shortcut-wide{display:none}.donation-shortcut-compact,.fanpage-shortcut-compact{display:inline}}
-@media(max-width:680px){.donation-dialog{width:calc(100vw - 12px);max-height:calc(100dvh - 12px);border-radius:19px}.donation-dialog .donation-card{height:calc(100dvh - 32px);padding:22px 13px 12px;border-radius:19px}.donation-dialog .dialog-copy{margin-bottom:10px}.donation-frame{min-height:220px;border-radius:12px}.donation-footer{align-items:flex-start}.donation-footer .fine-print{font-size:9px}.donation-external-link{height:32px;padding:0 9px;font-size:9px}}
 @media(max-width:360px){.my-rooms-button{gap:0;padding:0 7px}.my-rooms-button-icon{display:none}.my-rooms-count{margin-left:4px}}
 .room-market-remove{background:rgba(15,23,42,.88);color:#94a3b8}
 .room-market-remove:hover{background:#334155;color:#fca5a5}

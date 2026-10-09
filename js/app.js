@@ -238,16 +238,6 @@ function renderStreamerAvatar(host, src, nickname) {
 
 function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 function closeDialog(id) { const dialog = document.getElementById(id); if (dialog && dialog.open) dialog.close(); }
-function openDonationDialog() {
-  const supportUrl = $('#chat-donation-link').dataset.supportUrl;
-  if (!supportUrl) return;
-  $('#donation-title').textContent = `${state.room?.streamerNickname || '스트리머'}에게 후원`;
-  $('#donation-description').textContent = '채팅방을 나가지 않고 SOOP 후원 페이지를 이용할 수 있어요.';
-  $('#donation-external-link').href = supportUrl;
-  $('#donation-frame').src = supportUrl;
-  openDialog('donation-dialog');
-}
-function closeDonationDialog() { closeDialog('donation-dialog'); }
 function setRoomEntryLoading(loading) { $('#room-entry-overlay').hidden = !loading; }
 
 function syncHeader() {
@@ -592,12 +582,12 @@ async function openChat(room, isOwner) {
   const canDonate = ((room.roomType || 'streamer') === 'streamer' || isOwnRoom) && !!supportUrl;
   donationLink.hidden = !canDonate;
   if (canDonate) {
-    donationLink.dataset.supportUrl = supportUrl;
+    donationLink.href = supportUrl;
     const donationLabel = `${room.streamerNickname || '스트리머'}에게 SOOP 후원하기`;
     donationLink.setAttribute('aria-label', donationLabel);
     donationLink.title = donationLabel;
   } else {
-    delete donationLink.dataset.supportUrl;
+    donationLink.removeAttribute('href');
   }
   const hasFanpage = (room.roomType === 'streamer' || isOwnRoom) && /^[a-z0-9]{2,20}$/i.test(streamerSoopId);
   fanpageLink.hidden = !hasFanpage;
@@ -2408,9 +2398,6 @@ function bindEvents() {
   $('#room-search').addEventListener('input', renderRooms);
   $('#my-rooms-button').addEventListener('click', openMyRoomsDialog);
   $('#close-my-rooms').addEventListener('click', () => closeDialog('my-rooms-dialog'));
-  $('#chat-donation-link').addEventListener('click', openDonationDialog);
-  $('#close-donation-dialog').addEventListener('click', closeDonationDialog);
-  $('#donation-dialog').addEventListener('close', () => { $('#donation-frame').src = 'about:blank'; });
   $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));
