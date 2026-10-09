@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-donation-new-tab">
+  <link rel="stylesheet" href="styles.css?v=20261009-donation-confirmation">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -80,7 +80,7 @@
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
             <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
-            <div class="chat-header-actions"><a class="button button-quiet chat-donation-link" id="chat-donation-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></a><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
+            <div class="chat-header-actions"><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
           </div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
           <section class="room-market-panel" id="room-market-panel" aria-labelledby="room-market-title" hidden>
@@ -271,6 +271,17 @@
   </dialog>
 
   <dialog class="app-dialog" id="generic-dialog"><div class="dialog-card"><button class="dialog-close" id="generic-close" type="button" aria-label="닫기">×</button><p class="dialog-copy" id="generic-message"></p><div class="dialog-actions"><button class="button button-quiet" id="generic-cancel" type="button">취소</button><button class="button button-primary" id="generic-confirm" type="button">확인</button></div></div></dialog>
+  <dialog class="app-dialog donation-dialog" id="donation-dialog" aria-labelledby="donation-title">
+    <section class="dialog-card">
+      <button class="dialog-close" id="close-donation-dialog" type="button" aria-label="후원 안내 닫기" title="후원 안내 닫기">×</button>
+      <p class="eyebrow">SOOP SUPPORT</p>
+      <h2 id="donation-title">스트리머에게 후원하기</h2>
+      <p class="dialog-copy" id="donation-copy">SOOP 후원창은 새 탭으로 열려요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.</p>
+      <div class="donation-verification-note" role="note"><span aria-hidden="true">ⓘ</span><p>메신저는 후원 여부를 자동 확인하지 않아요. 실제 후원을 완료한 경우에만 알림을 보내 주세요.</p></div>
+      <a class="button button-quiet donation-open-link" id="donation-open-link" target="_blank" rel="noopener noreferrer" title="SOOP 후원창을 새 탭으로 열기">SOOP 후원창 열기 ↗</a>
+      <button class="button button-primary full-width donation-notice-button" id="donation-notice-button" type="button" title="후원 완료를 채팅방에 직접 알립니다">후원 완료 알림 보내기</button>
+    </section>
+  </dialog>
   <dialog class="app-dialog my-rooms-dialog" id="my-rooms-dialog" aria-labelledby="my-rooms-title"><section class="dialog-card"><button class="dialog-close" id="close-my-rooms" type="button" aria-label="닫기">×</button><p class="eyebrow">YOUR ROOMS</p><h2 id="my-rooms-title">참여 중인 채팅방</h2><p class="dialog-copy">방을 누르면 바로 이동합니다.</p><div class="my-rooms-list" id="my-rooms-list" aria-live="polite"><div class="my-rooms-state">참여 중인 방을 불러오는 중…</div></div></section></dialog>
   <dialog class="app-dialog" id="report-detail-dialog"><div class="dialog-card report-detail-card"><button class="dialog-close" id="report-detail-close" type="button" aria-label="닫기">×</button><p class="eyebrow">ADMIN REVIEW</p><h2>신고 검토</h2><div id="report-detail-meta" class="report-detail-meta"></div><h3 class="report-evidence-heading">신고 증거 대화</h3><div id="report-evidence-list" class="report-evidence-list"></div><label class="field-label" for="report-review-note">처리 의견 <span class="optional">(필수 · 최대 500자)</span></label><textarea class="text-input" id="report-review-note" rows="3" maxlength="500" placeholder="확인한 내용과 처리 이유를 기록해 주세요."></textarea><div class="report-review-actions"><button class="button button-quiet" id="report-mark-reviewed" type="button">확인 완료</button><button class="button button-danger" id="report-mark-dismissed" type="button">신고 기각</button><button class="button button-primary" id="report-reopen" type="button" hidden>대기 상태로 되돌리기</button></div></div></dialog>
   <dialog class="app-dialog" id="report-submit-dialog">
@@ -307,6 +318,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-donation-new-tab"></script>
+  <script type="module" src="js/app.js?v=20261009-donation-confirmation"></script>
 </body>
 </html>

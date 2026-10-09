@@ -147,6 +147,14 @@
 .my-room-status.private{background:#fff5e7;color:#a77b32}
 .chat-donation-link{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 10px;border-color:rgba(220,163,69,.3);background:#fff8e9;color:#a36c18;text-decoration:none;white-space:nowrap;font-size:10px;font-weight:700}
 .chat-donation-link:hover,.chat-donation-link:focus-visible{border-color:#e9bd70;background:#fff0d2;outline:none}
+.chat-donation-link{cursor:pointer}
+.donation-verification-note{display:flex;align-items:flex-start;gap:9px;margin:14px 0;padding:12px 13px;border:1px solid rgba(197,145,59,.2);border-radius:13px;background:#fff8eb;color:#896c3b;font-size:11px;line-height:1.6}
+.donation-verification-note>span{flex:0 0 auto;font-size:14px}
+.donation-verification-note p{margin:0}
+.donation-open-link{display:inline-flex;align-items:center;justify-content:center;width:100%;margin-top:3px;text-decoration:none}
+.app-dialog .donation-open-link{margin-top:3px}
+.donation-notice-button{margin-top:9px}
+.donation-notice-button:disabled{cursor:wait;opacity:.65;transform:none}
 .donation-shortcut-compact{display:none}
 .chat-fanpage-link{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 10px;color:#5874d8;text-decoration:none;white-space:nowrap;font-size:10px}
 .chat-fanpage-link:hover,.chat-fanpage-link:focus-visible{border-color:#9eafff;background:#e9eeff;outline:none}

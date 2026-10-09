@@ -227,6 +227,38 @@ function soopSupportUrl(soopId) {
   return /^[a-z0-9]{2,30}$/.test(id) ? `https://m.sooplive.co.kr/item/a/starballoongift?szBjId=${encodeURIComponent(id)}` : '';
 }
 
+function openDonationDialog() {
+  if (!state.room) return;
+  const url = soopSupportUrl(state.room.streamerSoopId);
+  if (!url) { showError({ message: 'SOOP 후원 링크를 만들 수 없습니다.' }); return; }
+  const nickname = state.room.streamerNickname || '스트리머';
+  $('#donation-title').textContent = `${nickname}에게 후원하기`;
+  $('#donation-copy').textContent = 'SOOP 후원창은 새 탭으로 열려요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.';
+  const openLink = $('#donation-open-link');
+  openLink.href = url;
+  openLink.setAttribute('aria-label', `${nickname}의 SOOP 후원창을 새 탭으로 열기`);
+  $('#donation-notice-button').hidden = state.isOwner === true;
+  openDialog('donation-dialog');
+}
+
+async function sendDonationNotice() {
+  const button = $('#donation-notice-button');
+  if (!state.room || !state.session || state.isOwner || button.disabled) return;
+  const nickname = String(state.session.profile && state.session.profile.nickname || '참여자')
+    .replace(/[\r\n]+/g, ' ').slice(0, 30);
+  const notice = `🎁 ${nickname}님이 SOOP 후원 완료를 알렸어요. (참여자 직접 등록 · 후원 여부 자동 확인 안 됨)`;
+  button.disabled = true;
+  try {
+    const sent = await sendMessage('text', '', '', notice);
+    if (sent) {
+      closeDialog('donation-dialog');
+      showToast('후원 완료 알림을 채팅방에 보냈어요.');
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderStreamerAvatar(host, src, nickname) {
   host.replaceChildren();
   const fallback = String(nickname || '✦').slice(0, 1);
@@ -582,12 +614,9 @@ async function openChat(room, isOwner) {
   const canDonate = ((room.roomType || 'streamer') === 'streamer' || isOwnRoom) && !!supportUrl;
   donationLink.hidden = !canDonate;
   if (canDonate) {
-    donationLink.href = supportUrl;
     const donationLabel = `${room.streamerNickname || '스트리머'}에게 SOOP 후원하기`;
     donationLink.setAttribute('aria-label', donationLabel);
     donationLink.title = donationLabel;
-  } else {
-    donationLink.removeAttribute('href');
   }
   const hasFanpage = (room.roomType === 'streamer' || isOwnRoom) && /^[a-z0-9]{2,20}$/i.test(streamerSoopId);
   fanpageLink.hidden = !hasFanpage;
@@ -1749,13 +1778,14 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
-async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
-  if (!state.room || !state.session) return;
-  const text = $('#message-input').value.trim();
-  if (kind === 'text' && !text) return;
+async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null) {
+  if (!state.room || !state.session) return false;
+  const preserveDraft = messageText !== null;
+  const text = String(preserveDraft ? messageText : $('#message-input').value).trim();
+  if (kind === 'text' && !text) return false;
   const audience = state.isOwner ? $('#message-audience').value : 'direct';
   const recipientUid = state.isOwner ? (targetUid || (audience === 'direct' ? $('#direct-recipient').value : '')) : '';
-  if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return; }
+  if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return false; }
   const room = state.room;
   const uid = state.session.uid;
   const isOwner = state.isOwner;
@@ -1777,7 +1807,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
   state.optimisticMessages.push(message);
   state.messages = combineMessages(state.olderMessages, state.olderPrivateMessages, state.olderBroadcastMessages, state.liveMessages, state.privateMessages, state.broadcastMessages, state.optimisticMessages);
   renderTimeline();
-  if (kind === 'text') $('#message-input').value = '';
+  if (kind === 'text' && !preserveDraft) $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
     await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
@@ -1785,14 +1815,16 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '') {
       const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
     }
+    return true;
   } catch (error) {
     if (state.room && state.room.roomId === room.roomId) {
       state.optimisticMessages = state.optimisticMessages.filter((item) => item.id !== messageId);
       state.messages = state.messages.filter((item) => item.id !== messageId);
-      if (kind === 'text' && !$('#message-input').value) $('#message-input').value = text;
+      if (kind === 'text' && !preserveDraft && !$('#message-input').value) $('#message-input').value = text;
       renderTimeline();
     }
     showError(error);
+    return false;
   }
 }
 
@@ -2406,6 +2438,9 @@ function bindEvents() {
   $('#room-market-buy').addEventListener('click', () => executeRoomMarketTrade('buy'));
   $('#room-market-sell').addEventListener('click', () => executeRoomMarketTrade('sell'));
   $('#back-to-directory').addEventListener('click', leaveChat);
+  $('#chat-donation-link').addEventListener('click', openDonationDialog);
+  $('#close-donation-dialog').addEventListener('click', () => closeDialog('donation-dialog'));
+  $('#donation-notice-button').addEventListener('click', sendDonationNotice);
   $('#export-chat-button').addEventListener('click', openExportDialog);
   $('#export-text').addEventListener('click', () => exportConversation('text'));
   $('#export-image').addEventListener('click', () => exportConversation('image'));
