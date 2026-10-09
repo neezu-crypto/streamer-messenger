@@ -343,6 +343,8 @@
   .room-tools-sticky-slot .room-market-stock-wrap{flex:initial;min-width:0}
   .room-tools-sticky-slot .room-market-stock-card{height:36px;min-height:0;padding:4px 6px;border-radius:8px}
   .room-tools-sticky-slot .room-market-stock-card>strong{padding-right:18px;font-size:9px}
+.room-tools-sticky-slot .room-market-stock-wrap.is-removable .room-market-stock-card{padding-right:30px}
+.room-tools-sticky-slot .room-market-stock-wrap.is-removable .room-market-stock-card>strong{padding-right:0}
   .room-tools-sticky-slot .room-market-stock-metrics{gap:3px;margin-top:2px}
   .room-tools-sticky-slot .room-market-stock-metrics small,.room-tools-sticky-slot .room-market-stock-change{font-size:8px}
   .room-tools-sticky-slot .room-market-sparkline{display:none}

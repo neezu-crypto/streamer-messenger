@@ -1684,7 +1684,7 @@ function renderRoomMarketStocks() {
   for (const [stockId, saved] of entries) {
     const quote = state.roomMarketQuotes[stockId] || {};
     const name = quote.name || saved.name || stockId;
-    const wrap = document.createElement('div'); wrap.className = 'room-market-stock-wrap';
+    const wrap = document.createElement('div'); wrap.className = `room-market-stock-wrap${state.isOwner ? ' is-removable' : ''}`;
     const open = document.createElement('button'); open.type = 'button'; open.className = 'room-market-stock-card'; open.title = `${name} 차트와 거래 열기`; open.setAttribute('aria-label', open.title);
     const title = document.createElement('strong'); title.textContent = name;
     const price = document.createElement('small'); price.textContent = Number.isFinite(Number(quote.price)) ? `${Number(quote.price).toLocaleString('ko-KR')}원` : '현재가 불러오는 중';
