@@ -1110,13 +1110,22 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
-  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['start', 'select', 'finish', 'clear'].includes(action)) {
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['start', 'select', 'finish', 'clear', 'sync'].includes(action)) {
     throw new HttpsError('invalid-argument', '채팅방 또는 미니게임 요청 정보가 올바르지 않습니다.');
   }
   const { meta, isOwner } = await requireRoomMember(p, roomId);
   const canManage = isOwner || (p.admin && meta.roomType === 'admin');
   if (!canManage) throw new HttpsError('permission-denied', '채팅방 소유자 또는 관리자 방의 관리자만 사다리 게임을 시작하거나 종료할 수 있습니다.');
   const gameRef = roomRef(roomId).child('meta/miniGame');
+  if (action === 'sync') {
+    const snapshot = await gameRef.get();
+    const current = snapshot.val();
+    const active = current && current.gameType === 'ladder' && current.status === 'active'
+      && Number.isFinite(Number(current.expiresAt)) && Number(current.expiresAt) > now()
+      && Array.isArray(current.players) && Array.isArray(current.outcomes) && Array.isArray(current.rungs)
+      ? current : null;
+    return { miniGame: active };
+  }
   if (action === 'select') {
     const gameId = String(data.gameId || '');
     const participantIndex = Number(data.participantIndex);
@@ -1128,7 +1137,10 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
         || current.gameId !== gameId || current.finishClaim || !Array.isArray(current.players) || participantIndex >= current.players.length) return;
       return { ...current, selectedLane: participantIndex, selectedBy: p.uid, selectedAt: now() };
     });
-    if (!selected.committed) throw new HttpsError('failed-precondition', '사다리 게임이 종료되었거나 다른 게임으로 바뀌었습니다.');
+    if (!selected.committed) {
+      const latestSnapshot = await gameRef.get();
+      return { miniGame: latestSnapshot.val(), stale: true };
+    }
     return { miniGame: selected.snapshot.val() };
   }
   if (action === 'finish' || action === 'clear') {
@@ -1150,7 +1162,15 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
         },
       };
     });
-    if (!finished.committed) throw new HttpsError('failed-precondition', '사다리 게임을 찾을 수 없거나 이미 종료되었습니다.');
+    if (!finished.committed) {
+      const latestSnapshot = await gameRef.get();
+      const current = latestSnapshot.val();
+      const active = current && current.gameType === 'ladder' && current.status === 'active'
+        && Number.isFinite(Number(current.expiresAt)) && Number(current.expiresAt) > now()
+        && Array.isArray(current.players) && Array.isArray(current.outcomes) && Array.isArray(current.rungs)
+        ? current : null;
+      return { miniGame: active, stale: true };
+    }
     const game = finished.snapshot.val() || {};
     const claim = game.finishClaim || {};
     if (!/^[A-Za-z0-9_-]{20}$/.test(String(claim.messageId || '')) || typeof claim.text !== 'string') {

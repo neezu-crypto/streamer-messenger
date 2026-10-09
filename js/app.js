@@ -1018,10 +1018,12 @@ async function updateMiniGame(action, participantIndex = -1) {
   try {
     const result = await call('messengerMiniGameUpdate', payload);
     if (result && Object.prototype.hasOwnProperty.call(result, 'miniGame')) {
-      state.miniGame = result.miniGame || null;
-      state.miniGameSelectedId = state.miniGame && state.miniGame.gameId || '';
-      state.miniGameSelectedLane = state.miniGame && Number.isInteger(state.miniGame.selectedLane) ? state.miniGame.selectedLane : -1;
+      applyMiniGameState(result.miniGame);
       renderMiniGame();
+    }
+    if (result && result.stale) {
+      showToast(state.miniGame ? '최신 사다리 상태로 화면을 갱신했어요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
+      return;
     }
     if (action === 'start') {
       closeDialog('mini-game-dialog');
@@ -1032,10 +1034,9 @@ async function updateMiniGame(action, participantIndex = -1) {
     let staleGame = false;
     if (action !== 'start' && payload.gameId && state.room && state.room.roomId === payload.roomId) {
       try {
-        const { db, ref, get } = api();
-        const snapshot = await get(ref(db, `streamerMessenger/rooms/${payload.roomId}/meta/miniGame`));
+        const serverState = await call('messengerMiniGameUpdate', { roomId: payload.roomId, action: 'sync' });
         if (!state.room || state.room.roomId !== payload.roomId) return;
-        const latest = applyMiniGameState(snapshot.val());
+        const latest = applyMiniGameState(serverState && serverState.miniGame);
         staleGame = !latest || latest.gameId !== payload.gameId;
         if (staleGame) {
           $('#mini-game-live-error').hidden = true;
