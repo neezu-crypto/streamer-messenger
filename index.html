@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-ladder-animation">
+  <link rel="stylesheet" href="styles.css?v=20261009-shared-ladder">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -80,7 +80,7 @@
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
             <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
-            <div class="chat-header-actions"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="채팅방 사다리타기 미니게임 열기" title="채팅방에서 사다리타기 미니게임 열기"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
+            <div class="chat-header-actions"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="사다리 미니게임 시작 또는 진행 중인 게임으로 이동" title="방 소유자는 게임을 시작하고, 모든 참여자는 진행 중인 게임으로 이동합니다"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
           </div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
           <section class="room-market-panel" id="room-market-panel" aria-labelledby="room-market-title" hidden>
@@ -91,6 +91,13 @@
             </div>
           </section>
           <section class="pinned-message-panel" id="pinned-message-panel" aria-label="채팅방 상단 고정 메시지" aria-live="polite" hidden></section>
+          <section class="mini-game-active mini-game-live-panel" id="mini-game-active" aria-label="채팅방에서 진행 중인 미니게임" aria-live="polite" hidden>
+            <header class="mini-game-live-heading"><div><p class="eyebrow">ROOM MINI GAME</p><h3>사다리타기 진행 중</h3></div><button class="button button-quiet" id="mini-game-clear" type="button" title="사다리를 종료하고 전체 결과를 채팅방에 공유합니다" hidden>종료하고 결과 공유</button></header>
+            <p class="mini-game-instructions">스트리머가 이름을 선택하면 모든 참여자에게 같은 경로가 표시돼요. 채팅을 계속할 수 있어요.</p>
+            <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
+            <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.</p>
+            <p class="dialog-error mini-game-error" id="mini-game-live-error" role="alert" hidden></p>
+          </section>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
           <div class="chat-composer-wrap">
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
@@ -254,7 +261,7 @@
       <button class="dialog-close" id="close-mini-game" type="button" aria-label="사다리타기 닫기" title="사다리타기 닫기">×</button>
       <p class="eyebrow">ROOM MINI GAME</p>
       <h2 id="mini-game-title">사다리타기</h2>
-      <p class="dialog-copy">방 참여자 모두 같은 사다리와 결과를 실시간으로 볼 수 있어요. 이름을 누르면 해당 경로를 확인합니다.</p>
+      <p class="dialog-copy">시작하면 게임판이 채팅창에 표시돼요. 스트리머가 이름을 누르면 모든 참여자에게 같은 경로가 보입니다.</p>
       <section id="mini-game-setup" class="mini-game-setup" hidden>
         <label class="field-label" for="mini-game-players">참가자 이름 <span class="optional">(2~8명, 한 줄에 한 명)</span></label>
         <textarea class="text-input" id="mini-game-players" rows="4" maxlength="263" title="사다리 시작점에 표시할 참가자 이름을 입력하세요">참가자 1
@@ -266,12 +273,6 @@
         <button class="button button-primary full-width" id="mini-game-start" type="button" title="입력한 이름으로 방에 사다리타기를 시작합니다">사다리 시작하기</button>
       </section>
       <section id="mini-game-waiting" class="mini-game-waiting" role="status" hidden>방 소유자 또는 관리자 계정이 사다리 게임을 시작하면 여기에서 함께할 수 있어요.</section>
-      <section id="mini-game-active" class="mini-game-active" hidden>
-        <p class="mini-game-instructions">위 이름을 선택해 경로를 따라가 보세요.</p>
-        <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
-        <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">참가자를 선택하면 결과가 표시됩니다.</p>
-        <button class="button button-quiet full-width" id="mini-game-clear" type="button" title="현재 사다리 게임을 종료하고 설정 화면으로 돌아갑니다" hidden>사다리 종료</button>
-      </section>
       <p class="dialog-error mini-game-error" id="mini-game-error" role="alert" hidden></p>
     </section>
   </dialog>
@@ -345,6 +346,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-ladder-animation"></script>
+  <script type="module" src="js/app.js?v=20261009-shared-ladder"></script>
 </body>
 </html>

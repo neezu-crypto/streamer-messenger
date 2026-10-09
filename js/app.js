@@ -736,16 +736,16 @@ function subscribeMiniGame() {
     const game = value && value.gameType === 'ladder' && value.status === 'active'
       && Number(value.expiresAt) > Date.now() && Array.isArray(value.players) && Array.isArray(value.outcomes)
       && Array.isArray(value.rungs) ? value : null;
-    if (!game || game.gameId !== state.miniGameSelectedId) {
-      state.miniGameSelectedLane = -1;
-      state.miniGameSelectedId = game && game.gameId || '';
-    }
     state.miniGame = game;
-    if ($('#mini-game-dialog').open) renderMiniGame();
+    state.miniGameSelectedId = game && game.gameId || '';
+    state.miniGameSelectedLane = game && Number.isInteger(game.selectedLane) && game.selectedLane >= 0 && game.selectedLane < game.players.length
+      ? game.selectedLane : -1;
+    $('#mini-game-live-error').hidden = true;
+    renderMiniGame();
   }, (error) => {
     console.warn('채팅방 미니게임을 구독하지 못했습니다.', error);
     state.miniGame = null;
-    if ($('#mini-game-dialog').open) renderMiniGame('미니게임 정보를 불러오지 못했습니다.');
+    renderMiniGame('미니게임 정보를 불러오지 못했습니다.');
   }));
 }
 
@@ -830,6 +830,7 @@ function renderMiniGame(errorMessage = '') {
   const start = $('#mini-game-start');
   const clear = $('#mini-game-clear');
   const error = $('#mini-game-error');
+  const liveError = $('#mini-game-live-error');
   error.textContent = errorMessage;
   error.hidden = !errorMessage;
   const canManage = canManageMiniGame();
@@ -839,14 +840,23 @@ function renderMiniGame(errorMessage = '') {
   start.disabled = state.miniGameMutationPending;
   clear.hidden = !game || !canManage;
   clear.disabled = state.miniGameMutationPending;
-  if (!game) return;
+  clear.textContent = game && game.finishClaim ? '결과 공유 다시 시도' : '종료하고 결과 공유';
+  clear.title = game && game.finishClaim
+    ? '결과 공유가 완료되지 않았어요. 같은 결과 공유를 다시 시도합니다.'
+    : '사다리를 종료하고 전체 결과를 채팅방에 공유합니다';
+  if (!game) {
+    $('#ladder-board').replaceChildren();
+    $('#mini-game-result').textContent = '스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.';
+    liveError.hidden = true;
+    return;
+  }
 
   const players = game.players.slice(0, 8);
   const outcomes = game.outcomes.slice(0, 8);
   const rungs = game.rungs.slice(0, 10).map((row) => Array.isArray(row) ? row : []);
   if (players.length < 2 || players.length > 8 || outcomes.length !== players.length) {
-    error.textContent = '사다리 데이터 형식이 올바르지 않습니다.';
-    error.hidden = false;
+    liveError.textContent = '사다리 데이터 형식이 올바르지 않습니다.';
+    liveError.hidden = false;
     return;
   }
   const board = $('#ladder-board');
@@ -861,12 +871,18 @@ function renderMiniGame(errorMessage = '') {
     button.type = 'button';
     button.className = `ladder-choice${state.miniGameSelectedLane === index ? ' selected' : ''}`;
     button.textContent = name;
-    button.title = `${name} 참가자의 사다리 경로와 결과 확인하기`;
-    button.setAttribute('aria-label', `${name} 참가자의 사다리 경로와 결과 확인하기`);
+    button.title = canManage
+      ? `${name} 참가자의 경로를 모든 참여자 화면에 표시합니다`
+      : `스트리머가 선택하면 ${name} 참가자의 경로가 모든 참여자에게 표시됩니다`;
+    button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-pressed', String(state.miniGameSelectedLane === index));
+    button.disabled = state.miniGameMutationPending || !!game.finishClaim;
     button.addEventListener('click', () => {
-      state.miniGameSelectedLane = index;
-      renderMiniGame();
+      if (!canManageMiniGame()) {
+        showToast('스트리머가 참가자를 선택하면 모두에게 같은 경로가 표시돼요.');
+        return;
+      }
+      updateMiniGame('select', index);
     });
     top.appendChild(button);
   });
@@ -942,12 +958,20 @@ function renderMiniGame(errorMessage = '') {
 
 function openMiniGameDialog() {
   if (!state.room) return;
+  if (state.miniGame) {
+    $('#mini-game-active').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (!canManageMiniGame()) {
+    showToast('스트리머가 사다리 게임을 시작하면 채팅창에 표시돼요.');
+    return;
+  }
   $('#mini-game-error').hidden = true;
-  openDialog('mini-game-dialog');
   renderMiniGame();
+  openDialog('mini-game-dialog');
 }
 
-async function updateMiniGame(action) {
+async function updateMiniGame(action, participantIndex = -1) {
   if (!state.room || !canManageMiniGame() || state.miniGameMutationPending) return;
   const button = action === 'start' ? $('#mini-game-start') : $('#mini-game-clear');
   const payload = { roomId: state.room.roomId, action };
@@ -967,23 +991,42 @@ async function updateMiniGame(action) {
       return;
     }
     payload.gameType = 'ladder'; payload.players = players; payload.outcomes = outcomes;
-  } else if (!window.confirm('현재 사다리 게임을 모든 참여자 화면에서 종료할까요?')) return;
+  } else if (action === 'select') {
+    if (!state.miniGame || !Number.isInteger(participantIndex) || participantIndex < 0 || participantIndex >= state.miniGame.players.length) return;
+    if (participantIndex === state.miniGameSelectedLane) return;
+    payload.gameId = state.miniGame.gameId;
+    payload.participantIndex = participantIndex;
+  } else if (action === 'finish') {
+    if (!state.miniGame || !window.confirm('사다리를 종료하고 전체 결과를 채팅방 참여자에게 공유할까요?')) return;
+    payload.gameId = state.miniGame.gameId;
+  } else return;
 
   state.miniGameMutationPending = true;
-  button.disabled = true;
+  if (button) button.disabled = true;
   $('#mini-game-error').hidden = true;
+  $('#mini-game-live-error').hidden = true;
+  renderMiniGame();
   try {
-    await call('messengerMiniGameUpdate', payload);
-    showToast(action === 'start' ? '사다리 게임을 채팅방에 시작했어요.' : '사다리 게임을 종료했어요.');
+    const result = await call('messengerMiniGameUpdate', payload);
+    if (result && Object.prototype.hasOwnProperty.call(result, 'miniGame')) {
+      state.miniGame = result.miniGame || null;
+      state.miniGameSelectedId = state.miniGame && state.miniGame.gameId || '';
+      state.miniGameSelectedLane = state.miniGame && Number.isInteger(state.miniGame.selectedLane) ? state.miniGame.selectedLane : -1;
+      renderMiniGame();
+    }
+    if (action === 'start') {
+      closeDialog('mini-game-dialog');
+      showToast('사다리 게임을 채팅창에 시작했어요.');
+      $('#mini-game-active').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else if (action === 'finish') showToast('사다리 결과를 채팅방에 공유했어요.');
   } catch (error) {
-    $('#mini-game-error').textContent = error.message || '미니게임 요청을 처리하지 못했습니다.';
-    $('#mini-game-error').hidden = false;
+    const errorTarget = action === 'start' ? $('#mini-game-error') : $('#mini-game-live-error');
+    errorTarget.textContent = error.message || '미니게임 요청을 처리하지 못했습니다.';
+    errorTarget.hidden = false;
   } finally {
     state.miniGameMutationPending = false;
-    if ($('#mini-game-dialog').open) {
-      $('#mini-game-start').disabled = false;
-      $('#mini-game-clear').disabled = false;
-    }
+    if (action === 'start') $('#mini-game-start').disabled = false;
+    else renderMiniGame();
   }
 }
 
@@ -2636,7 +2679,7 @@ function bindEvents() {
   $('#open-mini-game').addEventListener('click', openMiniGameDialog);
   $('#close-mini-game').addEventListener('click', () => closeDialog('mini-game-dialog'));
   $('#mini-game-start').addEventListener('click', () => updateMiniGame('start'));
-  $('#mini-game-clear').addEventListener('click', () => updateMiniGame('clear'));
+  $('#mini-game-clear').addEventListener('click', () => updateMiniGame('finish'));
   $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));
