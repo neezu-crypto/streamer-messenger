@@ -237,19 +237,18 @@ function openDonationDialog() {
   const openLink = $('#donation-open-link');
   openLink.href = url;
   openLink.setAttribute('aria-label', `${nickname}의 SOOP 후원창을 새 탭으로 열기`);
-  $('#donation-notice-button').hidden = state.isOwner === true;
   openDialog('donation-dialog');
 }
 
 async function sendDonationNotice() {
   const button = $('#donation-notice-button');
-  if (!state.room || !state.session || state.isOwner || button.disabled) return;
+  if (!state.room || !state.session || button.disabled) return;
   const nickname = String(state.session.profile && state.session.profile.nickname || '참여자')
     .replace(/[\r\n]+/g, ' ').slice(0, 30);
   const notice = `🎁 ${nickname}님이 SOOP 후원 완료를 알렸어요. (참여자 직접 등록 · 후원 여부 자동 확인 안 됨)`;
   button.disabled = true;
   try {
-    const sent = await sendMessage('text', '', '', notice);
+    const sent = await sendMessage('text', '', '', notice, state.isOwner ? 'broadcast' : null);
     if (sent) {
       closeDialog('donation-dialog');
       showToast('후원 완료 알림을 채팅방에 보냈어요.');
@@ -1778,12 +1777,12 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
-async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null) {
+async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null) {
   if (!state.room || !state.session) return false;
   const preserveDraft = messageText !== null;
   const text = String(preserveDraft ? messageText : $('#message-input').value).trim();
   if (kind === 'text' && !text) return false;
-  const audience = state.isOwner ? $('#message-audience').value : 'direct';
+  const audience = state.isOwner ? (audienceOverride || $('#message-audience').value) : 'direct';
   const recipientUid = state.isOwner ? (targetUid || (audience === 'direct' ? $('#direct-recipient').value : '')) : '';
   if (state.isOwner && audience === 'direct' && !recipientUid) { showError({ message: '다이렉트 메시지를 받을 팬을 선택해 주세요.' }); return false; }
   const room = state.room;
