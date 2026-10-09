@@ -1054,8 +1054,7 @@ async function updateMiniGame(action, participantIndex = -1) {
     errorTarget.hidden = false;
   } finally {
     state.miniGameMutationPending = false;
-    if (action === 'start') $('#mini-game-start').disabled = false;
-    else renderMiniGame();
+    renderMiniGame();
   }
 }
 
