@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -599,7 +599,11 @@ async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.miniGameCollapsed = false;
-  $('#mini-game-sticky-slot').hidden = true;
+  state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  $('#room-tools-sticky-slot').hidden = true;
+  $('#room-tool-market-slide').hidden = true;
+  $('#room-tool-mini-game-slide').hidden = true;
+  $('#room-market-panel').hidden = true;
   $('#mini-game-active').hidden = true;
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
   renderPinnedMessage();
@@ -837,6 +841,7 @@ function canManageMiniGame() {
 function setMiniGameCollapsed(collapsed) {
   state.miniGameCollapsed = !!collapsed;
   const panel = $('#mini-game-active');
+  $('#room-tool-mini-game-slide').classList.toggle('is-compact', state.miniGameCollapsed);
   const toggle = $('#toggle-mini-game-card');
   panel.classList.toggle('is-collapsed', state.miniGameCollapsed);
   toggle.setAttribute('aria-expanded', String(!state.miniGameCollapsed));
@@ -846,12 +851,144 @@ function setMiniGameCollapsed(collapsed) {
   toggle.querySelector('[aria-hidden="true"]').textContent = state.miniGameCollapsed ? '⌄' : '⌃';
 }
 
+function availableRoomToolSlides() {
+  return Array.from($('#room-tools-track').querySelectorAll('.room-tool-slide')).filter((slide) => !slide.hidden);
+}
+
+function renderRoomToolSwitcher(preferredKey = '') {
+  const slot = $('#room-tools-sticky-slot');
+  const switcher = $('#room-tools-switcher');
+  const track = $('#room-tools-track');
+  const slides = availableRoomToolSlides();
+  if (!state.room || !slides.length) {
+    slot.hidden = true;
+    switcher.hidden = true;
+    track.style.transform = '';
+    return;
+  }
+
+  slot.hidden = false;
+  switcher.hidden = slides.length < 2;
+  switcher.classList.toggle('is-scrollable', slides.length >= 3);
+  const keys = slides.map((slide) => slide.dataset.roomTool);
+  const keySignature = keys.join('|');
+  if (state.roomToolTabKeys !== keySignature) {
+    const tabs = slides.map((slide) => {
+      const key = slide.dataset.roomTool;
+      const label = slide.dataset.roomToolLabel || key;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'room-tool-tab';
+      button.id = `room-tool-tab-${key}`;
+      button.dataset.roomToolTab = key;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-controls', slide.id);
+      button.setAttribute('aria-label', `${label}로 전환`);
+      button.title = `${label}로 전환`;
+      if (key === 'mini-game') {
+        const indicator = document.createElement('span');
+        indicator.className = 'room-tool-live-dot';
+        indicator.setAttribute('aria-hidden', 'true');
+        button.append(indicator);
+      }
+      const text = document.createElement('span');
+      text.textContent = label;
+      button.append(text);
+      return button;
+    });
+    switcher.replaceChildren(...tabs);
+    state.roomToolTabKeys = keySignature;
+  }
+
+  if (preferredKey && keys.includes(preferredKey)) state.activeRoomTool = preferredKey;
+  if (!keys.includes(state.activeRoomTool)) state.activeRoomTool = keys[0];
+  const activeIndex = keys.indexOf(state.activeRoomTool);
+  slides.forEach((slide, index) => {
+    const selected = index === activeIndex;
+    const key = slide.dataset.roomTool;
+    const tab = switcher.querySelector(`[data-room-tool-tab="${key}"]`);
+    slide.setAttribute('aria-hidden', String(!selected));
+    slide.toggleAttribute('inert', !selected);
+    if (tab && slides.length > 1) {
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      slide.setAttribute('aria-labelledby', tab.id);
+    } else slide.removeAttribute('aria-labelledby');
+  });
+  track.style.transform = `translate3d(-${activeIndex * 100}%, 0, 0)`;
+  if (slides.length >= 3) {
+    const activeTab = switcher.querySelector(`[data-room-tool-tab="${state.activeRoomTool}"]`);
+    if (activeTab) {
+      const tabLeft = activeTab.offsetLeft - switcher.offsetLeft;
+      const tabRight = tabLeft + activeTab.offsetWidth;
+      if (tabLeft < switcher.scrollLeft) switcher.scrollTo({ left: tabLeft, behavior: 'smooth' });
+      else if (tabRight > switcher.scrollLeft + switcher.clientWidth) {
+        switcher.scrollTo({ left: tabRight - switcher.clientWidth, behavior: 'smooth' });
+      }
+    }
+  }
+}
+
+function selectRoomTool(key) {
+  if (!availableRoomToolSlides().some((slide) => slide.dataset.roomTool === key)) return;
+  state.activeRoomTool = key;
+  renderRoomToolSwitcher();
+}
+
+function switchRoomToolBySwipe(direction) {
+  const slides = availableRoomToolSlides();
+  if (slides.length < 2) return;
+  const currentIndex = slides.findIndex((slide) => slide.dataset.roomTool === state.activeRoomTool);
+  if (currentIndex < 0) return;
+  const next = slides[currentIndex + direction];
+  if (next) selectRoomTool(next.dataset.roomTool);
+}
+
+function bindRoomToolControls() {
+  const switcher = $('#room-tools-switcher');
+  const viewport = $('#room-tools-viewport');
+  switcher.addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-room-tool-tab]');
+    if (tab) selectRoomTool(tab.dataset.roomToolTab);
+  });
+  switcher.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = Array.from(switcher.querySelectorAll('[data-room-tool-tab]'));
+    const currentIndex = tabs.indexOf(document.activeElement);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    const next = tabs[nextIndex];
+    if (!next) return;
+    event.preventDefault();
+    next.focus();
+    selectRoomTool(next.dataset.roomToolTab);
+  });
+
+  let touchStart = null;
+  viewport.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1 || event.target.closest('button,a,input,textarea,select,.room-market-stock-list,.room-market-feed,.ladder-board-scroll')) {
+      touchStart = null;
+      return;
+    }
+    touchStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+  viewport.addEventListener('touchend', (event) => {
+    if (!touchStart || event.changedTouches.length !== 1) return;
+    const deltaX = event.changedTouches[0].clientX - touchStart.x;
+    const deltaY = event.changedTouches[0].clientY - touchStart.y;
+    touchStart = null;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+    switchRoomToolBySwipe(deltaX < 0 ? 1 : -1);
+  }, { passive: true });
+  viewport.addEventListener('touchcancel', () => { touchStart = null; }, { passive: true });
+}
+
 function renderMiniGame(errorMessage = '') {
   const game = state.miniGame;
   const setup = $('#mini-game-setup');
   const waiting = $('#mini-game-waiting');
   const active = $('#mini-game-active');
-  const stickySlot = $('#mini-game-sticky-slot');
+  const gameSlide = $('#room-tool-mini-game-slide');
   const start = $('#mini-game-start');
   const clear = $('#mini-game-clear');
   const error = $('#mini-game-error');
@@ -862,7 +999,11 @@ function renderMiniGame(errorMessage = '') {
   setup.hidden = !!game || !canManage;
   waiting.hidden = !!game || canManage;
   active.hidden = !game;
-  stickySlot.hidden = !game;
+  gameSlide.hidden = !game;
+  const gameId = game && game.gameId || '';
+  if (gameId && gameId !== state.renderedMiniGameId) state.activeRoomTool = 'mini-game';
+  else if (!gameId && state.renderedMiniGameId && state.activeRoomTool === 'mini-game') state.activeRoomTool = 'market';
+  state.renderedMiniGameId = gameId;
   setMiniGameCollapsed(state.miniGameCollapsed);
   start.disabled = state.miniGameMutationPending;
   clear.hidden = !game || !canManage;
@@ -875,6 +1016,7 @@ function renderMiniGame(errorMessage = '') {
     $('#ladder-board').replaceChildren();
     $('#mini-game-result').textContent = '스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.';
     liveError.hidden = true;
+    renderRoomToolSwitcher();
     return;
   }
 
@@ -983,12 +1125,14 @@ function renderMiniGame(errorMessage = '') {
   $('#mini-game-result').textContent = destination >= 0
     ? `${players[state.miniGameSelectedLane]} → ${outcomes[destination]}`
     : '참가자를 선택하면 결과가 표시됩니다.';
+  renderRoomToolSwitcher();
 }
 
 function openMiniGameDialog() {
   if (!state.room) return;
   if (state.miniGame) {
-    $('#mini-game-active').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    selectRoomTool('mini-game');
+    $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
   if (!canManageMiniGame()) {
@@ -1082,6 +1226,7 @@ async function updateMiniGame(action, participantIndex = -1) {
 
 function setRoomMarketCollapsed(collapsed) {
   const panel = $('#room-market-panel');
+  $('#room-tool-market-slide').classList.toggle('is-compact', collapsed);
   const content = $('#room-market-content');
   const toggle = $('#toggle-room-market');
   const label = collapsed ? '공유 종목 영역 펼치기' : '공유 종목 영역 접기';
@@ -1095,9 +1240,12 @@ function setRoomMarketCollapsed(collapsed) {
 
 function subscribeRoomMarket() {
   const panel = $('#room-market-panel');
+  const marketSlide = $('#room-tool-market-slide');
   const roomId = state.room && state.room.roomId;
   setRoomMarketCollapsed(true);
   panel.hidden = !roomId;
+  marketSlide.hidden = panel.hidden;
+  renderRoomToolSwitcher();
   if (panel.hidden) return;
   state.roomMarketStocks = {};
   state.roomMarketFeed = [];
@@ -2345,7 +2493,11 @@ function leaveChat() {
   clearSubscriptions();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
-  $('#mini-game-sticky-slot').hidden = true;
+  state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  $('#room-tools-sticky-slot').hidden = true;
+  $('#room-tool-market-slide').hidden = true;
+  $('#room-tool-mini-game-slide').hidden = true;
+  $('#room-market-panel').hidden = true;
   $('#mini-game-active').hidden = true;
   closeDialog('mini-game-dialog');
   state.messages = []; state.liveMessages = []; state.olderMessages = [];
@@ -2693,6 +2845,7 @@ async function handleStreamerVerification(mode) {
 }
 
 function bindEvents() {
+  bindRoomToolControls();
   $('#fan-search').addEventListener('input', () => {
     state.fanSearchQuery = $('#fan-search').value;
     $('#clear-fan-search').hidden = !state.fanSearchQuery;
