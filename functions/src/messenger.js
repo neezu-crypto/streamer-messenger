@@ -1086,6 +1086,23 @@ function createLadderRungs(laneCount) {
   return rungs;
 }
 
+function isRenderableActiveLadder(game, currentTime = now()) {
+  return !!game
+    && game.gameType === 'ladder'
+    && game.status === 'active'
+    && /^[a-f0-9]{24}$/.test(String(game.gameId || ''))
+    && Number.isFinite(Number(game.expiresAt))
+    && Number(game.expiresAt) > currentTime
+    && Array.isArray(game.players)
+    && game.players.length >= 2
+    && game.players.length <= LADDER_PLAYER_LIMIT
+    && Array.isArray(game.outcomes)
+    && game.outcomes.length === game.players.length
+    && Array.isArray(game.rungs)
+    && game.rungs.length > 0
+    && game.rungs.every(Array.isArray);
+}
+
 function ladderResultText(game) {
   const players = Array.isArray(game.players) ? game.players.map((value) => safeText(value, 24, true)) : [];
   const outcomes = Array.isArray(game.outcomes) ? game.outcomes.map((value) => safeText(value, 24, true)) : [];
@@ -1124,11 +1141,7 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
   if (action === 'sync') {
     const snapshot = await gameRef.get();
     const current = snapshot.val();
-    const active = current && current.gameType === 'ladder' && current.status === 'active'
-      && Number.isFinite(Number(current.expiresAt)) && Number(current.expiresAt) > now()
-      && Array.isArray(current.players) && Array.isArray(current.outcomes) && Array.isArray(current.rungs)
-      ? current : null;
-    return { miniGame: active };
+    return { miniGame: isRenderableActiveLadder(current) ? current : null };
   }
   if (action === 'select') {
     const gameId = String(data.gameId || '');
@@ -1287,7 +1300,7 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     expiresAt: createdAt + CHAT_RETENTION,
   };
   const started = await gameRef.transaction((current) => {
-    if (current && current.gameType === 'ladder' && current.status === 'active' && Number(current.expiresAt) > createdAt) return;
+    if (isRenderableActiveLadder(current, createdAt)) return;
     return miniGame;
   });
   if (!started.committed) throw new HttpsError('already-exists', '이 채팅방에서 진행 중인 미니게임이 있습니다.');
