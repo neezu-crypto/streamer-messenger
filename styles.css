@@ -197,6 +197,17 @@
   #add-room-stock{padding:0 8px;font-size:9px}
 }
 
+@media(max-width:680px){
+  .chat-header{min-height:0;flex-wrap:wrap;column-gap:10px;row-gap:6px;padding:9px 12px}
+  .chat-header .back-button{flex:0 0 24px;width:24px;padding:0;text-align:center}
+  .chat-header .chat-avatar{flex:0 0 42px}
+  .chat-title-wrap{flex:1 1 0;min-width:0}
+  .chat-title-wrap h2,.chat-title-wrap p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat-title-wrap h2{font-size:14px;line-height:1.35}
+  .chat-title-wrap p{max-width:100%;margin-top:3px}
+  .chat-header-actions{flex:0 0 100%;min-width:0;justify-content:flex-end;flex-wrap:wrap;row-gap:5px}
+}
+
 .admin-list-toolbar,.admin-list-heading{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
 .admin-list-toolbar .field-label{margin:0}
 .admin-list-toolbar select{width:min(220px,48vw);margin-right:auto}
