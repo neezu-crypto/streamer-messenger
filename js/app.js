@@ -1044,6 +1044,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
   if (!state.room || !slides.length) {
     slot.hidden = true;
     switcher.hidden = true;
+    switcher.style.removeProperty('grid-template-columns');
     track.style.transform = '';
     viewport.style.removeProperty('height');
     updateRoomToolsPipTitle();
@@ -1052,7 +1053,11 @@ function renderRoomToolSwitcher(preferredKey = '') {
 
   slot.hidden = false;
   switcher.hidden = slides.length < 2;
-  switcher.classList.toggle('is-scrollable', slides.length >= 3);
+  const desktopCompactTabs = isDesktopRoomToolsPip() && slides.length <= 3;
+  switcher.classList.toggle('is-scrollable', slides.length >= 3 && !desktopCompactTabs);
+  switcher.style.gridTemplateColumns = desktopCompactTabs
+    ? `repeat(${slides.length}, minmax(0, 1fr))`
+    : '';
   const keys = slides.map((slide) => slide.dataset.roomTool);
   const keySignature = keys.join('|');
   if (state.roomToolTabKeys !== keySignature) {
@@ -1320,7 +1325,7 @@ function renderMiniGame(errorMessage = '') {
   }
   const board = $('#ladder-board');
   board.replaceChildren();
-  board.style.width = `${Math.max(320, players.length * 76 + 32)}px`;
+  board.style.removeProperty('width');
   const laneCount = players.length;
   const top = document.createElement('div');
   top.className = 'ladder-choices';
@@ -1359,6 +1364,7 @@ function renderMiniGame(errorMessage = '') {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('ladder-svg');
   svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', '참가자별 사다리 경로');
   const addLine = (x1, y1, x2, y2, className) => {
@@ -1704,10 +1710,12 @@ function renderRoomMarketStocks() {
 
 function renderRoomMarketFeed() {
   const host = $('#room-market-feed'); host.replaceChildren();
-  if (!state.roomMarketFeed.length) {
+  const recentItems = state.roomMarketFeed.slice(0, 4);
+  $('#room-market-feed-count').textContent = `최근 ${recentItems.length}건`;
+  if (!recentItems.length) {
     const empty = document.createElement('p'); empty.className = 'room-market-empty'; empty.textContent = '아직 채팅방 거래가 없습니다.'; host.appendChild(empty); return;
   }
-  for (const item of state.roomMarketFeed) {
+  for (const item of recentItems) {
     const row = document.createElement('div'); row.className = 'room-market-feed-item';
     const person = document.createElement('span'); person.textContent = item.nickname ? `${item.nickname} · ` : '참여자 · ';
     const action = document.createElement('strong'); action.className = item.type === 'buy' ? 'buy' : 'sell'; action.textContent = item.type === 'buy' ? '매수' : '매도';
