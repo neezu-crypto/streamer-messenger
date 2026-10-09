@@ -33,16 +33,15 @@ function inferTooltip(element) {
 }
 
 function ensureTooltip(element) {
-  const customTooltip = tooltipText(element.dataset.tooltip);
-  if (customTooltip) {
-    element.title = customTooltip;
-    return;
-  }
-  if (element.hasAttribute('title') && element.dataset.autoTooltip !== 'true') return;
-  const label = inferTooltip(element);
+  const title = tooltipText(element.getAttribute('title'));
+  const existing = tooltipText(element.dataset.tooltip);
+  const generated = element.dataset.autoTooltip === 'true';
+  const label = title || (existing && !generated ? existing : inferTooltip(element));
   if (!label) return;
-  element.title = label;
-  element.dataset.autoTooltip = 'true';
+  if (element.dataset.tooltip !== label) element.dataset.tooltip = label;
+  if (!title && !existing || generated && !title) element.dataset.autoTooltip = 'true';
+  else delete element.dataset.autoTooltip;
+  if (element.hasAttribute('title')) element.removeAttribute('title');
 }
 
 function ensureTooltipsIn(root) {
@@ -78,9 +77,95 @@ ensureTooltipsIn(document);
 new MutationObserver((records) => {
   records.forEach((record) => {
     if (record.type === 'characterData') ensureTooltipsIn(record.target.parentElement);
-    else record.addedNodes.forEach(ensureTooltipsIn);
+    else if (record.type === 'childList') record.addedNodes.forEach(ensureTooltipsIn);
+    else if (record.type === 'attributes') ensureTooltipsIn(record.target);
   });
-}).observe(document.body, { childList: true, characterData: true, subtree: true });
+}).observe(document.body, { childList: true, characterData: true, attributes: true, attributeFilter: ['title'], subtree: true });
+
+const tooltipNode = document.createElement('div');
+tooltipNode.id = 'app-tooltip';
+tooltipNode.className = 'app-tooltip';
+tooltipNode.setAttribute('role', 'tooltip');
+tooltipNode.hidden = true;
+document.body.appendChild(tooltipNode);
+let activeTooltipTarget = null;
+let tooltipTimer = 0;
+
+function tooltipTargetFrom(target) {
+  return target instanceof Element ? target.closest(TOOLTIP_SELECTOR) : null;
+}
+
+function hideTooltip() {
+  window.clearTimeout(tooltipTimer);
+  tooltipTimer = 0;
+  if (activeTooltipTarget) {
+    const ids = (activeTooltipTarget.getAttribute('aria-describedby') || '').split(/\s+/).filter((id) => id && id !== tooltipNode.id);
+    if (ids.length) activeTooltipTarget.setAttribute('aria-describedby', ids.join(' '));
+    else activeTooltipTarget.removeAttribute('aria-describedby');
+  }
+  activeTooltipTarget = null;
+  tooltipNode.hidden = true;
+  if (tooltipNode.parentElement !== document.body) document.body.appendChild(tooltipNode);
+}
+
+function showTooltip(target) {
+  if (!target || !target.isConnected) return;
+  ensureTooltip(target);
+  const text = tooltipText(target.dataset.tooltip);
+  if (!text) return;
+  const containingDialog = target.closest('dialog[open]');
+  const topDialog = Array.from(document.querySelectorAll('dialog[open]')).at(-1);
+  const portal = containingDialog || topDialog || document.body;
+  if (tooltipNode.parentElement !== portal) portal.appendChild(tooltipNode);
+  activeTooltipTarget = target;
+  tooltipNode.textContent = text;
+  const describedBy = new Set((target.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+  describedBy.add(tooltipNode.id);
+  target.setAttribute('aria-describedby', Array.from(describedBy).join(' '));
+  tooltipNode.hidden = false;
+  requestAnimationFrame(() => {
+    if (activeTooltipTarget !== target || tooltipNode.hidden) return;
+    const targetRect = target.getBoundingClientRect();
+    const tooltipRect = tooltipNode.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.min(Math.max(margin, targetRect.left + (targetRect.width - tooltipRect.width) / 2), window.innerWidth - tooltipRect.width - margin);
+    const above = targetRect.top - tooltipRect.height - 9;
+    const top = above >= margin ? above : Math.min(targetRect.bottom + 9, window.innerHeight - tooltipRect.height - margin);
+    tooltipNode.style.left = `${left}px`;
+    tooltipNode.style.top = `${Math.max(margin, top)}px`;
+  });
+}
+
+function scheduleTooltip(target, delay = 280) {
+  window.clearTimeout(tooltipTimer);
+  tooltipTimer = window.setTimeout(() => showTooltip(target), delay);
+}
+
+document.addEventListener('pointerover', (event) => {
+  const target = tooltipTargetFrom(event.target);
+  if (!target || target === activeTooltipTarget) return;
+  hideTooltip();
+  scheduleTooltip(target);
+}, true);
+document.addEventListener('pointerout', (event) => {
+  const target = tooltipTargetFrom(event.target);
+  const nextTarget = tooltipTargetFrom(event.relatedTarget);
+  if (target === activeTooltipTarget && nextTarget !== target) hideTooltip();
+}, true);
+document.addEventListener('pointerdown', hideTooltip, true);
+document.addEventListener('focusin', (event) => {
+  const target = tooltipTargetFrom(event.target);
+  if (!target || target === activeTooltipTarget || !target.matches(':focus-visible')) return;
+  hideTooltip();
+  scheduleTooltip(target, 180);
+}, true);
+document.addEventListener('focusout', (event) => {
+  const target = tooltipTargetFrom(event.target);
+  const nextTarget = tooltipTargetFrom(event.relatedTarget);
+  if (target === activeTooltipTarget && nextTarget !== target) hideTooltip();
+}, true);
+window.addEventListener('scroll', hideTooltip, true);
+window.addEventListener('resize', hideTooltip);
 
 async function registerGalleryImageWithRetry(payload, onRetry) {
   const deadline = Date.now() + 180000;
