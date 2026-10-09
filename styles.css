@@ -262,3 +262,11 @@
 .app-tooltip{position:fixed;z-index:20000;max-width:min(280px,calc(100vw - 16px));padding:7px 10px;border:1px solid rgba(255,255,255,.16);border-radius:9px;background:#17233b;color:#fff;box-shadow:0 8px 24px rgba(18,30,55,.25);font-size:11px;font-weight:600;line-height:1.45;text-align:center;white-space:normal;overflow-wrap:anywhere;pointer-events:none;opacity:0;animation:tooltip-appear .12s ease-out forwards}
 .app-tooltip[hidden]{display:none!important}
 @keyframes tooltip-appear{to{opacity:1}}
+
+/* Keep the room profile, shared stock market, and active mini-game in one
+   fixed-height chat panel; only the message timeline scrolls on mobile. */
+.chat-top-stack{position:relative;z-index:2;flex:0 0 auto;min-width:0}
+@media(max-width:680px){
+  .page-shell.chat-open .chat-panel{height:calc(100dvh - 96px);min-height:0}
+  .page-shell.chat-open .chat-body{flex:1 1 auto;min-height:0;overscroll-behavior:contain}
+}
