@@ -565,6 +565,19 @@ function subscribePinnedMessage() {
     renderPinnedMessage();
     renderTimeline({ preservePosition: true });
     if (!pointer) return;
+    if (pointer.message) {
+      const message = pointer.message;
+      const validSnapshot = message.id === messageId && message.roomId === roomId
+        && Number(message.createdAt) === Number(pointer.messageCreatedAt)
+        && ['streamer', 'fan'].includes(message.senderRole) && ['text', 'image'].includes(message.kind)
+        && (message.kind !== 'text' || typeof message.text === 'string')
+        && (message.kind !== 'image' || typeof message.galleryImageId === 'string');
+      state.pinnedMessageDetails = validSnapshot ? message : null;
+      state.pinnedMessageLoading = false;
+      renderPinnedMessage();
+      renderTimeline({ preservePosition: true });
+      return;
+    }
     get(ref(db, `streamerMessenger/chat/${roomId}/broadcast/${messageId}`)).then((messageSnapshot) => {
       if (!state.room || state.room.roomId !== roomId || state.pinnedMessageLoadToken !== loadToken) return;
       const message = messageSnapshot.val();
@@ -1119,7 +1132,7 @@ function renderPinnedMessage() {
   const copy = document.createElement('span'); copy.className = 'pinned-message-copy';
   const sender = document.createElement('strong'); sender.className = 'pinned-message-sender';
   const details = state.pinnedMessageDetails;
-  sender.textContent = details && details.senderName || '스트리머';
+  sender.textContent = details && details.senderName || (details && details.senderRole === 'fan' ? '팬' : '스트리머');
   const preview = document.createElement('span'); preview.className = 'pinned-message-preview';
   if (state.pinnedMessageLoading) preview.textContent = '고정 메시지를 불러오는 중…';
   else if (!details) preview.textContent = '고정 메시지를 불러올 수 없습니다.';
@@ -1509,13 +1522,18 @@ function renderMessage(message) {
     reply.title = `${message.senderName || '팬'}에게 비공개 답변 보내기`;
     reply.addEventListener('click', () => setReply(message)); meta.appendChild(reply);
   }
-  const canPinMessage = state.isOwner && message.senderRole === 'streamer' && !message.recipientUid
+  const canPinMessage = state.isOwner && ['streamer', 'fan'].includes(message.senderRole)
+    && (message.senderRole === 'fan' || !message.recipientUid)
     && ['text', 'image'].includes(message.kind) && !message.pending && !!message.id;
   if (canPinMessage) {
     const pinned = state.pinnedMessagePointer && state.pinnedMessagePointer.messageId === message.id;
     const pin = document.createElement('button'); pin.className = `pin-message-action${pinned ? ' is-pinned' : ''}`; pin.type = 'button';
-    pin.textContent = pinned ? '고정됨' : '고정';
-    pin.title = pinned ? '상단에 고정된 메시지입니다. 위의 고정 메시지를 눌러 해제하세요.' : '이 공개 메시지를 채팅방 상단에 고정해 모두에게 보여줘요.';
+    pin.textContent = pinned ? '고정됨' : message.senderRole === 'fan' ? '모두에게 고정' : '고정';
+    pin.title = pinned
+      ? '상단에 고정된 메시지입니다. 위의 고정 메시지를 눌러 해제하세요.'
+      : message.senderRole === 'fan'
+        ? '고정하면 이 팬 메시지가 채팅방 참여자 모두에게 공개됩니다.'
+        : '이 공개 메시지를 채팅방 상단에 고정해 모두에게 보여줘요.';
     pin.setAttribute('aria-label', pin.title);
     pin.disabled = !!state.pinActionPending || !!pinned;
     pin.addEventListener('click', () => setPinnedMessage(message.id));

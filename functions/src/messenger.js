@@ -1004,24 +1004,36 @@ const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) =
   }
   if (!/^[A-Za-z0-9_-]{20}$/.test(messageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
 
-  const [timelineSnap, broadcastSnap] = await Promise.all([
-    db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get(),
-    db().ref(`${ROOT}/chat/${roomId}/broadcast/${messageId}`).get(),
-  ]);
-  if (!timelineSnap.exists() || !broadcastSnap.exists()) {
-    throw new HttpsError('not-found', '채팅방 전체에 공개된 메시지만 고정할 수 있습니다.');
-  }
+  const timelineSnap = await db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get();
+  if (!timelineSnap.exists()) throw new HttpsError('not-found', '고정할 메시지를 찾을 수 없습니다.');
   const timelineMessage = timelineSnap.val() || {};
-  const message = broadcastSnap.val() || {};
-  const isPublicStreamerMessage = message.id === messageId && message.roomId === roomId
-    && message.senderRole === 'streamer' && message.senderUid === p.uid && !message.recipientUid
-    && ['text', 'image'].includes(message.kind)
-    && timelineMessage.id === messageId && timelineMessage.senderUid === p.uid
-    && timelineMessage.senderRole === 'streamer' && !timelineMessage.recipientUid
-    && timelineMessage.kind === message.kind;
-  if (!isPublicStreamerMessage) {
-    throw new HttpsError('permission-denied', '스트리머가 방 전체에 보낸 공개 메시지만 고정할 수 있습니다.');
+  let message = null;
+  if (timelineMessage.senderRole === 'streamer' && timelineMessage.senderUid === p.uid && !timelineMessage.recipientUid) {
+    const broadcastSnap = await db().ref(`${ROOT}/chat/${roomId}/broadcast/${messageId}`).get();
+    const broadcastMessage = broadcastSnap.val() || {};
+    const isPublicStreamerMessage = broadcastSnap.exists() && broadcastMessage.id === messageId && broadcastMessage.roomId === roomId
+      && broadcastMessage.senderRole === 'streamer' && broadcastMessage.senderUid === p.uid && !broadcastMessage.recipientUid
+      && ['text', 'image'].includes(broadcastMessage.kind)
+      && timelineMessage.id === messageId && timelineMessage.roomId === roomId
+      && timelineMessage.kind === broadcastMessage.kind
+      && Number(timelineMessage.createdAt) === Number(broadcastMessage.createdAt)
+      && (broadcastMessage.kind !== 'text' || timelineMessage.text === broadcastMessage.text)
+      && (broadcastMessage.kind !== 'image' || timelineMessage.galleryImageId === broadcastMessage.galleryImageId);
+    if (isPublicStreamerMessage) message = broadcastMessage;
+  } else if (timelineMessage.senderRole === 'fan' && timelineMessage.senderUid && timelineMessage.senderUid !== p.uid && !timelineMessage.recipientUid) {
+    const privateSnap = await db().ref(`${ROOT}/chat/${roomId}/private/${timelineMessage.senderUid}/${messageId}`).get();
+    const privateMessage = privateSnap.val() || {};
+    const isFanMessage = privateSnap.exists() && timelineMessage.id === messageId && timelineMessage.roomId === roomId
+      && privateMessage.id === messageId && privateMessage.roomId === roomId
+      && privateMessage.senderUid === timelineMessage.senderUid && privateMessage.senderRole === 'fan'
+      && privateMessage.scope === 'fan' && !privateMessage.recipientUid
+      && Number(privateMessage.createdAt) === Number(timelineMessage.createdAt)
+      && ['text', 'image'].includes(privateMessage.kind) && privateMessage.kind === timelineMessage.kind
+      && (privateMessage.kind !== 'text' || privateMessage.text === timelineMessage.text)
+      && (privateMessage.kind !== 'image' || privateMessage.galleryImageId === timelineMessage.galleryImageId);
+    if (isFanMessage) message = privateMessage;
   }
+  if (!message) throw new HttpsError('permission-denied', '방 전체 공개 메시지 또는 팬 대화의 메시지만 고정할 수 있습니다.');
   const messageCreatedAt = Number(message.createdAt) || 0;
   if (messageCreatedAt < now() - CHAT_RETENTION) throw new HttpsError('failed-precondition', '보관 기간이 지난 메시지는 고정할 수 없습니다.');
   if (message.kind === 'text' && (typeof message.text !== 'string' || !message.text.trim())) {
@@ -1031,7 +1043,16 @@ const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) =
     throw new HttpsError('failed-precondition', '갤러리 이미지 정보를 확인할 수 없습니다.');
   }
 
-  const pinnedMessage = { messageId, messageCreatedAt, pinnedAt: now() };
+  const publicSnapshot = {
+    id: messageId,
+    roomId,
+    senderRole: message.senderRole,
+    senderName: String(message.senderName || (message.senderRole === 'fan' ? '팬' : '스트리머')).slice(0, 30),
+    createdAt: messageCreatedAt,
+    kind: message.kind,
+    ...(message.kind === 'text' ? { text: message.text } : { galleryImageId: message.galleryImageId }),
+  };
+  const pinnedMessage = { messageId, messageCreatedAt, pinnedAt: now(), message: publicSnapshot };
   await pinnedRef.set(pinnedMessage);
   return { pinnedMessage };
 });
