@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-chat-support">
+  <link rel="stylesheet" href="styles.css?v=20261009-pinned-message">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -90,6 +90,7 @@
               <div class="room-market-feed-wrap"><div class="room-market-feed-heading"><strong>실시간 거래</strong><span>최근 100건</span></div><div class="room-market-feed" id="room-market-feed" aria-live="polite"><p class="room-market-empty">아직 채팅방 거래가 없습니다.</p></div></div>
             </div>
           </section>
+          <section class="pinned-message-panel" id="pinned-message-panel" aria-label="채팅방 상단 고정 메시지" aria-live="polite" hidden></section>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
           <div class="chat-composer-wrap">
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
@@ -306,6 +307,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-chat-support"></script>
+  <script type="module" src="js/app.js?v=20261009-pinned-message"></script>
 </body>
 </html>

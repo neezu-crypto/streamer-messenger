@@ -845,6 +845,55 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
   return { action, stock: result.snapshot.child(stockId).val(), alreadyAdded };
 });
 
+const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const messageId = data.messageId;
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || typeof messageId !== 'string') {
+    throw new HttpsError('invalid-argument', '채팅방 또는 메시지 정보가 올바르지 않습니다.');
+  }
+  const { isOwner } = await requireRoomMember(p, roomId);
+  if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 메시지를 고정할 수 있습니다.');
+  const pinnedRef = roomRef(roomId).child('meta/pinnedMessage');
+  if (!messageId) {
+    await pinnedRef.remove();
+    return { pinnedMessage: null };
+  }
+  if (!/^[A-Za-z0-9_-]{20}$/.test(messageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
+
+  const [timelineSnap, broadcastSnap] = await Promise.all([
+    db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get(),
+    db().ref(`${ROOT}/chat/${roomId}/broadcast/${messageId}`).get(),
+  ]);
+  if (!timelineSnap.exists() || !broadcastSnap.exists()) {
+    throw new HttpsError('not-found', '채팅방 전체에 공개된 메시지만 고정할 수 있습니다.');
+  }
+  const timelineMessage = timelineSnap.val() || {};
+  const message = broadcastSnap.val() || {};
+  const isPublicStreamerMessage = message.id === messageId && message.roomId === roomId
+    && message.senderRole === 'streamer' && message.senderUid === p.uid && !message.recipientUid
+    && ['text', 'image'].includes(message.kind)
+    && timelineMessage.id === messageId && timelineMessage.senderUid === p.uid
+    && timelineMessage.senderRole === 'streamer' && !timelineMessage.recipientUid
+    && timelineMessage.kind === message.kind;
+  if (!isPublicStreamerMessage) {
+    throw new HttpsError('permission-denied', '스트리머가 방 전체에 보낸 공개 메시지만 고정할 수 있습니다.');
+  }
+  const messageCreatedAt = Number(message.createdAt) || 0;
+  if (messageCreatedAt < now() - CHAT_RETENTION) throw new HttpsError('failed-precondition', '보관 기간이 지난 메시지는 고정할 수 없습니다.');
+  if (message.kind === 'text' && (typeof message.text !== 'string' || !message.text.trim())) {
+    throw new HttpsError('failed-precondition', '내용이 있는 메시지만 고정할 수 있습니다.');
+  }
+  if (message.kind === 'image' && typeof message.galleryImageId !== 'string') {
+    throw new HttpsError('failed-precondition', '갤러리 이미지 정보를 확인할 수 없습니다.');
+  }
+
+  const pinnedMessage = { messageId, messageCreatedAt, pinnedAt: now() };
+  await pinnedRef.set(pinnedMessage);
+  return { pinnedMessage };
+});
+
 async function galleryImageForChat(roomId, imageId) {
   const rawMeta = (await roomRef(roomId).child('meta').get()).val() || {};
   const meta = await ensureGalleryLink(roomId, rawMeta);
@@ -1260,6 +1309,9 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
   const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
   for (const roomId of Object.keys(publicRooms)) {
+    const pinnedSnap = await roomRef(roomId).child('meta/pinnedMessage').get();
+    const pinned = pinnedSnap.val();
+    if (pinned && Number(pinned.messageCreatedAt) <= cutoff) updates[`${ROOT}/rooms/${roomId}/meta/pinnedMessage`] = null;
     const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
     let cursor = null;
     while (true) {
@@ -1313,7 +1365,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 module.exports = {
   messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
-  messengerRoomMarketUpdate,
+  messengerRoomMarketUpdate, messengerSetPinnedMessage,
   messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,

@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -453,6 +453,8 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
+  renderPinnedMessage();
   state.knownApplicationUids = new Set();
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
@@ -521,10 +523,55 @@ function clearSubscriptions() {
   state.roomMarketQuoteUnsubscribers = new Map();
 }
 
+function subscribePinnedMessage() {
+  const roomId = state.room && state.room.roomId;
+  if (!roomId) return;
+  const { db, ref, onValue, get } = api();
+  const pinnedRef = ref(db, `streamerMessenger/rooms/${roomId}/meta/pinnedMessage`);
+  const unsubscribe = onValue(pinnedRef, (snapshot) => {
+    if (!state.room || state.room.roomId !== roomId) return;
+    const value = snapshot.val();
+    const messageId = value && String(value.messageId || '');
+    const pointer = messageId && /^[A-Za-z0-9_-]{20}$/.test(messageId) ? value : null;
+    const loadToken = ++state.pinnedMessageLoadToken;
+    state.pinnedMessagePointer = pointer;
+    state.pinnedMessageDetails = null;
+    state.pinnedMessageLoading = !!pointer;
+    renderPinnedMessage();
+    renderTimeline({ preservePosition: true });
+    if (!pointer) return;
+    get(ref(db, `streamerMessenger/chat/${roomId}/broadcast/${messageId}`)).then((messageSnapshot) => {
+      if (!state.room || state.room.roomId !== roomId || state.pinnedMessageLoadToken !== loadToken) return;
+      const message = messageSnapshot.val();
+      const isRoomWideMessage = message && message.id === messageId && message.roomId === roomId
+        && message.senderRole === 'streamer' && !message.recipientUid && ['text', 'image'].includes(message.kind)
+        && Number(message.createdAt) === Number(pointer.messageCreatedAt);
+      state.pinnedMessageDetails = isRoomWideMessage ? message : null;
+      state.pinnedMessageLoading = false;
+      renderPinnedMessage();
+      renderTimeline({ preservePosition: true });
+    }).catch((error) => {
+      if (!state.room || state.room.roomId !== roomId || state.pinnedMessageLoadToken !== loadToken) return;
+      console.warn('고정 메시지를 불러오지 못했습니다.', error);
+      state.pinnedMessageLoading = false;
+      renderPinnedMessage();
+    });
+  }, (error) => {
+    if (!state.room || state.room.roomId !== roomId) return;
+    console.warn('고정 메시지 상태를 구독하지 못했습니다.', error);
+    state.pinnedMessagePointer = null;
+    state.pinnedMessageDetails = null;
+    state.pinnedMessageLoading = false;
+    renderPinnedMessage();
+  });
+  state.unsubscribers.push(unsubscribe);
+}
+
 function subscribeTimeline() {
   clearSubscriptions();
   const { db, ref, onValue, query, orderByKey, limitToLast } = api();
   const roomId = state.room.roomId;
+  subscribePinnedMessage();
   if (!state.isOwner) {
     const uid = state.session.uid;
     let memberStatusInitialized = false;
@@ -1025,6 +1072,63 @@ function roomselfDataUrl(result) {
   return URL.createObjectURL(new Blob([bytes], { type: result.contentType }));
 }
 
+function renderPinnedMessage() {
+  const host = $('#pinned-message-panel');
+  const pointer = state.pinnedMessagePointer;
+  if (!state.room || !pointer) { host.hidden = true; host.replaceChildren(); return; }
+  host.hidden = false;
+  host.replaceChildren();
+  const actionable = state.isOwner;
+  const card = document.createElement(actionable ? 'button' : 'article');
+  card.className = `pinned-message-card${actionable ? ' actionable' : ''}`;
+  if (actionable) {
+    card.type = 'button';
+    card.setAttribute('aria-label', state.pinActionPending ? '고정 메시지 처리 중' : '고정된 메시지를 눌러 채팅방 상단에서 내리기');
+    card.title = state.pinActionPending ? '고정 메시지를 처리하고 있어요.' : '고정된 메시지를 눌러 채팅방 상단에서 내려요.';
+    card.disabled = state.pinActionPending;
+    card.addEventListener('click', () => setPinnedMessage(''));
+  } else card.setAttribute('role', 'note');
+
+  const badge = document.createElement('span'); badge.className = 'pinned-message-badge'; badge.textContent = '📌 고정 메시지';
+  const copy = document.createElement('span'); copy.className = 'pinned-message-copy';
+  const sender = document.createElement('strong'); sender.className = 'pinned-message-sender';
+  const details = state.pinnedMessageDetails;
+  sender.textContent = details && details.senderName || '스트리머';
+  const preview = document.createElement('span'); preview.className = 'pinned-message-preview';
+  if (state.pinnedMessageLoading) preview.textContent = '고정 메시지를 불러오는 중…';
+  else if (!details) preview.textContent = '고정 메시지를 불러올 수 없습니다.';
+  else if (details.kind === 'image') preview.textContent = '갤러리 이미지';
+  else preview.textContent = details.text || '메시지 내용이 없습니다.';
+  copy.append(sender, preview);
+  card.append(badge, copy);
+  if (details && details.kind === 'image' && details.galleryImageId) {
+    const image = document.createElement('img'); image.className = 'pinned-message-image'; image.alt = '고정된 갤러리 이미지'; image.loading = 'lazy';
+    getImageUrl(details.galleryImageId).then((url) => { if (url && card.isConnected && state.pinnedMessagePointer?.messageId === pointer.messageId) image.src = url; });
+    card.appendChild(image);
+  }
+  host.appendChild(card);
+}
+
+async function setPinnedMessage(messageId) {
+  if (!state.room || !state.isOwner || state.pinActionPending) return;
+  const room = state.room;
+  state.pinActionPending = true;
+  renderPinnedMessage();
+  renderTimeline({ preservePosition: true });
+  try {
+    await call('messengerSetPinnedMessage', { roomId: room.roomId, messageId });
+    if (state.room && state.room.roomId === room.roomId) showToast(messageId ? '메시지를 채팅방 상단에 고정했어요.' : '고정 메시지를 내렸어요.');
+  } catch (error) {
+    if (state.room && state.room.roomId === room.roomId) showError(error);
+  } finally {
+    if (state.room && state.room.roomId === room.roomId) {
+      state.pinActionPending = false;
+      renderPinnedMessage();
+      renderTimeline({ preservePosition: true });
+    }
+  }
+}
+
 function renderTimeline({ preservePosition = false } = {}) {
   const host = $('#timeline');
   const oldHeight = host.scrollHeight;
@@ -1274,6 +1378,18 @@ function renderMessage(message) {
   if (state.isOwner && message.senderRole === 'fan') {
     const reply = document.createElement('button'); reply.className = 'reply-action'; reply.type = 'button'; reply.textContent = '답변';
     reply.addEventListener('click', () => setReply(message)); meta.appendChild(reply);
+  }
+  const canPinMessage = state.isOwner && message.senderRole === 'streamer' && !message.recipientUid
+    && ['text', 'image'].includes(message.kind) && !message.pending && !!message.id;
+  if (canPinMessage) {
+    const pinned = state.pinnedMessagePointer && state.pinnedMessagePointer.messageId === message.id;
+    const pin = document.createElement('button'); pin.className = `pin-message-action${pinned ? ' is-pinned' : ''}`; pin.type = 'button';
+    pin.textContent = pinned ? '고정됨' : '고정';
+    pin.title = pinned ? '상단에 고정된 메시지입니다. 위의 고정 메시지를 눌러 해제하세요.' : '이 공개 메시지를 채팅방 상단에 고정해 모두에게 보여줘요.';
+    pin.setAttribute('aria-label', pin.title);
+    pin.disabled = !!state.pinActionPending || !!pinned;
+    pin.addEventListener('click', () => setPinnedMessage(message.id));
+    meta.appendChild(pin);
   }
   if (message.pending) { const pending = document.createElement('span'); pending.className = 'message-delivery-status'; pending.textContent = '전송 중'; meta.appendChild(pending); }
   stack.appendChild(meta);
