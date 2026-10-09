@@ -114,6 +114,11 @@ function stationUrl(soopId) {
   return /^[a-z0-9]{2,30}$/.test(id) ? `https://www.sooplive.com/station/${encodeURIComponent(id)}` : '';
 }
 
+function soopSupportUrl(soopId) {
+  const id = String(soopId || '').trim().toLowerCase();
+  return /^[a-z0-9]{2,30}$/.test(id) ? `https://m.sooplive.co.kr/item/a/starballoongift?szBjId=${encodeURIComponent(id)}` : '';
+}
+
 function renderStreamerAvatar(host, src, nickname) {
   host.replaceChildren();
   const fallback = String(nickname || '✦').slice(0, 1);
@@ -458,6 +463,18 @@ async function openChat(room, isOwner) {
   const fanpageLink = $('#chat-fanpage-link');
   const streamerSoopId = String(room.streamerSoopId || '').trim();
   const isOwnRoom = state.isOwner === true;
+  const donationLink = $('#chat-donation-link');
+  const supportUrl = soopSupportUrl(streamerSoopId);
+  const canDonate = ((room.roomType || 'streamer') === 'streamer' || isOwnRoom) && !!supportUrl;
+  donationLink.hidden = !canDonate;
+  if (canDonate) {
+    donationLink.href = supportUrl;
+    const donationLabel = `${room.streamerNickname || '스트리머'}에게 SOOP 후원하기`;
+    donationLink.setAttribute('aria-label', donationLabel);
+    donationLink.title = donationLabel;
+  } else {
+    donationLink.removeAttribute('href');
+  }
   const hasFanpage = (room.roomType === 'streamer' || isOwnRoom) && /^[a-z0-9]{2,20}$/i.test(streamerSoopId);
   fanpageLink.hidden = !hasFanpage;
   if (hasFanpage) {
