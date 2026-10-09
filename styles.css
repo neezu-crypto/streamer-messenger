@@ -313,9 +313,9 @@
 .room-tools-pip-bar{display:none}
 .room-tools-pip-resize-handle{display:none}
 @media(min-width:900px){
-  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));max-height:calc(100dvh - 104px);overflow:auto;margin:0;padding:10px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transform:scale(var(--room-tools-pip-scale,1));transform-origin:top left;will-change:transform}
+  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));height:auto;max-height:none;aspect-ratio:16/9;overflow:hidden;margin:0;padding:0;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transform:scale(var(--room-tools-pip-scale,1));transform-origin:top left;will-change:transform}
   .room-tools-sticky-slot.is-dragging,.room-tools-sticky-slot.is-resizing{user-select:none;transition:none}
-  .room-tools-pip-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin-bottom:8px;padding:0 1px}
+  .room-tools-pip-bar{position:absolute;top:7px;left:11px;right:11px;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin:0;padding:0 1px}
   .room-tools-pip-drag-handle{display:flex;align-items:center;gap:9px;min-width:0;min-height:32px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#344260;font-size:11px;font-weight:800;text-align:left;cursor:grab;touch-action:none;user-select:none}
   .room-tools-pip-drag-handle:active{cursor:grabbing}
   .room-tools-pip-drag-handle:focus-visible,.room-tools-pip-collapse:focus-visible{outline:2px solid #8da5ff;outline-offset:2px}
@@ -323,16 +323,47 @@
   .room-tools-pip-drag-hint{color:#96a2b7;font-size:9px;font-weight:600}
   .room-tools-pip-collapse{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;border:1px solid rgba(126,148,185,.22);border-radius:10px;background:rgba(255,255,255,.78);color:#60718e;font-size:15px}
   .room-tools-pip-collapse:hover{border-color:#94a9f4;color:#4f6fe1}
-  .room-tools-content{width:100%;min-width:0;padding-bottom:28px}
-  .room-tools-switcher{width:100%;margin:0 0 8px}
-  .room-tools-viewport{width:100%;margin:0}
-  .room-tool-slide{width:100%}
-  .room-tools-sticky-slot .room-market-panel,.room-tools-sticky-slot .mini-game-live-panel{width:100%;max-width:100%;margin:0;border:1px solid rgba(126,148,185,.2);border-radius:15px;box-shadow:0 8px 22px rgba(31,48,83,.1)}
+  .room-tools-content{position:absolute;inset:0;width:100%;min-width:0;padding:0}
+  .room-tools-switcher{position:absolute;top:47px;left:12px;right:12px;z-index:7;width:auto;height:42px;margin:0;padding:3px}
+  .room-tools-viewport{position:absolute;inset:0;width:auto;height:auto!important;margin:0;overflow:hidden}
+  .room-tools-track,.room-tool-slide{height:100%;min-height:0}
+  .room-tools-track{align-items:stretch}
+  .room-tool-slide{width:100%;align-items:stretch;justify-content:stretch}
+  .room-tools-sticky-slot .room-market-panel,.room-tools-sticky-slot .mini-game-live-panel,.room-tools-sticky-slot .room-video-tool-panel{width:100%;height:100%;max-width:100%;max-height:none;aspect-ratio:16/9;margin:0;box-sizing:border-box;border-radius:15px;box-shadow:0 8px 22px rgba(31,48,83,.1)}
+  .room-tools-sticky-slot .room-market-panel.is-collapsed,.room-tools-sticky-slot .mini-game-live-panel.is-collapsed{width:100%;height:100%;max-width:100%;max-height:none;aspect-ratio:16/9;margin:0}
+  .room-tools-sticky-slot .room-market-panel,.room-tools-sticky-slot .mini-game-live-panel,.room-tools-sticky-slot .room-video-tool-panel{padding-top:94px}
+  .room-tools-sticky-slot .room-market-panel{display:flex;flex-direction:column;overflow:hidden;padding-right:13px;padding-bottom:27px;padding-left:13px}
+  .room-tools-sticky-slot .room-market-heading{flex:0 0 auto;gap:8px;padding-bottom:7px}
+  .room-tools-sticky-slot .room-market-heading .eyebrow{margin-bottom:4px;padding:3px 7px}
+  .room-tools-sticky-slot .room-market-heading h3{font-size:14px}
+  .room-tools-sticky-slot .room-market-heading p:not(.eyebrow){margin-top:3px;font-size:9px}
+  .room-tools-sticky-slot .room-market-header-actions{gap:5px}
+  .room-tools-sticky-slot .room-market-collapse-button{width:31px;height:32px}
+  .room-tools-sticky-slot #add-room-stock{height:32px;padding:0 9px;font-size:9px}
+  .room-tools-sticky-slot .room-market-content{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;overflow:auto;padding-top:3px}
+  .room-tools-sticky-slot .room-market-stock-list{flex:0 0 auto;min-height:0;gap:6px;padding:5px 1px}
+  .room-tools-sticky-slot .room-market-stock-card{flex-basis:145px;padding:7px 8px}
+  .room-tools-sticky-slot .room-market-empty{padding:5px 2px;font-size:9px}
+  .room-tools-sticky-slot .room-market-feed-wrap{flex:0 0 auto;margin-top:3px;padding:6px 7px}
+  .room-tools-sticky-slot .room-market-feed-heading{margin-bottom:4px}
+  .room-tools-sticky-slot .room-market-feed-item{padding:4px 7px;font-size:8px}
+  .room-tools-sticky-slot .mini-game-live-panel{display:flex;flex-direction:column;overflow:hidden;padding-right:12px;padding-bottom:27px;padding-left:12px}
+  .room-tools-sticky-slot .mini-game-live-heading{flex:0 0 auto;gap:7px}
+  .room-tools-sticky-slot .mini-game-live-heading .button,.room-tools-sticky-slot .mini-game-collapse-button{height:28px}
+  .room-tools-sticky-slot .mini-game-sticky-content{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .room-tools-sticky-slot .mini-game-live-panel .mini-game-instructions{margin:3px 0;font-size:8px}
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-board-scroll{padding:2px 0 4px}
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-board{padding:5px 6px}
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-svg{height:104px}
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-choice,.room-tools-sticky-slot .mini-game-live-panel .ladder-outcome{padding:4px 3px;font-size:8px}
+  .room-tools-sticky-slot .mini-game-live-panel .mini-game-result{padding:5px 7px;font-size:9px}
+  .room-tools-sticky-slot .room-video-tool-panel{overflow:auto;padding-right:12px;padding-bottom:27px;padding-left:12px}
+  .room-tools-sticky-slot.is-pip-collapsed{width:max-content;height:auto;min-width:175px;max-width:calc(100vw - 36px);aspect-ratio:auto;padding:7px 9px;border-radius:15px}
+  .room-tools-sticky-slot.is-pip-collapsed .room-tools-content{position:static}
+  .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-bar{position:static;min-height:30px;margin:0}
   .room-tools-pip-resize-handle{position:absolute;right:3px;bottom:3px;z-index:2;display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid rgba(126,148,185,.2);border-radius:8px;background:rgba(255,255,255,.9);color:#7889a7;font-size:18px;line-height:1;cursor:nwse-resize;touch-action:none;user-select:none}
   .room-tools-pip-resize-handle:hover,.room-tools-pip-resize-handle:focus-visible{border-color:#7f9aff;background:#fff;color:#526fdb;outline:2px solid rgba(93,124,232,.2);outline-offset:1px}
   .room-tools-sticky-slot.is-resizing .room-tools-pip-resize-handle{cursor:nwse-resize}
-  .room-tools-sticky-slot.is-pip-collapsed{width:max-content;min-width:175px;max-width:calc(100vw - 36px);padding:7px 9px;border-radius:15px}
-  .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-bar{min-height:30px;margin:0}
   .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-drag-hint{display:none}
   .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-resize-handle{display:none}
 }

@@ -978,14 +978,18 @@ function setRoomToolsPipScale(scale) {
   const slot = $('#room-tools-sticky-slot');
   if (!slot || slot.hidden || state.roomToolsPipCollapsed) return;
   const rect = slot.getBoundingClientRect();
-  const availableWidth = Math.max(160, window.innerWidth - 16);
-  const maxScale = Math.min(1.5, state.roomToolsPipScale * availableWidth / Math.max(1, rect.width));
-  const nextScale = Math.min(maxScale, Math.max(0.68, Number(scale) || 1));
+  const baseWidth = Math.max(1, rect.width / Math.max(0.01, state.roomToolsPipScale));
+  const baseHeight = Math.max(1, rect.height / Math.max(0.01, state.roomToolsPipScale));
+  const availableWidth = Math.max(1, window.innerWidth - 16);
+  const availableHeight = Math.max(1, window.innerHeight - 104);
+  const maxScale = Math.min(1.5, availableWidth / baseWidth, availableHeight / baseHeight);
+  const minScale = Math.min(0.68, maxScale);
+  const nextScale = Math.min(maxScale, Math.max(minScale, Number(scale) || 1));
   slot.style.right = 'auto';
   slot.style.left = `${rect.left}px`;
   slot.style.top = `${rect.top}px`;
   slot.style.setProperty('--room-tools-pip-scale', String(nextScale));
-  slot.style.maxHeight = `${Math.max(120, (window.innerHeight - 104) / nextScale)}px`;
+  slot.style.removeProperty('max-height');
   state.roomToolsPipScale = nextScale;
   const nextRect = slot.getBoundingClientRect();
   setRoomToolsPipPosition(nextRect.left, nextRect.top);
@@ -1021,6 +1025,10 @@ function syncRoomToolsViewportHeight() {
   const activeSlide = availableRoomToolSlides().find((slide) => slide.dataset.roomTool === state.activeRoomTool);
   if (!viewport || !activeSlide) {
     if (viewport) viewport.style.removeProperty('height');
+    return;
+  }
+  if (isDesktopRoomToolsPip()) {
+    viewport.style.removeProperty('height');
     return;
   }
   const height = Math.ceil(activeSlide.getBoundingClientRect().height);
@@ -1219,8 +1227,8 @@ function bindRoomToolControls() {
       slot.style.removeProperty('max-height');
       state.roomToolsPipScale = 1;
       if (state.roomToolsPipCollapsed) setRoomToolsPipCollapsed(false);
-    } else if (slot.style.left) {
-      if (!state.roomToolsPipCollapsed) setRoomToolsPipScale(state.roomToolsPipScale);
+    } else if (!slot.hidden && !state.roomToolsPipCollapsed) {
+      setRoomToolsPipScale(state.roomToolsPipScale);
       const rect = slot.getBoundingClientRect();
       setRoomToolsPipPosition(rect.left, rect.top);
     }
