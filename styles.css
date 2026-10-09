@@ -269,3 +269,20 @@
   .mini-game-sticky-slot{top:62px;padding:6px 8px}
   .mini-game-sticky-slot .mini-game-live-panel{border-radius:14px}
 }
+.mini-game-live-actions{display:flex;align-items:center;gap:7px}
+.mini-game-collapse-button{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border:1px solid rgba(126,148,185,.2);border-radius:9px;background:rgba(255,255,255,.76);color:#64748b;font-size:16px}
+.mini-game-collapse-button:hover{border-color:#93a8f2;color:#4f6fe1}
+.mini-game-title-compact{display:none}
+.mini-game-live-panel.is-collapsed{max-height:none;overflow:hidden;padding:5px 11px}
+.mini-game-live-panel.is-collapsed .mini-game-live-heading .eyebrow,.mini-game-live-panel.is-collapsed .mini-game-title-full,.mini-game-live-panel.is-collapsed #mini-game-clear,.mini-game-live-panel.is-collapsed .mini-game-sticky-content{display:none}
+.mini-game-live-panel.is-collapsed .mini-game-title-compact{display:inline}
+.mini-game-live-panel.is-collapsed .mini-game-live-heading{min-height:28px}
+.room-market-panel.is-collapsed{max-height:none;overflow:hidden;padding:6px 12px}
+.room-market-panel.is-collapsed .room-market-heading{min-height:28px;align-items:center;padding-bottom:0;border-bottom:0}
+.room-market-panel.is-collapsed .room-market-heading .eyebrow,.room-market-panel.is-collapsed .room-market-heading p:not(.eyebrow),.room-market-panel.is-collapsed .room-market-title-prefix,.room-market-panel.is-collapsed #add-room-stock{display:none}
+.room-market-panel.is-collapsed .room-market-heading h3{font-size:12px}
+.room-market-panel.is-collapsed .room-market-collapse-button{width:30px;height:30px}
+@media(max-width:680px){
+  .mini-game-live-panel.is-collapsed{padding:5px 9px}
+  .room-market-panel.is-collapsed{margin:5px 7px;padding:5px 10px}
+}

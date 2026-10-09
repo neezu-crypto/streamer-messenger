@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-global-mini-game-sticky">
+  <link rel="stylesheet" href="styles.css?v=20261009-collapsible-room-cards">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -36,11 +36,13 @@
 
   <div class="mini-game-sticky-slot" id="mini-game-sticky-slot" hidden>
     <section class="mini-game-active mini-game-live-panel" id="mini-game-active" aria-label="채팅방에서 진행 중인 미니게임" aria-live="polite" hidden>
-      <header class="mini-game-live-heading"><div><p class="eyebrow">ROOM MINI GAME</p><h3>사다리타기 진행 중</h3></div><button class="button button-quiet" id="mini-game-clear" type="button" title="사다리를 종료하고 전체 결과를 채팅방에 공유합니다" hidden>종료하고 결과 공유</button></header>
-      <p class="mini-game-instructions">스트리머가 이름을 선택하면 모든 참여자에게 같은 경로가 표시돼요. 채팅을 계속할 수 있어요.</p>
-      <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
-      <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.</p>
-      <p class="dialog-error mini-game-error" id="mini-game-live-error" role="alert" hidden></p>
+      <header class="mini-game-live-heading"><div><p class="eyebrow">ROOM MINI GAME</p><h3><span class="mini-game-title-full">사다리타기 진행 중</span><span class="mini-game-title-compact">미니게임</span></h3></div><div class="mini-game-live-actions"><button class="mini-game-collapse-button" id="toggle-mini-game-card" type="button" aria-expanded="true" aria-controls="mini-game-sticky-content" aria-label="미니게임 영역 접기" title="미니게임 영역 접기"><span aria-hidden="true">⌃</span></button><button class="button button-quiet" id="mini-game-clear" type="button" title="사다리를 종료하고 전체 결과를 채팅방에 공유합니다" hidden>종료하고 결과 공유</button></div></header>
+      <div id="mini-game-sticky-content" class="mini-game-sticky-content">
+        <p class="mini-game-instructions">스트리머가 이름을 선택하면 모든 참여자에게 같은 경로가 표시돼요. 채팅을 계속할 수 있어요.</p>
+        <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
+        <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.</p>
+        <p class="dialog-error mini-game-error" id="mini-game-live-error" role="alert" hidden></p>
+      </div>
     </section>
   </div>
 
@@ -94,7 +96,7 @@
           </div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
           <section class="room-market-panel" id="room-market-panel" aria-labelledby="room-market-title" hidden>
-            <header class="room-market-heading"><div><p class="eyebrow">ROOM MARKET</p><h3 id="room-market-title">스트리머 주식시장</h3><p>채팅방에서 함께 매매해요.</p></div><div class="room-market-header-actions"><button class="room-market-collapse-button" id="toggle-room-market" type="button" aria-expanded="false" aria-controls="room-market-content" aria-label="공유 종목 영역 펼치기" title="공유 종목 영역 펼치기"><span aria-hidden="true">⌄</span></button><button class="button button-quiet" id="add-room-stock" type="button">＋ 거래 시작하기</button></div></header>
+            <header class="room-market-heading"><div><p class="eyebrow">ROOM MARKET</p><h3 id="room-market-title"><span class="room-market-title-prefix">스트리머 </span>주식시장</h3><p>채팅방에서 함께 매매해요.</p></div><div class="room-market-header-actions"><button class="room-market-collapse-button" id="toggle-room-market" type="button" aria-expanded="false" aria-controls="room-market-content" aria-label="공유 종목 영역 펼치기" title="공유 종목 영역 펼치기"><span aria-hidden="true">⌄</span></button><button class="button button-quiet" id="add-room-stock" type="button" title="채팅방에서 함께 거래할 종목을 선택합니다">＋ 거래 시작하기</button></div></header>
             <div class="room-market-content" id="room-market-content" hidden>
               <div class="room-market-stock-list" id="room-market-stock-list" aria-live="polite"><p class="room-market-empty">공유된 종목이 없습니다.</p></div>
               <div class="room-market-feed-wrap"><div class="room-market-feed-heading"><strong>실시간 거래</strong><span>최근 100건</span></div><div class="room-market-feed" id="room-market-feed" aria-live="polite"><p class="room-market-empty">아직 채팅방 거래가 없습니다.</p></div></div>
@@ -349,6 +351,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-global-mini-game-sticky"></script>
+  <script type="module" src="js/app.js?v=20261009-compact-sticky-cards"></script>
 </body>
 </html>

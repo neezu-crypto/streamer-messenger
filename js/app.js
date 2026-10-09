@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -598,6 +598,7 @@ async function selectRoom(room) {
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
+  state.miniGameCollapsed = false;
   $('#mini-game-sticky-slot').hidden = true;
   $('#mini-game-active').hidden = true;
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
@@ -833,6 +834,18 @@ function canManageMiniGame() {
   return !!state.room && (state.isOwner || (state.session && state.session.isAdmin && state.room.roomType === 'admin'));
 }
 
+function setMiniGameCollapsed(collapsed) {
+  state.miniGameCollapsed = !!collapsed;
+  const panel = $('#mini-game-active');
+  const toggle = $('#toggle-mini-game-card');
+  panel.classList.toggle('is-collapsed', state.miniGameCollapsed);
+  toggle.setAttribute('aria-expanded', String(!state.miniGameCollapsed));
+  const label = state.miniGameCollapsed ? '미니게임 영역 펼치기' : '미니게임 영역 접기';
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  toggle.querySelector('[aria-hidden="true"]').textContent = state.miniGameCollapsed ? '⌄' : '⌃';
+}
+
 function renderMiniGame(errorMessage = '') {
   const game = state.miniGame;
   const setup = $('#mini-game-setup');
@@ -850,6 +863,7 @@ function renderMiniGame(errorMessage = '') {
   waiting.hidden = !!game || canManage;
   active.hidden = !game;
   stickySlot.hidden = !game;
+  setMiniGameCollapsed(state.miniGameCollapsed);
   start.disabled = state.miniGameMutationPending;
   clear.hidden = !game || !canManage;
   clear.disabled = state.miniGameMutationPending;
@@ -981,6 +995,7 @@ function openMiniGameDialog() {
     showToast('스트리머가 사다리 게임을 시작하면 채팅창에 표시돼요.');
     return;
   }
+  setMiniGameCollapsed(false);
   $('#mini-game-error').hidden = true;
   renderMiniGame();
   openDialog('mini-game-dialog');
@@ -2717,6 +2732,7 @@ function bindEvents() {
   $('#close-mini-game').addEventListener('click', () => closeDialog('mini-game-dialog'));
   $('#mini-game-start').addEventListener('click', () => updateMiniGame('start'));
   $('#mini-game-clear').addEventListener('click', () => updateMiniGame('finish'));
+  $('#toggle-mini-game-card').addEventListener('click', () => setMiniGameCollapsed(!state.miniGameCollapsed));
   $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));
