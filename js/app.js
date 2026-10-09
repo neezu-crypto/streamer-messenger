@@ -350,6 +350,7 @@ function renderRooms() {
   if (!entries.length) return;
   for (const room of entries) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'room-card';
+    button.title = `${room.streamerNickname || '스트리머'} 채팅방 열기`;
     const top = document.createElement('div'); top.className = 'room-card-top';
     const avatar = document.createElement('div'); avatar.className = 'room-avatar';
     renderStreamerAvatar(avatar, room.streamerAvatarUrl || avatarUrl(room.streamerSoopId), room.streamerNickname);
@@ -357,8 +358,11 @@ function renderRooms() {
     const name = document.createElement('strong'); name.textContent = room.streamerNickname || '스트리머';
     const soopId = document.createElement('small'); soopId.textContent = room.streamerSoopId ? `SOOP ${room.streamerSoopId}` : (room.roomType === 'admin' ? '관리자 운영' : '스트리머 인증 완료');
     identity.append(name, soopId);
-    const lock = document.createElement('span'); lock.className = 'room-lock'; lock.textContent = room.visibility === 'private' ? '🔒' : '◌';
-    top.append(avatar, identity, lock);
+    top.append(avatar, identity);
+    if (room.visibility === 'private') {
+      const lock = document.createElement('span'); lock.className = 'room-lock'; lock.textContent = '🔒'; lock.setAttribute('aria-hidden', 'true');
+      top.append(lock);
+    }
     const desc = document.createElement('p'); desc.className = 'room-description'; desc.textContent = '스트리머가 신청을 확인한 뒤 대화에 초대해요.';
     const foot = document.createElement('div'); foot.className = 'room-card-foot';
     const badge = document.createElement('span'); badge.className = `room-state-pill${room.visibility === 'private' ? ' private' : ''}${room.locked ? ' locked' : ''}`; badge.textContent = room.locked ? '잠금' : (room.visibility === 'private' ? '비공개방' : '공개방');
