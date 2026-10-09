@@ -286,3 +286,5 @@
   .mini-game-live-panel.is-collapsed{padding:5px 9px}
   .room-market-panel.is-collapsed{margin:5px 7px;padding:5px 10px}
 }
+.mini-game-sticky-slot .mini-game-live-panel.is-collapsed{width:fit-content;max-width:100%;margin:0}
+.room-market-panel.is-collapsed{align-self:flex-start;width:fit-content;max-width:100%}
