@@ -1150,8 +1150,8 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     const candidateMessageId = timelineRef.push().key;
     const candidateFinishedAt = now();
     const finished = await gameRef.transaction((current) => {
-      if (!current || current.gameType !== 'ladder' || current.status !== 'active' || !Number.isFinite(Number(current.expiresAt)) || Number(current.expiresAt) <= now()
-        || (gameId && current.gameId !== gameId)) return;
+      if (!current || current.gameType !== 'ladder' || current.status !== 'active'
+        || !Number.isFinite(Number(current.expiresAt)) || Number(current.expiresAt) <= now()) return;
       if (current.finishClaim && current.finishClaim.messageId && current.finishClaim.text) return current;
       return {
         ...current,

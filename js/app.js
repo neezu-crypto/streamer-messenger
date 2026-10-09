@@ -1007,7 +1007,6 @@ async function updateMiniGame(action, participantIndex = -1) {
     payload.participantIndex = participantIndex;
   } else if (action === 'finish') {
     if (!state.miniGame || !window.confirm('사다리를 종료하고 전체 결과를 채팅방 참여자에게 공유할까요?')) return;
-    payload.gameId = state.miniGame.gameId;
   } else return;
 
   state.miniGameMutationPending = true;
