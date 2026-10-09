@@ -916,6 +916,11 @@ function renderMiniGame(errorMessage = '') {
     path.setAttribute('points', points.map((point) => point.join(',')).join(' '));
     path.setAttribute('class', 'ladder-selected-path');
     svg.appendChild(path);
+    const pathLength = points.slice(1).reduce((length, point, index) => {
+      const previous = points[index];
+      return length + Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+    }, 0);
+    path.style.setProperty('--ladder-path-length', String(pathLength));
   }
   board.appendChild(svg);
 
