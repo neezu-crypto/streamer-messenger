@@ -1161,8 +1161,13 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     let transactionRuns = 0;
     let transactionAbortReason = '';
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      let seededFromServerSnapshot = false;
       finished = await gameRef.transaction((current) => {
         transactionRuns += 1;
+        if (!current && !seededFromServerSnapshot) {
+          current = observed;
+          seededFromServerSnapshot = true;
+        }
         if (!current) { transactionAbortReason = 'missing'; return; }
         if (current.gameType !== 'ladder') { transactionAbortReason = 'wrong-game-type'; return; }
         if (current.status !== 'active') { transactionAbortReason = 'not-active'; return; }
