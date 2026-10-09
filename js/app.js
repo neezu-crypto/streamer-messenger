@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
@@ -11,6 +11,8 @@ const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
 let toastTimer = 0;
+let asideSwipeStart = null;
+let asideSwipeSuppressClickUntil = 0;
 
 function tooltipText(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 
@@ -55,6 +57,9 @@ function applyChatTooltips(room) {
   const roomName = room.roomType === 'admin' ? '관리자 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
   const labels = {
     '#back-to-directory': '채팅방 목록으로 돌아가기',
+    '#toggle-streamer-aside': '대화 관리 열기',
+    '#close-streamer-aside': '대화 관리 닫기',
+    '#chat-aside-backdrop': '대화 관리 닫기',
     '#export-chat-button': `${roomName} 대화 저장하기`,
     '#room-menu-button': `${roomName} 대화 신고하기`,
     '#room-settings-button': `${roomName} 설정 열기`,
@@ -450,6 +455,53 @@ function clearOwnerApplicationSubscription() {
   state.ownerApplicationsRoomId = '';
 }
 
+function updateAsideAttention() {
+  const toggle = $('#toggle-streamer-aside');
+  if (!toggle) return;
+  const pendingCount = state.applications.length;
+  const unseenCount = state.unseenApplicationUids.size;
+  const isOpen = $('.chat-layout')?.classList.contains('is-aside-open');
+  const actionLabel = isOpen ? '대화 관리 닫기' : '대화 관리 열기';
+  const count = $('#aside-toggle-count');
+  count.textContent = String(pendingCount);
+  count.hidden = pendingCount === 0;
+  toggle.classList.toggle('has-unseen', unseenCount > 0);
+  toggle.setAttribute('aria-label', !isOpen && unseenCount
+    ? `${actionLabel} · 새 신청 ${unseenCount}건`
+    : actionLabel);
+  toggle.title = !isOpen && unseenCount
+    ? `새 대화 신청 ${unseenCount}건이 있어요. 눌러 확인하세요.`
+    : actionLabel;
+  const requestTab = $('#streamer-aside .aside-tab[data-list-tab="requests"]');
+  if (requestTab) requestTab.classList.toggle('has-unseen', unseenCount > 0);
+}
+
+function setAsideDrawerOpen(open, restoreFocus = true) {
+  const layout = $('.chat-layout');
+  const aside = $('#streamer-aside');
+  const backdrop = $('#chat-aside-backdrop');
+  const toggle = $('#toggle-streamer-aside');
+  if (!layout || !aside || (!state.isOwner && open)) return;
+  const mobile = window.matchMedia('(max-width: 680px)').matches;
+  const shouldOpen = mobile && !!open;
+  layout.classList.toggle('is-aside-open', shouldOpen);
+  if (backdrop) backdrop.hidden = !shouldOpen;
+  aside.inert = mobile && !shouldOpen;
+  document.body.classList.toggle('messenger-aside-open', shouldOpen);
+  if (toggle) toggle.setAttribute('aria-expanded', String(shouldOpen));
+  updateAsideAttention();
+  if (restoreFocus) {
+    if (shouldOpen) $('#close-streamer-aside').focus();
+    else if (mobile) toggle?.focus();
+  }
+}
+
+function markApplicationsSeen() {
+  if (!state.room || state.unseenApplicationRoomId !== state.room.roomId) return;
+  state.unseenApplicationUids.clear();
+  updateAsideAttention();
+}
+
 function notifyNewApplications(room, arrivals) {
   if (!arrivals.length || !('Notification' in window) || Notification.permission !== 'granted') return;
   const body = arrivals.length === 1
@@ -460,6 +512,7 @@ function notifyNewApplications(room, arrivals) {
     window.focus();
     if (!state.isOwner || !state.room || state.room.roomId !== room.roomId) await openOwnRoom();
     switchAside('requests'); notification.close();
+    setAsideDrawerOpen(true);
   };
 }
 
@@ -468,6 +521,10 @@ function subscribeOwnerApplications(room) {
   if (!uid || !room || !/^[a-z0-9]{2,30}$/.test(room.roomId || '')) return;
   if (state.ownerApplicationsRoomId === room.roomId && state.ownerApplicationsUnsubscribe) return;
   clearOwnerApplicationSubscription();
+  if (state.unseenApplicationRoomId !== room.roomId) {
+    state.unseenApplicationUids.clear();
+    state.unseenApplicationRoomId = room.roomId;
+  }
   const { db, ref, onValue } = api();
   let initialized = false;
   let knownUids = new Set();
@@ -482,13 +539,20 @@ function subscribeOwnerApplications(room) {
     });
     pending.sort((a, b) => Number(a.submittedAt) - Number(b.submittedAt));
     const currentUids = new Set(pending.map((application) => application.uid));
-    if (initialized) {
-      notifyNewApplications(room, pending.filter((application) => !knownUids.has(application.uid)));
+    const arrivals = initialized ? pending.filter((application) => !knownUids.has(application.uid)) : [];
+    if (arrivals.length) {
+      notifyNewApplications(room, arrivals);
+      const requestsVisible = state.isOwner && state.room && state.room.roomId === room.roomId
+        && state.asideTab === 'requests'
+        && (window.matchMedia('(min-width: 681px)').matches || $('.chat-layout')?.classList.contains('is-aside-open'));
+      if (!requestsVisible) arrivals.forEach((application) => state.unseenApplicationUids.add(application.uid));
     }
     initialized = true;
     knownUids = currentUids;
     state.knownApplicationUids = currentUids;
+    state.unseenApplicationUids.forEach((uid) => { if (!currentUids.has(uid)) state.unseenApplicationUids.delete(uid); });
     state.applications = pending;
+    updateAsideAttention();
     if (state.isOwner && state.room && state.room.roomId === room.roomId) renderApplications();
   }, (error) => console.warn('새 대화 신청을 구독하지 못했습니다.', error));
 }
@@ -598,6 +662,8 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  state.asideTab = 'fans';
+  setAsideDrawerOpen(false, false);
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.miniGameCollapsed = false;
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
@@ -614,6 +680,7 @@ async function openChat(room, isOwner) {
   $('#page-shell').classList.add('chat-open');
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
+  $('#toggle-streamer-aside').hidden = !isOwner;
   if (isOwner) switchAside('fans');
   $('#member-action').hidden = true;
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
@@ -2346,6 +2413,7 @@ function renderBlockedFans() {
 function renderApplications() {
   const host = $('#request-list'); host.replaceChildren();
   $('#request-count').textContent = String(state.applications.length);
+  updateAsideAttention();
   if (!state.applications.length) { host.textContent = '대기 중인 신청이 없습니다.'; return; }
   for (const application of state.applications) {
     const row = document.createElement('div'); row.className = 'request-item';
@@ -2356,6 +2424,7 @@ function renderApplications() {
     for (const [decision, label] of [['approved', '승인'], ['rejected', '거절']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.title = `${application.profile && application.profile.nickname || '팬'} 채팅 신청 ${label}`; if (decision === 'rejected') button.className = 'reject'; button.addEventListener('click', async () => { try { await call('messengerReviewApplication', { roomId: state.room.roomId, uid: application.uid, decision }); await loadStreamerLists(); } catch (error) { showError(error); } }); actions.appendChild(button); }
     row.append(avatar, meta, actions); host.appendChild(row);
   }
+  updateAsideAttention();
 }
 
 function updateRecipientSelect() {
@@ -2641,6 +2710,7 @@ async function discardRoom() {
 }
 
 function leaveChat() {
+  setAsideDrawerOpen(false, false);
   clearSubscriptions();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
@@ -2659,13 +2729,16 @@ function leaveChat() {
   $('#page-shell').classList.remove('chat-open');
   document.body.classList.remove('messenger-chat-open');
   $('#chat-view').hidden = true; $('#directory-view').hidden = false;
+  $('#toggle-streamer-aside').hidden = true;
 }
 
 function switchAside(tab) {
+  state.asideTab = tab;
   document.querySelectorAll('.aside-tab').forEach((button) => button.classList.toggle('active', button.dataset.listTab === tab));
   $('#fan-search-wrap').hidden = tab !== 'fans';
   $('#fan-list').hidden = tab !== 'fans'; $('#request-list').hidden = tab !== 'requests';
   $('#blocked-list').hidden = tab !== 'blocked';
+  if (tab === 'requests') markApplicationsSeen();
 }
 
 async function showAdmin() {
@@ -2999,6 +3072,41 @@ async function handleStreamerVerification(mode) {
 
 function bindEvents() {
   bindRoomToolControls();
+  $('#toggle-streamer-aside').addEventListener('click', () => {
+    if (Date.now() < asideSwipeSuppressClickUntil) return;
+    setAsideDrawerOpen(!$('.chat-layout').classList.contains('is-aside-open'));
+  });
+  $('#close-streamer-aside').addEventListener('click', () => setAsideDrawerOpen(false));
+  $('#chat-aside-backdrop').addEventListener('click', () => setAsideDrawerOpen(false));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && $('.chat-layout')?.classList.contains('is-aside-open') && !document.querySelector('dialog[open]')) {
+      event.preventDefault(); setAsideDrawerOpen(false);
+    }
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!state.isOwner || !window.matchMedia('(max-width: 680px)').matches || event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const openHandle = target.closest('#toggle-streamer-aside');
+    const aside = target.closest('#streamer-aside');
+    if (openHandle) asideSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, action: 'open' };
+    else if (aside && $('.chat-layout')?.classList.contains('is-aside-open') && !target.closest('button, input, select, textarea, a')) {
+      asideSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, action: 'close' };
+    } else asideSwipeStart = null;
+  }, { passive: true });
+  document.addEventListener('pointerup', (event) => {
+    if (!asideSwipeStart || asideSwipeStart.pointerId !== event.pointerId) return;
+    const swipe = asideSwipeStart; asideSwipeStart = null;
+    const deltaX = event.clientX - swipe.x;
+    const deltaY = event.clientY - swipe.y;
+    const crossedThreshold = Math.abs(deltaX) >= 54 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
+    if (!crossedThreshold || (swipe.action === 'open' && deltaX < 0) || (swipe.action === 'close' && deltaX > 0)) return;
+    event.preventDefault();
+    asideSwipeSuppressClickUntil = Date.now() + 450;
+    setAsideDrawerOpen(swipe.action === 'open');
+  }, { passive: false });
+  document.addEventListener('pointercancel', () => { asideSwipeStart = null; }, { passive: true });
+  window.addEventListener('resize', () => setAsideDrawerOpen(false, false), { passive: true });
   $('#fan-search').addEventListener('input', () => {
     state.fanSearchQuery = $('#fan-search').value;
     $('#clear-fan-search').hidden = !state.fanSearchQuery;
@@ -3109,7 +3217,11 @@ function handleSession(event) {
   state.session = event.detail.session || null;
   const nextUid = state.session && state.session.uid;
   if (previousUid !== nextUid) {
+    setAsideDrawerOpen(false, false);
     state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
+    state.applications = []; state.knownApplicationUids = new Set();
+    state.unseenApplicationUids.clear(); state.unseenApplicationRoomId = '';
+    updateAsideAttention();
   }
   if (!state.session || !state.session.trusted) {
     state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;

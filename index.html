@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-desktop-chat-timeline-scroll">
+  <link rel="stylesheet" href="styles.css?v=20261009-mobile-owner-drawer">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -91,8 +91,9 @@
 
     <section class="chat-view" id="chat-view" hidden>
       <div class="chat-layout">
+        <button class="chat-aside-backdrop" id="chat-aside-backdrop" type="button" aria-label="대화 관리 닫기" hidden></button>
         <aside class="chat-aside glass-card" id="streamer-aside" hidden>
-          <div class="aside-heading"><div><p class="eyebrow">YOUR ROOM</p><h2>대화 관리</h2></div><span class="live-dot" title="실시간"></span></div>
+          <div class="aside-heading"><div><p class="eyebrow">YOUR ROOM</p><h2>대화 관리</h2></div><div class="aside-heading-actions"><span class="live-dot" title="실시간"></span><button class="aside-close-button" id="close-streamer-aside" type="button" aria-label="대화 관리 닫기" title="대화 관리 닫기">×</button></div></div>
           <div class="aside-tabs" role="tablist">
             <button class="aside-tab active" data-list-tab="fans" type="button">팬 대화</button>
             <button class="aside-tab" data-list-tab="requests" type="button">신청 <span class="count-badge" id="request-count">0</span></button>
@@ -112,6 +113,7 @@
         <section class="chat-panel glass-card">
           <div class="chat-header">
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
+            <button class="aside-toggle-button" id="toggle-streamer-aside" type="button" aria-expanded="false" aria-controls="streamer-aside" aria-label="대화 관리 열기" title="대화 관리 열기" hidden><span aria-hidden="true">☰</span><span class="aside-toggle-count" id="aside-toggle-count" hidden>0</span></button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
             <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
             <div class="chat-header-actions"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="사다리 미니게임 시작 또는 진행 중인 게임으로 이동" title="방 소유자는 게임을 시작하고, 모든 참여자는 진행 중인 게임으로 이동합니다"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
@@ -366,6 +368,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-desktop-chat-timeline-scroll"></script>
+  <script type="module" src="js/app.js?v=20261009-mobile-owner-drawer"></script>
 </body>
 </html>
