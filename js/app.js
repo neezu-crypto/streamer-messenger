@@ -817,6 +817,10 @@ function miniGameLines(selector) {
   return $(selector).value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
 }
 
+function canManageMiniGame() {
+  return !!state.room && (state.isOwner || (state.session && state.session.isAdmin && state.room.roomType === 'admin'));
+}
+
 function renderMiniGame(errorMessage = '') {
   const game = state.miniGame;
   const setup = $('#mini-game-setup');
@@ -827,11 +831,12 @@ function renderMiniGame(errorMessage = '') {
   const error = $('#mini-game-error');
   error.textContent = errorMessage;
   error.hidden = !errorMessage;
-  setup.hidden = !!game || !state.isOwner;
-  waiting.hidden = !!game || state.isOwner;
+  const canManage = canManageMiniGame();
+  setup.hidden = !!game || !canManage;
+  waiting.hidden = !!game || canManage;
   active.hidden = !game;
   start.disabled = state.miniGameMutationPending;
-  clear.hidden = !game || !state.isOwner;
+  clear.hidden = !game || !canManage;
   clear.disabled = state.miniGameMutationPending;
   if (!game) return;
 
@@ -937,7 +942,7 @@ function openMiniGameDialog() {
 }
 
 async function updateMiniGame(action) {
-  if (!state.room || !state.isOwner || state.miniGameMutationPending) return;
+  if (!state.room || !canManageMiniGame() || state.miniGameMutationPending) return;
   const button = action === 'start' ? $('#mini-game-start') : $('#mini-game-clear');
   const payload = { roomId: state.room.roomId, action };
   if (action === 'start') {

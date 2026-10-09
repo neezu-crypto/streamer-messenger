@@ -1095,7 +1095,8 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
     throw new HttpsError('invalid-argument', '채팅방 또는 미니게임 요청 정보가 올바르지 않습니다.');
   }
   const { meta, isOwner } = await requireRoomMember(p, roomId);
-  if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 사다리 게임을 시작하거나 종료할 수 있습니다.');
+  const canManage = isOwner || (p.admin && meta.roomType === 'admin');
+  if (!canManage) throw new HttpsError('permission-denied', '채팅방 소유자 또는 관리자 방의 관리자만 사다리 게임을 시작하거나 종료할 수 있습니다.');
   const gameRef = roomRef(roomId).child('meta/miniGame');
   if (action === 'clear') {
     await gameRef.remove();
