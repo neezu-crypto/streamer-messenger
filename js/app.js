@@ -601,6 +601,7 @@ async function openChat(room, isOwner) {
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
   renderPinnedMessage();
   state.knownApplicationUids = new Set();
+  $('#page-shell').classList.add('chat-open');
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
   if (isOwner) switchAside('fans');
@@ -2251,6 +2252,7 @@ function leaveChat() {
   state.privateMessages = []; state.broadcastMessages = [];
   state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
   state.optimisticMessages = []; state.galleryImages.clear(); state.imageUrls.clear();
+  $('#page-shell').classList.remove('chat-open');
   $('#chat-view').hidden = true; $('#directory-view').hidden = false;
 }
 
