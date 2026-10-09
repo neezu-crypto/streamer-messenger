@@ -725,6 +725,22 @@ function subscribePinnedMessage() {
   state.unsubscribers.push(unsubscribe);
 }
 
+function normalizeMiniGame(value) {
+  if (!value || value.gameType !== 'ladder' || value.status !== 'active'
+    || !Number.isFinite(Number(value.expiresAt)) || Number(value.expiresAt) <= Date.now()
+    || !Array.isArray(value.players) || !Array.isArray(value.outcomes) || !Array.isArray(value.rungs)) return null;
+  return value;
+}
+
+function applyMiniGameState(value) {
+  const game = normalizeMiniGame(value);
+  state.miniGame = game;
+  state.miniGameSelectedId = game && game.gameId || '';
+  state.miniGameSelectedLane = game && Number.isInteger(game.selectedLane) && game.selectedLane >= 0 && game.selectedLane < game.players.length
+    ? game.selectedLane : -1;
+  return game;
+}
+
 function subscribeMiniGame() {
   const roomId = state.room && state.room.roomId;
   if (!roomId) return;
@@ -732,14 +748,7 @@ function subscribeMiniGame() {
   const gameRef = ref(db, `streamerMessenger/rooms/${roomId}/meta/miniGame`);
   state.unsubscribers.push(onValue(gameRef, (snapshot) => {
     if (!state.room || state.room.roomId !== roomId) return;
-    const value = snapshot.val();
-    const game = value && value.gameType === 'ladder' && value.status === 'active'
-      && Number(value.expiresAt) > Date.now() && Array.isArray(value.players) && Array.isArray(value.outcomes)
-      && Array.isArray(value.rungs) ? value : null;
-    state.miniGame = game;
-    state.miniGameSelectedId = game && game.gameId || '';
-    state.miniGameSelectedLane = game && Number.isInteger(game.selectedLane) && game.selectedLane >= 0 && game.selectedLane < game.players.length
-      ? game.selectedLane : -1;
+    applyMiniGameState(snapshot.val());
     $('#mini-game-live-error').hidden = true;
     renderMiniGame();
   }, (error) => {
@@ -1020,6 +1029,24 @@ async function updateMiniGame(action, participantIndex = -1) {
       $('#mini-game-active').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else if (action === 'finish') showToast('사다리 결과를 채팅방에 공유했어요.');
   } catch (error) {
+    let staleGame = false;
+    if (action !== 'start' && payload.gameId && state.room && state.room.roomId === payload.roomId) {
+      try {
+        const { db, ref, get } = api();
+        const snapshot = await get(ref(db, `streamerMessenger/rooms/${payload.roomId}/meta/miniGame`));
+        if (!state.room || state.room.roomId !== payload.roomId) return;
+        const latest = applyMiniGameState(snapshot.val());
+        staleGame = !latest || latest.gameId !== payload.gameId;
+        if (staleGame) {
+          $('#mini-game-live-error').hidden = true;
+          renderMiniGame();
+          showToast(latest ? '사다리 상태가 바뀌어 최신 게임으로 화면을 갱신했어요.' : '이전 사다리 게임은 이미 종료되어 화면을 정리했어요.');
+        }
+      } catch (refreshError) {
+        console.warn('사다리 상태를 다시 확인하지 못했습니다.', refreshError);
+      }
+    }
+    if (staleGame) return;
     const errorTarget = action === 'start' ? $('#mini-game-error') : $('#mini-game-live-error');
     errorTarget.textContent = error.message || '미니게임 요청을 처리하지 못했습니다.';
     errorTarget.hidden = false;
