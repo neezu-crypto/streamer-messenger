@@ -610,6 +610,7 @@ async function openChat(room, isOwner) {
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
   renderPinnedMessage();
   state.knownApplicationUids = new Set();
+  document.body.classList.add('messenger-chat-open');
   $('#page-shell').classList.add('chat-open');
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
@@ -655,9 +656,8 @@ async function openChat(room, isOwner) {
   subscribeTimeline();
   subscribeRoomMarket();
   state.activeView = 'chat';
-  // 모바일은 긴 방 목록의 스크롤 위치를 채팅 화면에 그대로 가져올 수 있어
-  // 채팅 상단의 공유 종목판이 화면 밖에 남지 않도록 진입 시 페이지를 올린다.
-  if (window.matchMedia('(max-width: 680px)').matches) window.scrollTo(0, 0);
+  // 방 진입 시 목록에서 스크롤한 위치를 물려받지 않도록 맨 위에서 채팅을 연다.
+  window.scrollTo(0, 0);
 }
 
 function renderRoomState(room) {
@@ -2657,6 +2657,7 @@ function leaveChat() {
   state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
   state.optimisticMessages = []; state.galleryImages.clear(); state.imageUrls.clear();
   $('#page-shell').classList.remove('chat-open');
+  document.body.classList.remove('messenger-chat-open');
   $('#chat-view').hidden = true; $('#directory-view').hidden = false;
 }
 
