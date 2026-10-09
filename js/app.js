@@ -51,6 +51,29 @@ function ensureTooltipsIn(root) {
   root.querySelectorAll(TOOLTIP_SELECTOR).forEach(ensureTooltip);
 }
 
+function applyChatTooltips(room) {
+  const roomName = room.roomType === 'admin' ? '관리자 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
+  const labels = {
+    '#back-to-directory': '채팅방 목록으로 돌아가기',
+    '#export-chat-button': `${roomName} 대화 저장하기`,
+    '#room-menu-button': `${roomName} 대화 신고하기`,
+    '#room-settings-button': `${roomName} 설정 열기`,
+    '#add-room-stock': '스트리머 주식시장에서 종목을 골라 채팅방 거래 시작하기',
+    '#fan-search': '팬 닉네임 또는 SOOP 아이디로 대화 검색하기',
+    '#message-audience': '메시지를 방 전체에 보낼지 팬 한 명에게 보낼지 선택하기',
+    '#direct-recipient': '메시지를 받을 팬 선택하기',
+    '#open-image-picker': '스트리머 갤러리에서 이미지를 골라 채팅방에 보내기',
+    '#message-input': '채팅 메시지 입력하기',
+    '#send-message': '입력한 메시지 보내기',
+    '#cancel-reply': '답장 작성 취소하기',
+  };
+  for (const [selector, label] of Object.entries(labels)) {
+    const element = $(selector);
+    if (element) element.title = label;
+  }
+  ensureTooltipsIn($('#chat-view'));
+}
+
 ensureTooltipsIn(document);
 new MutationObserver((records) => {
   records.forEach((record) => {
@@ -486,6 +509,7 @@ async function openChat(room, isOwner) {
   } else {
     fanpageLink.removeAttribute('href');
   }
+  applyChatTooltips(room);
   const src = room.streamerAvatarUrl || avatarUrl(room.streamerSoopId);
   renderStreamerAvatar($('#chat-avatar'), src, room.streamerNickname);
   renderRoomState(room);
@@ -788,7 +812,7 @@ function renderRoomMarketStocks() {
     const quote = state.roomMarketQuotes[stockId] || {};
     const name = quote.name || saved.name || stockId;
     const wrap = document.createElement('div'); wrap.className = 'room-market-stock-wrap';
-    const open = document.createElement('button'); open.type = 'button'; open.className = 'room-market-stock-card';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'room-market-stock-card'; open.title = `${name} 차트와 거래 열기`; open.setAttribute('aria-label', open.title);
     const title = document.createElement('strong'); title.textContent = name;
     const price = document.createElement('small'); price.textContent = Number.isFinite(Number(quote.price)) ? `${Number(quote.price).toLocaleString('ko-KR')}원` : '현재가 불러오는 중';
     const changeValue = Number(getRoomMarketChangePercent(stockId));
@@ -853,6 +877,7 @@ function renderRoomMarketSearchResults() {
   if (!entries.length) { const empty = document.createElement('p'); empty.className = 'room-market-empty'; empty.textContent = queryText ? '검색 결과가 없습니다.' : '공유할 종목이 없습니다.'; host.appendChild(empty); return; }
   for (const stock of entries) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'room-market-search-item';
+    button.title = `${stock.name} 종목을 채팅방에 공유하기`;
     const identity = document.createElement('span'); const name = document.createElement('strong'); name.textContent = stock.name;
     const id = document.createElement('small'); id.textContent = stock.id; identity.append(name, id);
     const action = document.createElement('span'); action.className = 'price'; action.textContent = existing.has(stock.id) ? '공유 중' : `${Number(stock.price).toLocaleString('ko-KR')}원 · 공유`;
@@ -1377,6 +1402,7 @@ function renderMessage(message) {
   }
   if (state.isOwner && message.senderRole === 'fan') {
     const reply = document.createElement('button'); reply.className = 'reply-action'; reply.type = 'button'; reply.textContent = '답변';
+    reply.title = `${message.senderName || '팬'}에게 비공개 답변 보내기`;
     reply.addEventListener('click', () => setReply(message)); meta.appendChild(reply);
   }
   const canPinMessage = state.isOwner && message.senderRole === 'streamer' && !message.recipientUid
@@ -1417,6 +1443,7 @@ function renderFans() {
   if (!activeFans.length) { host.textContent = '아직 승인된 팬이 없습니다.'; host.className = 'fan-list muted'; return; }
   host.className = 'fan-list';
   const all = document.createElement('button'); all.className = `fan-item${state.selectedFanUid ? '' : ' active'}`; all.type = 'button'; all.textContent = '모든 팬 대화';
+  all.title = '모든 팬과의 대화를 함께 표시하기';
   all.addEventListener('click', () => { state.selectedFanUid = ''; renderFans(); renderTimeline(); }); host.appendChild(all);
   const keyword = state.fanSearchQuery.trim().toLocaleLowerCase();
   const visibleFans = keyword ? activeFans.filter((fan) => {
@@ -1431,10 +1458,11 @@ function renderFans() {
     const button = document.createElement('button'); button.type = 'button'; button.className = `fan-item${state.selectedFanUid === fan.uid ? ' active' : ''}`;
     const avatar = document.createElement('span'); avatar.className = 'mini-avatar';
     const profile = fan.profile || {};
+    button.title = `${profile.nickname || '팬'} 대화 선택하기`;
     if (profile.avatarUrl) { const img = document.createElement('img'); img.src = profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (profile.nickname || '✦').slice(0, 1);
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = profile.soopId ? `SOOP ${profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
-    button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; renderFans(); renderTimeline(); });
-    const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = '선택한 팬에게만 비공개 전송';
+    button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; $('#member-action').title = `${profile.nickname || '선택한 팬'} 차단`; renderFans(); renderTimeline(); });
+    const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = `${profile.nickname || '선택한 팬'}에게만 비공개 이미지 보내기`;
     roomself.addEventListener('click', (event) => {
       event.stopPropagation();
       openRoomselfDialog(fan);
@@ -1478,7 +1506,7 @@ function renderBlockedFans() {
   for (const fan of state.blockedFans) {
     const row = document.createElement('div'); row.className = 'fan-item';
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = fan.profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = fan.profile.soopId ? `SOOP ${fan.profile.soopId}` : '차단됨'; meta.append(name, id);
-    const unblock = document.createElement('button'); unblock.type = 'button'; unblock.className = 'text-button'; unblock.textContent = '해제'; unblock.addEventListener('click', async () => { try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: fan.uid, status: 'active' }); await loadStreamerLists(); } catch (error) { showError(error); } });
+    const unblock = document.createElement('button'); unblock.type = 'button'; unblock.className = 'text-button'; unblock.textContent = '해제'; unblock.title = `${fan.profile.nickname || '팬'} 차단 해제`; unblock.addEventListener('click', async () => { try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: fan.uid, status: 'active' }); await loadStreamerLists(); } catch (error) { showError(error); } });
     row.append(meta, unblock); host.appendChild(row);
   }
 }
@@ -1493,7 +1521,7 @@ function renderApplications() {
     if (application.profile && application.profile.avatarUrl) { const img = document.createElement('img'); img.src = application.profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (application.profile && application.profile.nickname || '✦').slice(0, 1);
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = application.profile && application.profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = application.profile && application.profile.soopId ? `SOOP ${application.profile.soopId}` : 'SOOP 아이디 없음'; const intro = document.createElement('small'); intro.className = 'request-intro'; intro.textContent = application.intro || '소개 없음'; meta.append(name, id, intro);
     const actions = document.createElement('span'); actions.className = 'request-actions';
-    for (const [decision, label] of [['approved', '승인'], ['rejected', '거절']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; if (decision === 'rejected') button.className = 'reject'; button.addEventListener('click', async () => { try { await call('messengerReviewApplication', { roomId: state.room.roomId, uid: application.uid, decision }); await loadStreamerLists(); } catch (error) { showError(error); } }); actions.appendChild(button); }
+    for (const [decision, label] of [['approved', '승인'], ['rejected', '거절']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.title = `${application.profile && application.profile.nickname || '팬'} 채팅 신청 ${label}`; if (decision === 'rejected') button.className = 'reject'; button.addEventListener('click', async () => { try { await call('messengerReviewApplication', { roomId: state.room.roomId, uid: application.uid, decision }); await loadStreamerLists(); } catch (error) { showError(error); } }); actions.appendChild(button); }
     row.append(avatar, meta, actions); host.appendChild(row);
   }
 }
