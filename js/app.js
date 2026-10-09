@@ -2246,13 +2246,13 @@ function youtubeVideoId(href) {
   } catch (_) { return ''; }
 }
 
-function soopLiveId(href) {
+function soopLiveTarget(href) {
   try {
     const url = new URL(href);
-    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'play.sooplive.com') return '';
-    const match = url.pathname.match(/^\/([a-z0-9]{2,30})(?:\/embed)?\/?$/i);
-    return match ? match[1].toLowerCase() : '';
-  } catch (_) { return ''; }
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'play.sooplive.com') return null;
+    const match = url.pathname.match(/^\/([a-z0-9]{2,30})(?:\/(\d{1,20})(?:\/embed)?|\/embed)?\/?$/i);
+    return match ? { soopId: match[1].toLowerCase(), broadcastNo: match[2] || '' } : null;
+  } catch (_) { return null; }
 }
 
 function isDirectVideoUrl(href) {
@@ -2271,7 +2271,7 @@ function resetRoomToolVideo() {
   state.roomVideoSourceCard = null;
 }
 
-function openRoomToolVideo({ kind, videoId = '', soopId = '', href = '', sourceCard = null }) {
+function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', href = '', sourceCard = null }) {
   if (!isDesktopRoomToolsPip() || !state.room) return false;
   const player = $('#room-video-player');
   const panel = $('#room-video-tool-panel');
@@ -2295,7 +2295,8 @@ function openRoomToolVideo({ kind, videoId = '', soopId = '', href = '', sourceC
     link.href = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   } else if (kind === 'soop-live' && /^[a-z0-9]{2,30}$/.test(soopId)) {
     media = document.createElement('iframe');
-    media.src = `https://play.sooplive.com/${encodeURIComponent(soopId)}/embed`;
+    const broadcastPath = broadcastNo && /^\d{1,20}$/.test(broadcastNo) ? `/${encodeURIComponent(broadcastNo)}` : '';
+    media.src = `https://play.sooplive.com/${encodeURIComponent(soopId)}${broadcastPath}/embed`;
     media.title = `${soopId} SOOP 라이브 방송`;
     media.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write; web-share';
     media.allowFullscreen = true;
@@ -2356,14 +2357,15 @@ function youtubePreview(videoId) {
   card.append(image, play); return card;
 }
 
-function soopLivePreview(soopId, href) {
+function soopLivePreview({ soopId, broadcastNo }, href) {
   const card = document.createElement('div'); card.className = 'message-video-preview soop-live-preview';
   const fallback = document.createElement('div'); fallback.className = 'soop-live-preview-fallback'; fallback.textContent = `SOOP LIVE · ${soopId}`;
   const badge = document.createElement('span'); badge.className = 'soop-live-preview-badge'; badge.textContent = 'SOOP LIVE';
   const play = document.createElement('button'); play.className = 'video-play-button soop-live-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅 도구에서 SOOP 라이브 재생'; play.setAttribute('aria-label', '채팅 도구에서 SOOP 라이브 재생');
   play.addEventListener('click', () => {
-    if (openRoomToolVideo({ kind: 'soop-live', soopId, href, sourceCard: card })) return;
-    const frame = document.createElement('iframe'); frame.src = `https://play.sooplive.com/${encodeURIComponent(soopId)}/embed`; frame.title = `${soopId} SOOP 라이브 방송`; frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write; web-share'; frame.allowFullscreen = true; frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    if (openRoomToolVideo({ kind: 'soop-live', soopId, broadcastNo, href, sourceCard: card })) return;
+    const broadcastPath = broadcastNo ? `/${encodeURIComponent(broadcastNo)}` : '';
+    const frame = document.createElement('iframe'); frame.src = `https://play.sooplive.com/${encodeURIComponent(soopId)}${broadcastPath}/embed`; frame.title = `${soopId} SOOP 라이브 방송`; frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write; web-share'; frame.allowFullscreen = true; frame.referrerPolicy = 'strict-origin-when-cross-origin';
     card.replaceChildren(frame);
   });
   card.append(fallback, badge, play);
@@ -2382,7 +2384,7 @@ function loadSoopLiveThumbnail(card, href, roomId) {
   }
   pending.then((preview) => {
     if (!card.isConnected || !preview.image || !preview.image.contentType || !preview.image.data) return;
-    const image = document.createElement('img'); image.src = `data:${preview.image.contentType};base64,${preview.image.data}`; image.alt = `${soopLiveId(href)} SOOP 라이브 미리보기`; image.loading = 'lazy';
+    const image = document.createElement('img'); image.src = `data:${preview.image.contentType};base64,${preview.image.data}`; image.alt = `${soopLiveTarget(href)?.soopId || 'SOOP'} 라이브 미리보기`; image.loading = 'lazy';
     card.querySelector('.soop-live-preview-fallback')?.remove();
     card.insertBefore(image, card.firstChild);
   }).catch(() => {});
@@ -2457,12 +2459,12 @@ function renderTextWithLinks(message, bubble) {
     bubble.appendChild(document.createTextNode(value.slice(cursor, match.index)));
     const link = document.createElement('a'); link.className = 'message-inline-link'; link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = href; link.title = '링크를 새 탭에서 열기'; link.setAttribute('aria-label', `링크 열기: ${parsed.hostname}`); bubble.appendChild(link);
     if (trailing) bubble.appendChild(document.createTextNode(trailing));
-    const liveId = soopLiveId(parsed.href);
+    const liveTarget = soopLiveTarget(parsed.href);
     const videoId = youtubeVideoId(parsed.href);
-    if (!mediaPreviewAdded && liveId) { bubble.appendChild(soopLivePreview(liveId, parsed.href)); mediaPreviewAdded = true; }
+    if (!mediaPreviewAdded && liveTarget) { bubble.appendChild(soopLivePreview(liveTarget, parsed.href)); mediaPreviewAdded = true; }
     else if (!mediaPreviewAdded && videoId) { bubble.appendChild(youtubePreview(videoId)); mediaPreviewAdded = true; }
     else if (!mediaPreviewAdded && isDirectVideoUrl(parsed.href)) { bubble.appendChild(directVideoPreview(parsed.href)); mediaPreviewAdded = true; }
-    else if (!genericPreviewAdded && parsed.protocol === 'https:' && !liveId && !videoId && !isDirectVideoUrl(parsed.href)) { previewUrls.push(parsed.href); genericPreviewAdded = true; }
+    else if (!genericPreviewAdded && parsed.protocol === 'https:' && !liveTarget && !videoId && !isDirectVideoUrl(parsed.href)) { previewUrls.push(parsed.href); genericPreviewAdded = true; }
     cursor = match.index + raw.length;
   }
   bubble.appendChild(document.createTextNode(value.slice(cursor)));
