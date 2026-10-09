@@ -311,9 +311,10 @@
 .room-tools-sticky-slot .room-market-panel.is-collapsed{align-self:flex-start;width:fit-content;max-width:100%;margin:0}
 
 .room-tools-pip-bar{display:none}
+.room-tools-pip-resize-handle{display:none}
 @media(min-width:900px){
-  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));max-height:calc(100dvh - 104px);overflow:auto;margin:0;padding:10px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
-  .room-tools-sticky-slot.is-dragging{user-select:none;transition:none}
+  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));max-height:calc(100dvh - 104px);overflow:auto;margin:0;padding:10px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transform:scale(var(--room-tools-pip-scale,1));transform-origin:top left;will-change:transform}
+  .room-tools-sticky-slot.is-dragging,.room-tools-sticky-slot.is-resizing{user-select:none;transition:none}
   .room-tools-pip-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin-bottom:8px;padding:0 1px}
   .room-tools-pip-drag-handle{display:flex;align-items:center;gap:9px;min-width:0;min-height:32px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#344260;font-size:11px;font-weight:800;text-align:left;cursor:grab;touch-action:none;user-select:none}
   .room-tools-pip-drag-handle:active{cursor:grabbing}
@@ -322,14 +323,18 @@
   .room-tools-pip-drag-hint{color:#96a2b7;font-size:9px;font-weight:600}
   .room-tools-pip-collapse{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;border:1px solid rgba(126,148,185,.22);border-radius:10px;background:rgba(255,255,255,.78);color:#60718e;font-size:15px}
   .room-tools-pip-collapse:hover{border-color:#94a9f4;color:#4f6fe1}
-  .room-tools-content{width:100%;min-width:0}
+  .room-tools-content{width:100%;min-width:0;padding-bottom:28px}
   .room-tools-switcher{width:100%;margin:0 0 8px}
   .room-tools-viewport{width:100%;margin:0}
   .room-tool-slide{width:100%}
   .room-tools-sticky-slot .room-market-panel,.room-tools-sticky-slot .mini-game-live-panel{width:100%;max-width:100%;margin:0;border:1px solid rgba(126,148,185,.2);border-radius:15px;box-shadow:0 8px 22px rgba(31,48,83,.1)}
+  .room-tools-pip-resize-handle{position:absolute;right:3px;bottom:3px;z-index:2;display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid rgba(126,148,185,.2);border-radius:8px;background:rgba(255,255,255,.9);color:#7889a7;font-size:18px;line-height:1;cursor:nwse-resize;touch-action:none;user-select:none}
+  .room-tools-pip-resize-handle:hover,.room-tools-pip-resize-handle:focus-visible{border-color:#7f9aff;background:#fff;color:#526fdb;outline:2px solid rgba(93,124,232,.2);outline-offset:1px}
+  .room-tools-sticky-slot.is-resizing .room-tools-pip-resize-handle{cursor:nwse-resize}
   .room-tools-sticky-slot.is-pip-collapsed{width:max-content;min-width:175px;max-width:calc(100vw - 36px);padding:7px 9px;border-radius:15px}
   .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-bar{min-height:30px;margin:0}
   .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-drag-hint{display:none}
+  .room-tools-sticky-slot.is-pip-collapsed .room-tools-pip-resize-handle{display:none}
 }
 
 @media(min-width:681px){

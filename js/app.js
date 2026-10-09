@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
@@ -952,8 +952,11 @@ function resetRoomToolsPip() {
     slot.style.removeProperty('left');
     slot.style.removeProperty('top');
     slot.style.removeProperty('right');
+    slot.style.removeProperty('--room-tools-pip-scale');
+    slot.style.removeProperty('max-height');
     slot.classList.remove('is-dragging');
   }
+  state.roomToolsPipScale = 1;
   setRoomToolsPipCollapsed(false);
 }
 
@@ -968,6 +971,24 @@ function setRoomToolsPipPosition(left, top) {
   slot.style.right = 'auto';
   slot.style.left = `${Math.min(maxLeft, Math.max(min, left))}px`;
   slot.style.top = `${Math.min(maxTop, Math.max(min, top))}px`;
+}
+
+function setRoomToolsPipScale(scale) {
+  if (!isDesktopRoomToolsPip()) return;
+  const slot = $('#room-tools-sticky-slot');
+  if (!slot || slot.hidden || state.roomToolsPipCollapsed) return;
+  const rect = slot.getBoundingClientRect();
+  const availableWidth = Math.max(160, window.innerWidth - 16);
+  const maxScale = Math.min(1.5, state.roomToolsPipScale * availableWidth / Math.max(1, rect.width));
+  const nextScale = Math.min(maxScale, Math.max(0.68, Number(scale) || 1));
+  slot.style.right = 'auto';
+  slot.style.left = `${rect.left}px`;
+  slot.style.top = `${rect.top}px`;
+  slot.style.setProperty('--room-tools-pip-scale', String(nextScale));
+  slot.style.maxHeight = `${Math.max(120, (window.innerHeight - 104) / nextScale)}px`;
+  state.roomToolsPipScale = nextScale;
+  const nextRect = slot.getBoundingClientRect();
+  setRoomToolsPipPosition(nextRect.left, nextRect.top);
 }
 
 function focusRoomTool(key) {
@@ -1109,6 +1130,7 @@ function bindRoomToolControls() {
   const viewport = $('#room-tools-viewport');
   const slot = $('#room-tools-sticky-slot');
   const dragHandle = $('#room-tools-pip-drag-handle');
+  const resizeHandle = $('#room-tools-pip-resize-handle');
   $('#toggle-room-tools-pip').addEventListener('click', () => setRoomToolsPipCollapsed(!state.roomToolsPipCollapsed));
   $('#room-video-close').addEventListener('click', closeRoomToolVideo);
 
@@ -1138,6 +1160,44 @@ function bindRoomToolControls() {
   dragHandle.addEventListener('pointerup', stopDragging);
   dragHandle.addEventListener('pointercancel', stopDragging);
   dragHandle.addEventListener('lostpointercapture', stopDragging);
+
+  let resizeOrigin = null;
+  resizeHandle.addEventListener('pointerdown', (event) => {
+    if (!isDesktopRoomToolsPip() || event.button !== 0 || slot.hidden || state.roomToolsPipCollapsed) return;
+    const rect = slot.getBoundingClientRect();
+    slot.style.right = 'auto';
+    slot.style.left = `${rect.left}px`;
+    slot.style.top = `${rect.top}px`;
+    resizeOrigin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: rect.width, height: rect.height, scale: state.roomToolsPipScale };
+    slot.classList.add('is-resizing');
+    resizeHandle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  resizeHandle.addEventListener('pointermove', (event) => {
+    if (!resizeOrigin || event.pointerId !== resizeOrigin.pointerId) return;
+    const widthDelta = (event.clientX - resizeOrigin.x) / Math.max(1, resizeOrigin.width);
+    const heightDelta = (event.clientY - resizeOrigin.y) / Math.max(1, resizeOrigin.height);
+    const multiplier = Math.max(0.68 / resizeOrigin.scale, 1 + (widthDelta + heightDelta) / 2);
+    setRoomToolsPipScale(resizeOrigin.scale * multiplier);
+  });
+  const stopResizing = (event) => {
+    if (!resizeOrigin || (event && event.pointerId !== resizeOrigin.pointerId)) return;
+    const pointerId = resizeOrigin.pointerId;
+    resizeOrigin = null;
+    slot.classList.remove('is-resizing');
+    if (resizeHandle.hasPointerCapture(pointerId)) resizeHandle.releasePointerCapture(pointerId);
+  };
+  resizeHandle.addEventListener('pointerup', stopResizing);
+  resizeHandle.addEventListener('pointercancel', stopResizing);
+  resizeHandle.addEventListener('lostpointercapture', stopResizing);
+  resizeHandle.addEventListener('keydown', (event) => {
+    if (!isDesktopRoomToolsPip() || state.roomToolsPipCollapsed) return;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const amount = event.shiftKey ? 0.1 : 0.04;
+    setRoomToolsPipScale(state.roomToolsPipScale + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? amount : -amount));
+  });
+
   dragHandle.addEventListener('keydown', (event) => {
     if (!isDesktopRoomToolsPip()) return;
     const distance = event.shiftKey ? 8 : 24;
@@ -1155,8 +1215,12 @@ function bindRoomToolControls() {
       slot.style.removeProperty('left');
       slot.style.removeProperty('top');
       slot.style.removeProperty('right');
+      slot.style.removeProperty('--room-tools-pip-scale');
+      slot.style.removeProperty('max-height');
+      state.roomToolsPipScale = 1;
       if (state.roomToolsPipCollapsed) setRoomToolsPipCollapsed(false);
     } else if (slot.style.left) {
+      if (!state.roomToolsPipCollapsed) setRoomToolsPipScale(state.roomToolsPipScale);
       const rect = slot.getBoundingClientRect();
       setRoomToolsPipPosition(rect.left, rect.top);
     }
