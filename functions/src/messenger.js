@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const dns = require('node:dns').promises;
+const https = require('node:https');
+const net = require('node:net');
 const { promisify } = require('util');
 const { getDatabase } = require('firebase-admin/database');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -29,6 +32,11 @@ const ROOMSELF_UPLOAD_FINALIZE_TTL = 15 * 60 * 1000;
 const ADMIN_REPORT_PAGE_SIZE = 40;
 const ADMIN_BAN_PAGE_SIZE = 30;
 const ROOMSELF_BUCKET = 'streamer-messenger-private';
+const LINK_PREVIEW_CACHE_TTL = 10 * 60 * 1000;
+const LINK_PREVIEW_CACHE_LIMIT = 40;
+const LINK_PREVIEW_HTML_MAX_BYTES = 512 * 1024;
+const LINK_PREVIEW_IMAGE_MAX_BYTES = 384 * 1024;
+const linkPreviewCache = new Map();
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
@@ -48,6 +56,140 @@ const safeText = (value, max, required = false) => {
   }
   return text;
 };
+
+function isPublicIpv4(address) {
+  if (net.isIP(address) !== 4) return false;
+  const octets = address.split('.').map(Number);
+  const [a, b, c] = octets;
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && ((b === 0 && (c === 0 || c === 2)) || b === 168)) return false;
+  if (a === 192 && b === 88 && c === 99) return false;
+  if (a === 198 && (b === 18 || b === 19 || b === 51 && c === 100)) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
+  return true;
+}
+
+function safePreviewUrl(value, base) {
+  let url;
+  try { url = base ? new URL(value, base) : new URL(value); } catch (_) { return null; }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')
+    || !hostname || net.isIP(hostname.replace(/^\[|\]$/g, ''))
+    || hostname.includes(':') || hostname === 'localhost' || hostname.endsWith('.localhost')
+    || hostname.endsWith('.local') || hostname.endsWith('.internal') || url.href.length > 2048) return null;
+  url.hash = '';
+  return url;
+}
+
+async function requestPublicHttps(url, maxBytes) {
+  const records = await dns.lookup(url.hostname, { family: 4, all: true, verbatim: true });
+  if (!records.length || records.some((record) => !isPublicIpv4(record.address))) throw new Error('외부 공개 주소가 아닙니다.');
+  const address = records[0].address;
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      protocol: 'https:', hostname: url.hostname, servername: url.hostname, port: 443,
+      path: `${url.pathname || '/'}${url.search}`, method: 'GET',
+      headers: { 'User-Agent': 'StreamerMessengerLinkPreview/1.0', Accept: 'text/html,image/avif,image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.1', 'Accept-Encoding': 'identity' },
+      lookup: (_hostname, _options, callback) => callback(null, address, 4),
+    }, (response) => {
+      const chunks = []; let size = 0;
+      response.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > maxBytes) { response.destroy(new Error('미리보기 응답 크기가 제한을 초과했습니다.')); return; }
+        chunks.push(chunk);
+      });
+      response.on('end', () => resolve({ status: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks) }));
+      response.on('error', reject);
+    });
+    request.setTimeout(4500, () => request.destroy(new Error('미리보기 요청 시간이 초과되었습니다.')));
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function fetchPreviewResource(initialUrl, maxRedirects, maxBytes, acceptedType) {
+  let url = initialUrl;
+  for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
+    const response = await requestPublicHttps(url, maxBytes);
+    if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
+      if (redirects === maxRedirects) throw new Error('미리보기 리디렉션 횟수를 초과했습니다.');
+      url = safePreviewUrl(response.headers.location, url);
+      if (!url) throw new Error('안전하지 않은 미리보기 주소입니다.');
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) throw new Error('미리보기 응답을 가져오지 못했습니다.');
+    const contentType = String(response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!acceptedType(contentType)) throw new Error('지원하지 않는 미리보기 형식입니다.');
+    return { url, contentType, body: response.body };
+  }
+  throw new Error('미리보기 주소를 확인할 수 없습니다.');
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || '').replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi, (match, entity) => {
+    const key = entity.toLowerCase();
+    if (key[0] === '#') {
+      const code = key[1] === 'x' ? parseInt(key.slice(2), 16) : parseInt(key.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    }
+    return ({ amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' })[key] || match;
+  });
+}
+
+function htmlMetadata(html) {
+  const meta = new Map();
+  const tags = html.match(/<meta\b[^>]*>/gi) || [];
+  for (const tag of tags) {
+    const attrs = {};
+    tag.replace(/([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g, (_match, key, doubleQuoted, singleQuoted, bare) => {
+      attrs[key.toLowerCase()] = decodeHtmlEntities(doubleQuoted ?? singleQuoted ?? bare ?? '');
+      return '';
+    });
+    const key = String(attrs.property || attrs.name || '').toLowerCase();
+    if (key && attrs.content && !meta.has(key)) meta.set(key, attrs.content);
+  }
+  const titleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+  const clean = (value, max) => decodeHtmlEntities(String(value || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, max);
+  return {
+    title: clean(meta.get('og:title') || meta.get('twitter:title') || (titleMatch && titleMatch[1]), 180),
+    description: clean(meta.get('og:description') || meta.get('description') || meta.get('twitter:description'), 320),
+    image: meta.get('og:image:secure_url') || meta.get('og:image') || meta.get('twitter:image') || '',
+  };
+}
+
+async function getLinkPreview(rawUrl) {
+  const url = safePreviewUrl(rawUrl);
+  if (!url) throw new HttpsError('invalid-argument', 'HTTPS 링크만 미리보기를 표시할 수 있습니다.');
+  const key = url.href;
+  const cached = linkPreviewCache.get(key);
+  if (cached && cached.expiresAt > now()) return cached.value;
+  try {
+    const page = await fetchPreviewResource(url, 3, LINK_PREVIEW_HTML_MAX_BYTES, (type) => type === 'text/html' || type === 'application/xhtml+xml');
+    const metadata = htmlMetadata(page.body.toString('utf8'));
+    let image = null;
+    if (metadata.image) {
+      const imageUrl = safePreviewUrl(metadata.image, page.url);
+      if (imageUrl) {
+        try {
+          const resource = await fetchPreviewResource(imageUrl, 2, LINK_PREVIEW_IMAGE_MAX_BYTES, (type) => ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'].includes(type));
+          image = { contentType: resource.contentType, data: resource.body.toString('base64') };
+        } catch (_) { /* 텍스트 카드만 표시 */ }
+      }
+    }
+    const value = { url: page.url.href, title: metadata.title || page.url.hostname, description: metadata.description, image };
+    linkPreviewCache.set(key, { expiresAt: now() + LINK_PREVIEW_CACHE_TTL, value });
+    while (linkPreviewCache.size > LINK_PREVIEW_CACHE_LIMIT) linkPreviewCache.delete(linkPreviewCache.keys().next().value);
+    return value;
+  } catch (error) {
+    const value = { url: key, title: new URL(key).hostname, description: '', image: null };
+    linkPreviewCache.set(key, { expiresAt: now() + 60 * 1000, value });
+    while (linkPreviewCache.size > LINK_PREVIEW_CACHE_LIMIT) linkPreviewCache.delete(linkPreviewCache.keys().next().value);
+    return value;
+  }
+}
 const roomRef = (roomId) => db().ref(`${ROOT}/rooms/${roomId}`);
 const userRoomIndexPath = (uid, roomId) => `${ROOT}/userRoomIndex/${uid}/${roomId}`;
 const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
@@ -1006,6 +1148,15 @@ const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomse
   return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64'), streamerName: meta.streamerNickname || '' };
 });
 
+const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => {
+  const principal = await getPrincipal(request, { requireTrusted: true });
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  await requireRoomMember(principal, roomId);
+  const url = safeText(String(data.url || ''), 2048, true);
+  return getLinkPreview(url);
+});
+
 const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
@@ -1366,7 +1517,7 @@ module.exports = {
   messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate, messengerSetPinnedMessage,
-  messengerSendMessage, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
+  messengerSendMessage, messengerGetLinkPreview, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage,

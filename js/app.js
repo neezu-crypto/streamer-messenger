@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -515,6 +515,7 @@ async function openChat(room, isOwner) {
   renderRoomState(room);
   clearSubscriptions();
   state.galleryImages.clear(); state.imageUrls.clear();
+  state.linkPreviewCache.clear();
   state.privateMessages = []; state.broadcastMessages = []; state.seenMessageIds = new Set();
   state.messages = []; state.olderMessages = []; state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
   state.liveMessages = []; state.hasOlderMessages = false; state.hasOlderPrivateMessages = false; state.hasOlderBroadcastMessages = false;
@@ -1156,6 +1157,7 @@ async function setPinnedMessage(messageId) {
 
 function renderTimeline({ preservePosition = false } = {}) {
   const host = $('#timeline');
+  if (linkPreviewObserver) linkPreviewObserver.disconnect();
   const oldHeight = host.scrollHeight;
   const oldTop = host.scrollTop;
   const wasAtBottom = oldHeight - oldTop - host.clientHeight < 56;
@@ -1365,6 +1367,108 @@ async function exportConversation(format) {
   } finally { buttons.forEach((button) => { button.disabled = false; }); }
 }
 
+function youtubeVideoId(href) {
+  try {
+    const url = new URL(href); const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    let id = '';
+    if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0] || '';
+    else if (['youtube.com', 'm.youtube.com', 'youtube-nocookie.com'].includes(host)) {
+      if (url.pathname === '/watch') id = url.searchParams.get('v') || '';
+      else id = url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/)?.[1] || '';
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+  } catch (_) { return ''; }
+}
+
+function isDirectVideoUrl(href) {
+  try { return new URL(href).protocol === 'https:' && /\.(?:mp4|m4v|webm|ogv|mov)$/i.test(new URL(href).pathname); }
+  catch (_) { return false; }
+}
+
+function youtubePreview(videoId) {
+  const card = document.createElement('div'); card.className = 'message-video-preview youtube-video-preview';
+  const image = document.createElement('img'); image.src = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`; image.alt = 'YouTube 동영상 미리보기'; image.loading = 'lazy';
+  const play = document.createElement('button'); play.className = 'video-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅방에서 YouTube 영상 재생'; play.setAttribute('aria-label', '채팅방에서 YouTube 영상 재생');
+  play.addEventListener('click', () => {
+    const frame = document.createElement('iframe'); frame.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`; frame.title = 'YouTube 영상'; frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'; frame.allowFullscreen = true; frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    card.replaceChildren(frame);
+  }, { once: true });
+  card.append(image, play); return card;
+}
+
+function directVideoPreview(href) {
+  const card = document.createElement('div'); card.className = 'message-video-preview';
+  const video = document.createElement('video'); video.src = href; video.controls = true; video.playsInline = true; video.preload = 'none'; video.title = '채팅방에서 영상 재생';
+  card.appendChild(video); return card;
+}
+
+function previewCacheKey(roomId, href) { return `${roomId}\n${href}`; }
+
+function loadLinkPreview(card, href, roomId) {
+  const key = previewCacheKey(roomId, href);
+  let pending = state.linkPreviewCache.get(key);
+  if (!pending) {
+    pending = call('messengerGetLinkPreview', { roomId, url: href });
+    state.linkPreviewCache.set(key, pending);
+    pending.catch(() => { if (state.linkPreviewCache.get(key) === pending) state.linkPreviewCache.delete(key); });
+    while (state.linkPreviewCache.size > 40) state.linkPreviewCache.delete(state.linkPreviewCache.keys().next().value);
+  }
+  pending.then((preview) => {
+    if (!card.isConnected) return;
+    card.replaceChildren();
+    if (preview.image && preview.image.contentType && preview.image.data) {
+      const image = document.createElement('img'); image.className = 'message-link-preview-image'; image.src = `data:${preview.image.contentType};base64,${preview.image.data}`; image.alt = ''; image.loading = 'lazy'; card.appendChild(image);
+    }
+    const text = document.createElement('span'); text.className = 'message-link-preview-copy';
+    const title = document.createElement('strong'); title.textContent = preview.title || new URL(href).hostname; text.appendChild(title);
+    if (preview.description) { const description = document.createElement('small'); description.textContent = preview.description; text.appendChild(description); }
+    const domain = document.createElement('small'); domain.className = 'message-link-preview-domain';
+    try { domain.textContent = new URL(preview.url || href).hostname; } catch (_) { domain.textContent = ''; }
+    text.appendChild(domain); card.appendChild(text);
+  }).catch(() => { if (card.isConnected) card.remove(); });
+}
+
+let linkPreviewObserver = null;
+function observeLinkPreview(card, href, roomId) {
+  if ('IntersectionObserver' in window) {
+    if (!linkPreviewObserver) linkPreviewObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) {
+        const target = entry.target; linkPreviewObserver.unobserve(target);
+        loadLinkPreview(target, target.dataset.previewUrl, target.dataset.previewRoom);
+      }
+    }, { root: $('#timeline'), rootMargin: '220px 0px' });
+    card.dataset.previewUrl = href; card.dataset.previewRoom = roomId; linkPreviewObserver.observe(card);
+  } else loadLinkPreview(card, href, roomId);
+}
+
+function renderTextWithLinks(message, bubble) {
+  const value = String(message.text || '');
+  const matcher = /https?:\/\/[^\s<>"']+/gi;
+  let cursor = 0; let match; let mediaPreviewAdded = false; let genericPreviewAdded = false; const previewUrls = [];
+  while ((match = matcher.exec(value))) {
+    const raw = match[0]; let href = raw;
+    let trailing = '';
+    while (/[.,!?;:，。！？；：]$/.test(href)) { trailing = href.slice(-1) + trailing; href = href.slice(0, -1); }
+    let parsed;
+    try { parsed = new URL(href); } catch (_) { parsed = null; }
+    if (!parsed || !['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) continue;
+    bubble.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+    const link = document.createElement('a'); link.className = 'message-inline-link'; link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = href; link.title = '링크를 새 탭에서 열기'; link.setAttribute('aria-label', `링크 열기: ${parsed.hostname}`); bubble.appendChild(link);
+    if (trailing) bubble.appendChild(document.createTextNode(trailing));
+    const videoId = youtubeVideoId(parsed.href);
+    if (!mediaPreviewAdded && videoId) { bubble.appendChild(youtubePreview(videoId)); mediaPreviewAdded = true; }
+    else if (!mediaPreviewAdded && isDirectVideoUrl(parsed.href)) { bubble.appendChild(directVideoPreview(parsed.href)); mediaPreviewAdded = true; }
+    else if (!genericPreviewAdded && parsed.protocol === 'https:' && !videoId && !isDirectVideoUrl(parsed.href)) { previewUrls.push(parsed.href); genericPreviewAdded = true; }
+    cursor = match.index + raw.length;
+  }
+  bubble.appendChild(document.createTextNode(value.slice(cursor)));
+  if (previewUrls.length && state.room) {
+    const card = document.createElement('a'); card.className = 'message-link-preview'; card.href = previewUrls[0]; card.target = '_blank'; card.rel = 'noopener noreferrer'; card.title = '링크 미리보기 열기'; card.setAttribute('aria-label', '링크 미리보기를 새 탭에서 열기');
+    const loading = document.createElement('span'); loading.className = 'message-link-preview-loading'; loading.textContent = '링크 미리보기를 불러오는 중…'; card.appendChild(loading);
+    bubble.appendChild(card); observeLinkPreview(card, previewUrls[0], state.room.roomId);
+  }
+}
+
 function renderMessage(message) {
   const isMine = message.senderUid === state.session.uid;
   const isStreamerMessage = message.senderRole === 'streamer';
@@ -1391,7 +1495,7 @@ function renderMessage(message) {
       getRoomselfImageUrl(message).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '비공개 이미지를 불러오지 못했어요.'; bubble.replaceChildren(unavailable); } });
       bubble.appendChild(img);
     }
-  } else bubble.textContent = message.text || '';
+  } else renderTextWithLinks(message, bubble);
   stack.appendChild(bubble);
   const meta = document.createElement('div'); meta.className = 'message-meta';
   const time = document.createElement('span'); time.textContent = new Date(message.createdAt || Date.now()).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); meta.appendChild(time);
