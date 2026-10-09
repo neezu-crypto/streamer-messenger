@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
@@ -58,6 +58,7 @@ function applyChatTooltips(room) {
     '#room-menu-button': `${roomName} 대화 신고하기`,
     '#room-settings-button': `${roomName} 설정 열기`,
     '#add-room-stock': '스트리머 주식시장에서 종목을 골라 채팅방 거래 시작하기',
+    '#open-mini-game': '채팅방에서 사다리타기 미니게임을 열고 함께 참여하기',
     '#fan-search': '팬 닉네임 또는 SOOP 아이디로 대화 검색하기',
     '#message-audience': '메시지를 방 전체에 보낼지 팬 한 명에게 보낼지 선택하기',
     '#direct-recipient': '메시지를 받을 팬 선택하기',
@@ -596,6 +597,7 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
   renderPinnedMessage();
   state.knownApplicationUids = new Set();
@@ -722,11 +724,36 @@ function subscribePinnedMessage() {
   state.unsubscribers.push(unsubscribe);
 }
 
+function subscribeMiniGame() {
+  const roomId = state.room && state.room.roomId;
+  if (!roomId) return;
+  const { db, ref, onValue } = api();
+  const gameRef = ref(db, `streamerMessenger/rooms/${roomId}/meta/miniGame`);
+  state.unsubscribers.push(onValue(gameRef, (snapshot) => {
+    if (!state.room || state.room.roomId !== roomId) return;
+    const value = snapshot.val();
+    const game = value && value.gameType === 'ladder' && value.status === 'active'
+      && Number(value.expiresAt) > Date.now() && Array.isArray(value.players) && Array.isArray(value.outcomes)
+      && Array.isArray(value.rungs) ? value : null;
+    if (!game || game.gameId !== state.miniGameSelectedId) {
+      state.miniGameSelectedLane = -1;
+      state.miniGameSelectedId = game && game.gameId || '';
+    }
+    state.miniGame = game;
+    if ($('#mini-game-dialog').open) renderMiniGame();
+  }, (error) => {
+    console.warn('채팅방 미니게임을 구독하지 못했습니다.', error);
+    state.miniGame = null;
+    if ($('#mini-game-dialog').open) renderMiniGame('미니게임 정보를 불러오지 못했습니다.');
+  }));
+}
+
 function subscribeTimeline() {
   clearSubscriptions();
   const { db, ref, onValue, query, orderByKey, limitToLast } = api();
   const roomId = state.room.roomId;
   subscribePinnedMessage();
+  subscribeMiniGame();
   if (!state.isOwner) {
     const uid = state.session.uid;
     let memberStatusInitialized = false;
@@ -784,6 +811,169 @@ function mergeFanMessages() {
   state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, live, state.optimisticMessages);
   trackNotifications(live);
   renderTimeline();
+}
+
+function miniGameLines(selector) {
+  return $(selector).value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+}
+
+function renderMiniGame(errorMessage = '') {
+  const game = state.miniGame;
+  const setup = $('#mini-game-setup');
+  const waiting = $('#mini-game-waiting');
+  const active = $('#mini-game-active');
+  const start = $('#mini-game-start');
+  const clear = $('#mini-game-clear');
+  const error = $('#mini-game-error');
+  error.textContent = errorMessage;
+  error.hidden = !errorMessage;
+  setup.hidden = !!game || !state.isOwner;
+  waiting.hidden = !!game || state.isOwner;
+  active.hidden = !game;
+  start.disabled = state.miniGameMutationPending;
+  clear.hidden = !game || !state.isOwner;
+  clear.disabled = state.miniGameMutationPending;
+  if (!game) return;
+
+  const players = game.players.slice(0, 8);
+  const outcomes = game.outcomes.slice(0, 8);
+  const rungs = game.rungs.slice(0, 10).map((row) => Array.isArray(row) ? row : []);
+  if (players.length < 2 || players.length > 8 || outcomes.length !== players.length) {
+    error.textContent = '사다리 데이터 형식이 올바르지 않습니다.';
+    error.hidden = false;
+    return;
+  }
+  const board = $('#ladder-board');
+  board.replaceChildren();
+  board.style.width = `${Math.max(320, players.length * 76 + 32)}px`;
+  const laneCount = players.length;
+  const top = document.createElement('div');
+  top.className = 'ladder-choices';
+  top.style.gridTemplateColumns = `repeat(${laneCount}, minmax(0, 1fr))`;
+  players.forEach((name, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ladder-choice${state.miniGameSelectedLane === index ? ' selected' : ''}`;
+    button.textContent = name;
+    button.title = `${name} 참가자의 사다리 경로와 결과 확인하기`;
+    button.setAttribute('aria-label', `${name} 참가자의 사다리 경로와 결과 확인하기`);
+    button.setAttribute('aria-pressed', String(state.miniGameSelectedLane === index));
+    button.addEventListener('click', () => {
+      state.miniGameSelectedLane = index;
+      renderMiniGame();
+    });
+    top.appendChild(button);
+  });
+  board.appendChild(top);
+
+  const svgWidth = Math.max(320, players.length * 76 + 32);
+  const svgHeight = 230;
+  const left = 20;
+  const right = svgWidth - 20;
+  const topY = 16;
+  const bottomY = 210;
+  const rowCount = Math.max(1, rungs.length);
+  const xForLane = (lane) => left + ((right - left) * lane) / (laneCount - 1);
+  const yForRow = (row) => topY + ((bottomY - topY) * (row + 1)) / (rowCount + 1);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('ladder-svg');
+  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', '참가자별 사다리 경로');
+  const addLine = (x1, y1, x2, y2, className) => {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1));
+    line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2));
+    line.setAttribute('class', className);
+    svg.appendChild(line);
+  };
+  for (let lane = 0; lane < laneCount; lane += 1) addLine(xForLane(lane), topY, xForLane(lane), bottomY, 'ladder-rail');
+  rungs.forEach((row, rowIndex) => row.forEach((edge) => {
+    if (!Number.isInteger(edge) || edge < 0 || edge >= laneCount - 1) return;
+    addLine(xForLane(edge), yForRow(rowIndex), xForLane(edge + 1), yForRow(rowIndex), 'ladder-rung');
+  }));
+  let destination = -1;
+  if (state.miniGameSelectedLane >= 0 && state.miniGameSelectedLane < laneCount) {
+    let lane = state.miniGameSelectedLane;
+    const points = [[xForLane(lane), topY]];
+    rungs.forEach((row, rowIndex) => {
+      const edge = row.find((candidate) => candidate === lane || candidate + 1 === lane);
+      points.push([xForLane(lane), yForRow(rowIndex)]);
+      if (Number.isInteger(edge)) {
+        lane = edge === lane ? lane + 1 : lane - 1;
+        points.push([xForLane(lane), yForRow(rowIndex)]);
+      }
+    });
+    destination = lane;
+    points.push([xForLane(lane), bottomY]);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    path.setAttribute('points', points.map((point) => point.join(',')).join(' '));
+    path.setAttribute('class', 'ladder-selected-path');
+    svg.appendChild(path);
+  }
+  board.appendChild(svg);
+
+  const bottom = document.createElement('div');
+  bottom.className = 'ladder-outcomes';
+  bottom.style.gridTemplateColumns = `repeat(${laneCount}, minmax(0, 1fr))`;
+  outcomes.forEach((outcome, index) => {
+    const label = document.createElement('span');
+    label.className = `ladder-outcome${destination === index ? ' selected' : ''}`;
+    label.textContent = outcome;
+    label.title = `사다리 ${index + 1}번 결과: ${outcome}`;
+    bottom.appendChild(label);
+  });
+  board.appendChild(bottom);
+  $('#mini-game-result').textContent = destination >= 0
+    ? `${players[state.miniGameSelectedLane]} → ${outcomes[destination]}`
+    : '참가자를 선택하면 결과가 표시됩니다.';
+}
+
+function openMiniGameDialog() {
+  if (!state.room) return;
+  $('#mini-game-error').hidden = true;
+  openDialog('mini-game-dialog');
+  renderMiniGame();
+}
+
+async function updateMiniGame(action) {
+  if (!state.room || !state.isOwner || state.miniGameMutationPending) return;
+  const button = action === 'start' ? $('#mini-game-start') : $('#mini-game-clear');
+  const payload = { roomId: state.room.roomId, action };
+  if (action === 'start') {
+    const players = miniGameLines('#mini-game-players');
+    const outcomes = miniGameLines('#mini-game-outcomes');
+    if (players.length < 2 || players.length > 8 || outcomes.length !== players.length) {
+      renderMiniGame('참가자와 결과를 각각 2~8개, 같은 개수로 입력해 주세요.');
+      return;
+    }
+    if (players.some((value) => value.length > 24) || outcomes.some((value) => value.length > 24)) {
+      renderMiniGame('각 이름은 24자 이하로 입력해 주세요.');
+      return;
+    }
+    if (new Set(players.map((value) => value.toLocaleLowerCase('ko-KR'))).size !== players.length) {
+      renderMiniGame('참가자 이름은 서로 다르게 입력해 주세요.');
+      return;
+    }
+    payload.gameType = 'ladder'; payload.players = players; payload.outcomes = outcomes;
+  } else if (!window.confirm('현재 사다리 게임을 모든 참여자 화면에서 종료할까요?')) return;
+
+  state.miniGameMutationPending = true;
+  button.disabled = true;
+  $('#mini-game-error').hidden = true;
+  try {
+    await call('messengerMiniGameUpdate', payload);
+    showToast(action === 'start' ? '사다리 게임을 채팅방에 시작했어요.' : '사다리 게임을 종료했어요.');
+  } catch (error) {
+    $('#mini-game-error').textContent = error.message || '미니게임 요청을 처리하지 못했습니다.';
+    $('#mini-game-error').hidden = false;
+  } finally {
+    state.miniGameMutationPending = false;
+    if ($('#mini-game-dialog').open) {
+      $('#mini-game-start').disabled = false;
+      $('#mini-game-clear').disabled = false;
+    }
+  }
 }
 
 function setRoomMarketCollapsed(collapsed) {
@@ -2050,6 +2240,8 @@ async function discardRoom() {
 function leaveChat() {
   clearSubscriptions();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
+  state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
+  closeDialog('mini-game-dialog');
   state.messages = []; state.liveMessages = []; state.olderMessages = [];
   state.privateMessages = []; state.broadcastMessages = [];
   state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
@@ -2429,6 +2621,10 @@ function bindEvents() {
   $('#room-search').addEventListener('input', renderRooms);
   $('#my-rooms-button').addEventListener('click', openMyRoomsDialog);
   $('#close-my-rooms').addEventListener('click', () => closeDialog('my-rooms-dialog'));
+  $('#open-mini-game').addEventListener('click', openMiniGameDialog);
+  $('#close-mini-game').addEventListener('click', () => closeDialog('mini-game-dialog'));
+  $('#mini-game-start').addEventListener('click', () => updateMiniGame('start'));
+  $('#mini-game-clear').addEventListener('click', () => updateMiniGame('clear'));
   $('#toggle-room-market').addEventListener('click', () => setRoomMarketCollapsed(!$('#room-market-content').hidden));
   $('#add-room-stock').addEventListener('click', openRoomMarketAddDialog);
   $('#close-room-market-add').addEventListener('click', () => closeDialog('room-market-add-dialog'));

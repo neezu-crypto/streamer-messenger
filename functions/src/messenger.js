@@ -32,6 +32,8 @@ const ROOMSELF_UPLOAD_FINALIZE_TTL = 15 * 60 * 1000;
 const ADMIN_REPORT_PAGE_SIZE = 40;
 const ADMIN_BAN_PAGE_SIZE = 30;
 const ROOMSELF_BUCKET = 'streamer-messenger-private';
+const LADDER_PLAYER_LIMIT = 8;
+const LADDER_ROW_COUNT = 10;
 const LINK_PREVIEW_CACHE_TTL = 10 * 60 * 1000;
 const LINK_PREVIEW_CACHE_LIMIT = 40;
 const LINK_PREVIEW_HTML_MAX_BYTES = 512 * 1024;
@@ -1057,6 +1059,76 @@ const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) =
   return { pinnedMessage };
 });
 
+function createLadderRungs(laneCount) {
+  const rungs = [];
+  for (let row = 0; row < LADDER_ROW_COUNT; row += 1) {
+    const edges = Array.from({ length: laneCount - 1 }, (_, index) => index);
+    for (let index = edges.length - 1; index > 0; index -= 1) {
+      const swapIndex = crypto.randomInt(index + 1);
+      [edges[index], edges[swapIndex]] = [edges[swapIndex], edges[index]];
+    }
+    const targetCount = crypto.randomInt(0, Math.floor(laneCount / 2) + 1);
+    if (targetCount === 0) {
+      rungs.push([]);
+      continue;
+    }
+    const selected = [];
+    for (const edge of edges) {
+      if (selected.some((existing) => Math.abs(existing - edge) === 1)) continue;
+      selected.push(edge);
+      if (selected.length >= targetCount) break;
+    }
+    rungs.push(selected.sort((a, b) => a - b));
+  }
+  if (rungs.every((row) => row.length === 0)) {
+    rungs[crypto.randomInt(LADDER_ROW_COUNT)].push(crypto.randomInt(laneCount - 1));
+  }
+  return rungs;
+}
+
+const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => {
+  const p = await getPrincipal(request, { requireTrusted: true });
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const action = String(data.action || '');
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['start', 'clear'].includes(action)) {
+    throw new HttpsError('invalid-argument', '채팅방 또는 미니게임 요청 정보가 올바르지 않습니다.');
+  }
+  const { meta, isOwner } = await requireRoomMember(p, roomId);
+  if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 사다리 게임을 시작하거나 종료할 수 있습니다.');
+  const gameRef = roomRef(roomId).child('meta/miniGame');
+  if (action === 'clear') {
+    await gameRef.remove();
+    return { miniGame: null };
+  }
+  if (data.gameType !== 'ladder' || !Array.isArray(data.players) || !Array.isArray(data.outcomes)) {
+    throw new HttpsError('invalid-argument', '사다리 게임 정보를 확인해 주세요.');
+  }
+  const players = data.players.map((value) => safeText(value, 24, true));
+  const outcomes = data.outcomes.map((value) => safeText(value, 24, true));
+  if (players.length < 2 || players.length > LADDER_PLAYER_LIMIT || outcomes.length !== players.length) {
+    throw new HttpsError('invalid-argument', '참가자와 결과는 2~8개로 같은 수만큼 입력해 주세요.');
+  }
+  if (new Set(players.map((name) => name.toLocaleLowerCase('ko-KR'))).size !== players.length) {
+    throw new HttpsError('invalid-argument', '참가자 이름은 서로 다르게 입력해 주세요.');
+  }
+  const createdAt = now();
+  const miniGame = {
+    gameId: crypto.randomBytes(12).toString('hex'),
+    gameType: 'ladder',
+    status: 'active',
+    players,
+    outcomes,
+    rungs: createLadderRungs(players.length),
+    createdBy: p.uid,
+    createdByName: String(meta.streamerNickname || '방 소유자').slice(0, 30),
+    createdAt,
+    expiresAt: createdAt + CHAT_RETENTION,
+  };
+  await gameRef.set(miniGame);
+  return { miniGame };
+});
+
 async function galleryImageForChat(roomId, imageId) {
   const rawMeta = (await roomRef(roomId).child('meta').get()).val() || {};
   const meta = await ensureGalleryLink(roomId, rawMeta);
@@ -1537,7 +1609,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 module.exports = {
   messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
-  messengerRoomMarketUpdate, messengerSetPinnedMessage,
+  messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate,
   messengerSendMessage, messengerGetLinkPreview, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,

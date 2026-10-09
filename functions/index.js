@@ -19,6 +19,7 @@ module.exports = {
   messengerSetMemberStatus: messenger.messengerSetMemberStatus,
   messengerRoomMarketUpdate: messenger.messengerRoomMarketUpdate,
   messengerSetPinnedMessage: messenger.messengerSetPinnedMessage,
+  messengerMiniGameUpdate: messenger.messengerMiniGameUpdate,
   messengerSendMessage: messenger.messengerSendMessage,
   messengerGetLinkPreview: messenger.messengerGetLinkPreview,
   messengerGetGalleryImages: messenger.messengerGetGalleryImages,
