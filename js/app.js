@@ -2716,6 +2716,7 @@ async function openImagePicker(targetUid = '') {
   $('#gallery-image-list').innerHTML = '<div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div>'; $('#gallery-locked').hidden = true;
   $('#gallery-inline-upload-panel').hidden = true; $('#gallery-open-row').hidden = false;
   $('#gallery-inline-file').value = ''; $('#gallery-inline-filename').textContent = '선택한 파일 없음'; $('#gallery-inline-status').hidden = true; $('#gallery-inline-status').textContent = '';
+  $('#gallery-inline-progress-row').hidden = true; $('#gallery-inline-progress').value = 0; $('#gallery-inline-progress-label').textContent = '0%';
   state.galleryStreamerId = '';
   openDialog('image-picker-dialog');
   await loadGalleryImages();
@@ -2768,11 +2769,34 @@ function makeGalleryThumbnail(file) {
   });
 }
 
+function uploadGalleryBlobWithProgress(url, blob, contentType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', url);
+    request.timeout = 120000;
+    request.setRequestHeader('Content-Type', contentType);
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.min(1, event.loaded / event.total));
+    });
+    request.addEventListener('load', () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`사진을 스토리지에 올리지 못했습니다. (HTTP ${request.status})`));
+    });
+    request.addEventListener('error', () => reject(new Error('스토리지 연결이 끊겨 사진을 올리지 못했습니다. 다시 시도해 주세요.')));
+    request.addEventListener('abort', () => reject(new Error('사진 업로드가 취소되었습니다.')));
+    request.addEventListener('timeout', () => reject(new Error('사진 업로드 응답이 지연되고 있습니다. 다시 시도해 주세요.')));
+    request.send(blob);
+  });
+}
+
 async function uploadGalleryImageFromPicker() {
   const fileInput = $('#gallery-inline-file');
   const file = fileInput.files && fileInput.files[0];
   const status = $('#gallery-inline-status');
   const button = $('#gallery-inline-upload');
+  const progressRow = $('#gallery-inline-progress-row');
+  const progress = $('#gallery-inline-progress');
+  const progressLabel = $('#gallery-inline-progress-label');
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
   if (!state.room || !file) { status.textContent = '먼저 업로드할 사진을 선택해 주세요.'; status.hidden = false; return; }
   if (!allowedTypes.has(file.type)) { status.textContent = 'JPG, PNG, WebP, GIF 사진만 업로드할 수 있어요.'; status.hidden = false; return; }
@@ -2780,28 +2804,51 @@ async function uploadGalleryImageFromPicker() {
   const room = state.room;
   const streamerId = state.galleryStreamerId;
   if (!streamerId) { status.textContent = '이 채팅방의 스트리머 갤러리를 확인하지 못했습니다. 다시 열어 주세요.'; status.hidden = false; return; }
-  button.disabled = true; button.textContent = '업로드 중…'; status.hidden = false; status.textContent = '사진을 갤러리에 업로드하고 있어요.';
+  const targetUid = state.galleryTargetUid;
+  const setProgress = (value) => {
+    const percent = Math.max(0, Math.min(100, Math.round(value)));
+    progress.value = percent;
+    progressLabel.textContent = `${percent}%`;
+  };
+  button.disabled = true; fileInput.disabled = true; $('#gallery-inline-category').disabled = true; button.textContent = '업로드 중…'; status.hidden = false; progressRow.hidden = false; setProgress(2); status.textContent = '사진 미리보기를 준비하고 있어요.';
   try {
     const thumb = await makeGalleryThumbnail(file);
+    setProgress(5); status.textContent = '안전한 업로드 주소를 준비하고 있어요.';
     const prepared = await call('requestImageUpload', { contentType: file.type, fileSize: file.size, thumbFileSize: thumb.blob.size });
-    const originalUpload = await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-    if (!originalUpload.ok) throw new Error('원본 사진을 스토리지에 올리지 못했습니다. 다시 시도해 주세요.');
-    const thumbnailUpload = await fetch(prepared.thumbUploadUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: thumb.blob });
-    if (!thumbnailUpload.ok) throw new Error('사진 미리보기를 스토리지에 올리지 못했습니다. 다시 시도해 주세요.');
+    setProgress(8); status.textContent = '원본 사진을 업로드하고 있어요.';
+    await uploadGalleryBlobWithProgress(prepared.uploadUrl, file, file.type, (ratio) => setProgress(8 + ratio * 54));
+    setProgress(64); status.textContent = '사진 미리보기를 업로드하고 있어요.';
+    await uploadGalleryBlobWithProgress(prepared.thumbUploadUrl, thumb.blob, 'image/jpeg', (ratio) => setProgress(64 + ratio * 20));
+    setProgress(85); status.textContent = '갤러리에 사진을 등록하고 있어요.';
     const streamerNameSnapshot = await api().get(api().ref(api().db, `streamerNames/${streamerId}`)).catch(() => null);
     const streamerName = streamerNameSnapshot && streamerNameSnapshot.val() || room.streamerNickname || '스트리머';
     await registerGalleryImageWithRetry({
       imageId: prepared.imageId, key: prepared.key, thumbKey: prepared.thumbKey,
       streamerId, streamerName,
       category: $('#gallery-inline-category').value, width: thumb.width, height: thumb.height,
-    }, (attempt) => { status.textContent = `갤러리 등록 재시도 중… (${attempt}/3)`; });
+    }, (attempt) => { status.textContent = `갤러리 등록 재시도 중… (${attempt}/3)`; setProgress(87); });
     fileInput.value = '';
-    status.textContent = '업로드 완료! 사진을 불러오는 중이에요.';
-    if (state.room && state.room.roomId === room.roomId && $('#image-picker-dialog').open) await loadGalleryImages();
+    setProgress(94); status.textContent = '갤러리 등록 완료. 채팅방으로 보내고 있어요.';
+    if (!state.room || state.room.roomId !== room.roomId) {
+      status.textContent = '갤러리 등록은 완료했지만 현재 채팅방이 바뀌어 전송하지 않았어요. 갤러리에서 사진을 눌러 보내 주세요.';
+      setProgress(100);
+      if ($('#image-picker-dialog').open) await loadGalleryImages();
+      return;
+    }
+    const delivered = await sendMessage('image', prepared.imageId, targetUid);
+    if (!delivered) {
+      status.textContent = '갤러리 등록은 완료했지만 채팅 전송에 실패했어요. 갤러리에서 사진을 눌러 다시 보내 주세요.';
+      setProgress(100);
+      if ($('#image-picker-dialog').open && state.room && state.room.roomId === room.roomId) await loadGalleryImages();
+      return;
+    }
+    setProgress(100); status.textContent = '갤러리에 등록하고 채팅방에 보냈어요.';
+    closeDialog('image-picker-dialog');
+    showToast('사진을 갤러리에 등록하고 채팅방에 보냈어요.');
   } catch (error) {
     status.textContent = error.message || '사진 업로드에 실패했습니다.';
   } finally {
-    button.disabled = false; button.textContent = '갤러리에 사진 업로드';
+    button.disabled = false; fileInput.disabled = false; $('#gallery-inline-category').disabled = false; button.textContent = '갤러리에 등록하고 채팅으로 보내기';
   }
 }
 
@@ -3397,6 +3444,7 @@ function bindEvents() {
     const file = event.target.files && event.target.files[0];
     $('#gallery-inline-filename').textContent = file ? file.name : '선택한 파일 없음';
     $('#gallery-inline-status').hidden = true;
+    $('#gallery-inline-progress-row').hidden = true; $('#gallery-inline-progress').value = 0; $('#gallery-inline-progress-label').textContent = '0%';
   });
   $('#send-message').addEventListener('click', () => sendMessage('text'));
   $('#message-input').addEventListener('keydown', (event) => {

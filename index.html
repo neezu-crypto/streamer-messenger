@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261010-video-hover-controls">
+  <link rel="stylesheet" href="styles.css?v=20261010-gallery-upload-chat-progress">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -231,7 +231,7 @@
       <div class="gallery-grid" id="gallery-image-list" aria-live="polite"><div class="gallery-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>갤러리 사진을 불러오는 중…</span></div></div>
       <section class="gallery-inline-upload-panel" id="gallery-inline-upload-panel" hidden>
         <strong>사진 업로드</strong>
-        <p>사진을 올리면 이 채팅방의 스트리머 갤러리에 등록돼요.</p>
+        <p>사진을 올리면 스트리머 갤러리에 등록한 뒤 현재 대화로 바로 보내요.</p>
         <span class="field-label">사진 선택</span>
         <div class="gallery-file-control">
           <input id="gallery-inline-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
@@ -240,7 +240,8 @@
         <label class="field-label" for="gallery-inline-category">사진 분류</label>
         <select class="text-input" id="gallery-inline-category"><option value="screenshot">스크린샷</option><option value="ai-art">AI 일러스트</option><option value="fan-art">팬아트</option><option value="meme">밈</option><option value="etc">기타</option></select>
         <p class="gallery-inline-help">JPG, PNG, WebP, GIF · 15MB 이하</p>
-        <button class="button button-primary full-width" id="gallery-inline-upload" type="button">갤러리에 사진 업로드</button>
+        <button class="button button-primary full-width" id="gallery-inline-upload" type="button" title="갤러리에 등록하고 현재 채팅방으로 바로 보냅니다">갤러리에 등록하고 채팅으로 보내기</button>
+        <div class="gallery-upload-progress-row" id="gallery-inline-progress-row" hidden><progress id="gallery-inline-progress" max="100" value="0" aria-label="사진 업로드 진행률" title="사진 업로드 진행률">0%</progress><span id="gallery-inline-progress-label" aria-hidden="true">0%</span></div>
         <p class="gallery-inline-status" id="gallery-inline-status" role="status" aria-live="polite" hidden></p>
       </section>
       <div class="gallery-upload-row" id="gallery-open-row"><span>갤러리의 사진을 더 보거나 관리하려면 갤러리를 열어 주세요.</span><a class="button button-quiet" id="upload-to-gallery" href="https://neezu-crypto.github.io/streamer-gallery/?from=messenger" target="_blank" rel="noopener noreferrer">갤러리 열기</a></div>
@@ -378,6 +379,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261010-soop-numbered-live-player"></script>
+  <script type="module" src="js/app.js?v=20261010-gallery-upload-chat-progress"></script>
 </body>
 </html>
