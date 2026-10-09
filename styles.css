@@ -263,10 +263,9 @@
 .app-tooltip[hidden]{display:none!important}
 @keyframes tooltip-appear{to{opacity:1}}
 
-/* Keep the room profile, shared stock market, and active mini-game in one
-   fixed-height chat panel; only the message timeline scrolls on mobile. */
-.chat-top-stack{position:relative;z-index:2;flex:0 0 auto;min-width:0}
+.mini-game-sticky-slot{position:sticky;top:72px;z-index:9;padding:8px clamp(15px,5vw,76px);border-bottom:1px solid rgba(126,148,185,.14);background:rgba(245,248,255,.9);backdrop-filter:blur(18px)}
+.mini-game-sticky-slot .mini-game-live-panel{width:min(1160px,100%);margin:0 auto;border:1px solid rgba(126,148,185,.2);border-radius:16px;box-shadow:0 10px 30px rgba(63,91,144,.12)}
 @media(max-width:680px){
-  .page-shell.chat-open .chat-panel{height:calc(100dvh - 96px);min-height:0}
-  .page-shell.chat-open .chat-body{flex:1 1 auto;min-height:0;overscroll-behavior:contain}
+  .mini-game-sticky-slot{top:62px;padding:6px 8px}
+  .mini-game-sticky-slot .mini-game-live-panel{border-radius:14px}
 }

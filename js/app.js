@@ -598,6 +598,8 @@ async function selectRoom(room) {
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
+  $('#mini-game-sticky-slot').hidden = true;
+  $('#mini-game-active').hidden = true;
   state.pinnedMessageLoadToken += 1; state.pinnedMessagePointer = null; state.pinnedMessageDetails = null; state.pinnedMessageLoading = false; state.pinActionPending = false;
   renderPinnedMessage();
   state.knownApplicationUids = new Set();
@@ -836,6 +838,7 @@ function renderMiniGame(errorMessage = '') {
   const setup = $('#mini-game-setup');
   const waiting = $('#mini-game-waiting');
   const active = $('#mini-game-active');
+  const stickySlot = $('#mini-game-sticky-slot');
   const start = $('#mini-game-start');
   const clear = $('#mini-game-clear');
   const error = $('#mini-game-error');
@@ -846,6 +849,7 @@ function renderMiniGame(errorMessage = '') {
   setup.hidden = !!game || !canManage;
   waiting.hidden = !!game || canManage;
   active.hidden = !game;
+  stickySlot.hidden = !game;
   start.disabled = state.miniGameMutationPending;
   clear.hidden = !game || !canManage;
   clear.disabled = state.miniGameMutationPending;
@@ -2326,6 +2330,8 @@ function leaveChat() {
   clearSubscriptions();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
+  $('#mini-game-sticky-slot').hidden = true;
+  $('#mini-game-active').hidden = true;
   closeDialog('mini-game-dialog');
   state.messages = []; state.liveMessages = []; state.olderMessages = [];
   state.privateMessages = []; state.broadcastMessages = [];

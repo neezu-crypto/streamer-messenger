@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261009-shared-ladder">
+  <link rel="stylesheet" href="styles.css?v=20261009-global-mini-game-sticky">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -33,6 +33,16 @@
       <button class="icon-button admin-tab-button" id="admin-tab-button" type="button" hidden aria-label="관리자" title="관리자"><span class="desktop-action-label">관리자</span><span class="mobile-admin-icon" aria-hidden="true">⚙</span></button>
     </div>
   </header>
+
+  <div class="mini-game-sticky-slot" id="mini-game-sticky-slot" hidden>
+    <section class="mini-game-active mini-game-live-panel" id="mini-game-active" aria-label="채팅방에서 진행 중인 미니게임" aria-live="polite" hidden>
+      <header class="mini-game-live-heading"><div><p class="eyebrow">ROOM MINI GAME</p><h3>사다리타기 진행 중</h3></div><button class="button button-quiet" id="mini-game-clear" type="button" title="사다리를 종료하고 전체 결과를 채팅방에 공유합니다" hidden>종료하고 결과 공유</button></header>
+      <p class="mini-game-instructions">스트리머가 이름을 선택하면 모든 참여자에게 같은 경로가 표시돼요. 채팅을 계속할 수 있어요.</p>
+      <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
+      <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.</p>
+      <p class="dialog-error mini-game-error" id="mini-game-live-error" role="alert" hidden></p>
+    </section>
+  </div>
 
   <main class="page-shell" id="page-shell">
     <section class="welcome-card glass-card">
@@ -76,7 +86,6 @@
         </aside>
 
         <section class="chat-panel glass-card">
-          <div class="chat-top-stack">
           <div class="chat-header">
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
@@ -92,14 +101,6 @@
             </div>
           </section>
           <section class="pinned-message-panel" id="pinned-message-panel" aria-label="채팅방 상단 고정 메시지" aria-live="polite" hidden></section>
-          <section class="mini-game-active mini-game-live-panel" id="mini-game-active" aria-label="채팅방에서 진행 중인 미니게임" aria-live="polite" hidden>
-            <header class="mini-game-live-heading"><div><p class="eyebrow">ROOM MINI GAME</p><h3>사다리타기 진행 중</h3></div><button class="button button-quiet" id="mini-game-clear" type="button" title="사다리를 종료하고 전체 결과를 채팅방에 공유합니다" hidden>종료하고 결과 공유</button></header>
-            <p class="mini-game-instructions">스트리머가 이름을 선택하면 모든 참여자에게 같은 경로가 표시돼요. 채팅을 계속할 수 있어요.</p>
-            <div class="ladder-board-scroll"><div class="ladder-board" id="ladder-board"></div></div>
-            <p class="mini-game-result" id="mini-game-result" role="status" aria-live="polite">스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.</p>
-            <p class="dialog-error mini-game-error" id="mini-game-live-error" role="alert" hidden></p>
-          </section>
-          </div>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
           <div class="chat-composer-wrap">
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
@@ -348,6 +349,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261009-ladder-select-transaction-seed"></script>
+  <script type="module" src="js/app.js?v=20261009-global-mini-game-sticky"></script>
 </body>
 </html>
