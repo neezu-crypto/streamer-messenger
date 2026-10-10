@@ -403,6 +403,7 @@
 
 .aside-toggle-button{display:none}
 .aside-toggle-button[hidden]{display:none!important}
+.chat-fullscreen-button[hidden]{display:none!important}
 .aside-heading-actions{display:flex;align-items:center;gap:10px}
 .aside-close-button{display:none}
 .chat-aside-backdrop{display:none}
@@ -414,6 +415,7 @@
 @keyframes aside-badge-pulse{50%{box-shadow:0 0 0 4px rgba(240,93,114,.12)}}
 @media(max-width:680px){
   .chat-header{gap:8px}
+  .chat-fullscreen-button{display:grid;place-items:center;width:34px;min-width:34px;height:34px;flex:0 0 34px;padding:0;border-radius:11px;font-size:18px}
   .aside-toggle-button{position:relative;display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;padding:0;border:1px solid rgba(126,148,185,.2);border-radius:11px;background:rgba(255,255,255,.78);color:#5b6d8d;font-size:18px;line-height:1}
   .aside-toggle-button:focus-visible,.aside-close-button:focus-visible{outline:2px solid #8da5ff;outline-offset:2px}
   .chat-aside-backdrop:not([hidden]){position:fixed;inset:0;z-index:1000;display:block;width:100%;height:100%;padding:0;border:0;background:rgba(24,36,62,.27);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}

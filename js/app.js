@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
@@ -49,6 +49,85 @@ function scheduleMobileChatViewportSync() {
     mobileChatViewportFrame = 0;
     syncMobileChatViewport();
   });
+}
+
+function isMobileChatLayout() {
+  return window.matchMedia('(max-width: 680px)').matches;
+}
+
+function canRequestPageFullscreen() {
+  return typeof document.documentElement.requestFullscreen === 'function' && document.fullscreenEnabled !== false;
+}
+
+function renderChatFullscreenButton() {
+  const button = $('#toggle-chat-fullscreen');
+  if (!button) return;
+  const chatOpen = state.activeView === 'chat' && !!state.room;
+  button.hidden = !(
+    chatOpen
+    && isMobileChatLayout()
+    && !document.fullscreenElement
+    && canRequestPageFullscreen()
+  );
+}
+
+function beginChatFullscreenRequest() {
+  const hadFullscreen = !!document.fullscreenElement;
+  if (!isMobileChatLayout() || hadFullscreen || !canRequestPageFullscreen()) {
+    return { hadFullscreen, request: Promise.resolve(false) };
+  }
+
+  let request;
+  try {
+    request = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+  } catch (error) {
+    try { request = document.documentElement.requestFullscreen(); }
+    catch (_) { request = Promise.reject(error); }
+  }
+  return {
+    hadFullscreen: false,
+    request: Promise.resolve(request).then(() => true, () => false)
+  };
+}
+
+async function settleChatFullscreenRequest(attempt, keepFullscreen) {
+  if (!attempt) return false;
+  const entered = await attempt.request;
+  if (keepFullscreen) {
+    if (entered && !attempt.hadFullscreen) state.chatFullscreenOwned = true;
+  } else if (entered && !attempt.hadFullscreen && document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+    try { await document.exitFullscreen(); } catch (_) { /* The browser may already have left fullscreen. */ }
+  }
+  renderChatFullscreenButton();
+  return entered || attempt.hadFullscreen;
+}
+
+function exitChatFullscreen() {
+  const shouldExit = state.chatFullscreenOwned;
+  state.chatFullscreenOwned = false;
+  if (shouldExit && document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+    try {
+      const result = document.exitFullscreen();
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    } catch (_) { /* The browser may already have left fullscreen. */ }
+  }
+  renderChatFullscreenButton();
+}
+
+async function enterChatFullscreenFromButton() {
+  if (state.activeView !== 'chat' || !state.room) return;
+  const attempt = beginChatFullscreenRequest();
+  const entered = await settleChatFullscreenRequest(attempt, true);
+  if (!entered) showToast('이 브라우저에서 전체 화면 전환을 허용하지 않았어요.');
+}
+
+function notifyChatFullscreenFallback(enteredFullscreen) {
+  if (!isMobileChatLayout() || enteredFullscreen || document.fullscreenElement) return;
+  if (canRequestPageFullscreen()) {
+    showToast('브라우저가 자동 전체 화면을 허용하지 않았어요. 채팅방 상단의 ⛶ 버튼을 눌러 전환해 주세요.');
+  } else {
+    showToast('이 브라우저는 페이지 전체 화면을 지원하지 않아 일반 화면으로 열었어요.');
+  }
 }
 
 function tooltipText(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
@@ -675,17 +754,33 @@ async function openLinkedStreamerRoom() {
 
 async function selectRoom(room) {
   if (!state.session || !state.session.trusted) { openDialog('auth-dialog'); return; }
+  // requestFullscreen must run directly in the room-selection gesture, before the server check awaits.
+  const fullscreenAttempt = beginChatFullscreenRequest();
   setRoomEntryLoading(true);
   try {
     const result = await call('messengerGetRoomState', { roomId: room.roomId });
-    if (result.blocked) { showError({ message: '이 채팅방에서 차단되어 다시 신청할 수 없습니다.' }); return; }
-    if (result.isOwner || (result.member && result.member.status === 'active')) { await openChat(result.room, result.isOwner); return; }
+    if (result.blocked) {
+      await settleChatFullscreenRequest(fullscreenAttempt, false);
+      showError({ message: '이 채팅방에서 차단되어 다시 신청할 수 없습니다.' });
+      return;
+    }
+    if (result.isOwner || (result.member && result.member.status === 'active')) {
+      const enteredFullscreen = await settleChatFullscreenRequest(fullscreenAttempt, true);
+      await openChat(result.room, result.isOwner);
+      notifyChatFullscreenFallback(enteredFullscreen);
+      return;
+    }
     if (result.application && result.application.status === 'pending' && Date.now() < Number(result.application.expiresAt || 0)) {
-      showError({ message: '대화 신청이 검토 중입니다. 스트리머의 처리를 기다려 주세요.' }); return;
+      await settleChatFullscreenRequest(fullscreenAttempt, false);
+      showError({ message: '대화 신청이 검토 중입니다. 스트리머의 처리를 기다려 주세요.' });
+      return;
     }
     if (result.application && result.application.status === 'rejected' && Date.now() < Number(result.application.reapplyAt || 0)) {
-      showError({ message: '거절 후 3일이 지나야 다시 신청할 수 있습니다.' }); return;
+      await settleChatFullscreenRequest(fullscreenAttempt, false);
+      showError({ message: '거절 후 3일이 지나야 다시 신청할 수 있습니다.' });
+      return;
     }
+    await settleChatFullscreenRequest(fullscreenAttempt, false);
     state.room = room;
     $('#application-title').textContent = `${room.streamerNickname || '스트리머'}에게 대화 신청`;
     $('#application-password-wrap').hidden = room.visibility !== 'private';
@@ -693,7 +788,10 @@ async function selectRoom(room) {
     $('#application-intro').value = '';
     $('#application-error').hidden = true;
     openDialog('application-dialog');
-  } catch (error) { showError(error); }
+  } catch (error) {
+    await settleChatFullscreenRequest(fullscreenAttempt, false);
+    showError(error);
+  }
   finally { setRoomEntryLoading(false); }
 }
 
@@ -762,6 +860,7 @@ async function openChat(room, isOwner) {
   subscribeTimeline();
   subscribeRoomMarket();
   state.activeView = 'chat';
+  renderChatFullscreenButton();
   // 방 진입 시 목록에서 스크롤한 위치를 물려받지 않도록 맨 위에서 채팅을 연다.
   window.scrollTo(0, 0);
   syncMobileChatViewport();
@@ -2932,6 +3031,9 @@ async function submitApplication() {
 }
 
 async function openOwnRoom() {
+  // This is also reached after automatic session restoration; in that case the browser may reject
+  // fullscreen and the in-chat control provides a user-gesture fallback.
+  const fullscreenAttempt = beginChatFullscreenRequest();
   setRoomEntryLoading(true);
   try {
     const result = await call('messengerEnsureRoom');
@@ -2940,9 +3042,14 @@ async function openOwnRoom() {
     syncHeader();
     upsertRoom(result.room);
     const room = result.room;
+    const enteredFullscreen = await settleChatFullscreenRequest(fullscreenAttempt, true);
     await openChat(room, true);
+    notifyChatFullscreenFallback(enteredFullscreen);
     if (result.created) { prepareRoomSettings(); openDialog('room-settings-dialog'); }
-  } catch (error) { showError(error); }
+  } catch (error) {
+    await settleChatFullscreenRequest(fullscreenAttempt, false);
+    showError(error);
+  }
   finally { setRoomEntryLoading(false); }
 }
 
@@ -3047,6 +3154,7 @@ function leaveChat() {
   clearSubscriptions();
   resetRoomToolVideo();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
+  exitChatFullscreen();
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
   resetRoomToolsPip();
@@ -3408,13 +3516,23 @@ async function handleStreamerVerification(mode) {
 
 function bindEvents() {
   bindRoomToolControls();
-  window.addEventListener('resize', scheduleMobileChatViewportSync, { passive: true });
+  window.addEventListener('resize', () => {
+    scheduleMobileChatViewportSync();
+    renderChatFullscreenButton();
+  }, { passive: true });
   window.addEventListener('orientationchange', scheduleMobileChatViewportSync, { passive: true });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) state.chatFullscreenOwned = false;
+    renderChatFullscreenButton();
+    scheduleMobileChatViewportSync();
+  });
   window.visualViewport?.addEventListener('resize', scheduleMobileChatViewportSync, { passive: true });
   window.visualViewport?.addEventListener('scroll', scheduleMobileChatViewportSync, { passive: true });
   document.addEventListener('focusin', scheduleMobileChatViewportSync);
   document.addEventListener('focusout', scheduleMobileChatViewportSync);
   syncMobileChatViewport();
+  renderChatFullscreenButton();
+  $('#toggle-chat-fullscreen').addEventListener('click', enterChatFullscreenFromButton);
   $('#toggle-streamer-aside').addEventListener('click', () => {
     if (Date.now() < asideSwipeSuppressClickUntil) return;
     setAsideDrawerOpen(!$('.chat-layout').classList.contains('is-aside-open'));
