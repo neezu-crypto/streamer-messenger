@@ -993,6 +993,7 @@ async function selectRoom(room) {
 }
 
 async function openChat(room, isOwner) {
+  const reopeningCurrentRoom = !!state.room && state.room.roomId === room.roomId;
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
   resetRoomToolVideo();
   state.asideTab = 'fans';
@@ -1001,7 +1002,9 @@ async function openChat(room, isOwner) {
   state.miniGameCollapsed = false;
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
   state.mobileRoomToolsOpen = true;
-  resetRoomToolsPip();
+  // Reopening the current room (for example, via the top-bar room shortcut) must not discard
+  // the user's floating panel placement and scale.
+  if (!reopeningCurrentRoom) resetRoomToolsPip();
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
