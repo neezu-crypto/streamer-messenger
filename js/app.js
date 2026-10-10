@@ -42,14 +42,19 @@ function syncMobileChatViewport() {
   const viewportOffsetTop = visualViewport?.offsetTop || 0;
   const inputFocused = document.activeElement?.id === 'message-input';
   if (!mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
-  const keyboardOpen = !!(inputFocused && visualViewport && visualViewport.scale <= 1.05
-    && mobileChatRestingViewportHeight - viewportHeight > 120);
-  if (!inputFocused && !keyboardOpen) mobileChatRestingViewportHeight = viewportHeight;
-  else if (!keyboardOpen && viewportHeight > mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
+  const viewportHeightDrop = mobileChatRestingViewportHeight - viewportHeight;
+  const keyboardInset = Math.max(0, Math.round(window.innerHeight - viewportHeight - viewportOffsetTop));
+  const keyboardResizeDetected = !!(visualViewport && visualViewport.scale <= 1.05
+    && (viewportHeightDrop > 120 || keyboardInset > 120));
+  const keyboardOpen = inputFocused && keyboardResizeDetected;
+  // Some mobile browsers resize the visual viewport before dispatching focusin.
+  // Keep the expanded height as the baseline until the keyboard has fully closed.
+  if (!keyboardResizeDetected && (viewportHeight > mobileChatRestingViewportHeight || !inputFocused)) {
+    mobileChatRestingViewportHeight = viewportHeight;
+  }
 
   body.style.setProperty('--messenger-chat-viewport-height', `${Math.round(viewportHeight)}px`);
   body.style.setProperty('--messenger-chat-viewport-offset-top', `${Math.round(viewportOffsetTop)}px`);
-  const keyboardInset = Math.max(0, Math.round(window.innerHeight - viewportHeight - viewportOffsetTop));
   body.style.setProperty('--messenger-chat-keyboard-inset', `${keyboardInset}px`);
   body.classList.toggle('messenger-keyboard-open', keyboardOpen);
   if (keyboardOpen) {
@@ -3710,7 +3715,10 @@ function bindEvents() {
     syncMobileQuickActionPlacement();
     renderChatFullscreenButton();
   }, { passive: true });
-  window.addEventListener('orientationchange', scheduleMobileChatViewportSync, { passive: true });
+  window.addEventListener('orientationchange', () => {
+    mobileChatRestingViewportHeight = 0;
+    scheduleMobileChatViewportSync();
+  }, { passive: true });
   document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) state.chatFullscreenOwned = false;
     renderChatFullscreenButton();
