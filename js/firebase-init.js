@@ -127,13 +127,29 @@ auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
 function confirmDialog(message) {
   return new Promise((resolve) => {
     const dialog = document.getElementById('generic-dialog');
+    if (!dialog || dialog.open) { resolve(false); return; }
     document.getElementById('generic-message').textContent = message;
     const yes = document.getElementById('generic-confirm');
     const no = document.getElementById('generic-cancel');
     const close = document.getElementById('generic-close');
-    const finish = (value) => { dialog.close(); yes.removeEventListener('click', onYes); no.removeEventListener('click', onNo); close.removeEventListener('click', onNo); resolve(value); };
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      yes.removeEventListener('click', onYes);
+      no.removeEventListener('click', onNo);
+      close.removeEventListener('click', onNo);
+      dialog.removeEventListener('close', onClose);
+      dialog.removeEventListener('cancel', onCancel);
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
     const onYes = () => finish(true); const onNo = () => finish(false);
+    const onClose = () => finish(false);
+    const onCancel = (event) => { event.preventDefault(); finish(false); };
     yes.addEventListener('click', onYes); no.addEventListener('click', onNo); close.addEventListener('click', onNo);
+    dialog.addEventListener('close', onClose);
+    dialog.addEventListener('cancel', onCancel);
     dialog.showModal();
   });
 }
@@ -177,6 +193,6 @@ async function requestStreamerVerification(data) {
 window.messenger = {
   auth, db, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
-  call, waitForSession, refreshSession, loginGoogle, loginKakao,
+  call, waitForSession, refreshSession, loginGoogle, loginKakao, confirmDialog,
   requestStreamerVerification, signOut: () => signOut(auth),
 };

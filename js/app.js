@@ -6,7 +6,7 @@ const MESSAGE_PAGE_SIZE = 100;
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
@@ -510,7 +510,10 @@ function showToast(message) {
 
 function showError(error, fallback = '요청을 처리하지 못했습니다.') {
   const message = error && error.message ? error.message.replace(/^Firebase: /, '') : fallback;
-  window.alert(message || fallback);
+  const dialog = $('#notice-dialog');
+  if (!dialog) { showToast(message || fallback); return; }
+  $('#notice-message').textContent = message || fallback;
+  if (!dialog.open) dialog.showModal();
 }
 
 function avatarUrl(soopId) {
@@ -1806,7 +1809,11 @@ async function updateMiniGame(action, participantIndex = -1) {
     payload.gameId = state.miniGame.gameId;
     payload.participantIndex = participantIndex;
   } else if (action === 'finish') {
-    if (!state.miniGame || !window.confirm('사다리를 종료하고 전체 결과를 채팅방 참여자에게 공유할까요?')) return;
+    if (!state.miniGame) return;
+    const confirmedRoomId = state.room.roomId;
+    const confirmedGameId = state.miniGame.gameId;
+    if (!(await api().confirmDialog('사다리를 종료하고 전체 결과를 채팅방 참여자에게 공유할까요?'))) return;
+    if (!state.room || state.room.roomId !== confirmedRoomId || !state.miniGame || state.miniGame.gameId !== confirmedGameId || !canManageMiniGame()) return;
   } else return;
 
   state.miniGameMutationPending = true;
@@ -3336,13 +3343,7 @@ async function copyRoomPassword() {
 }
 
 async function discardRoom() {
-  const ok = await new Promise((resolve) => {
-    const dialog = $('#generic-dialog'); $('#generic-message').textContent = '채팅방, 참여자, 대기 신청, 서버 대화가 즉시 삭제됩니다. 신고 보존 중인 자료는 보관 기간까지 유지됩니다. 방을 폐기할까요?';
-    const yes = $('#generic-confirm'); const no = $('#generic-cancel');
-    const finish = (value) => { dialog.close(); yes.removeEventListener('click', onYes); no.removeEventListener('click', onNo); resolve(value); };
-    const onYes = () => finish(true); const onNo = () => finish(false);
-    yes.addEventListener('click', onYes); no.addEventListener('click', onNo); dialog.showModal();
-  });
+  const ok = await api().confirmDialog('채팅방, 참여자, 대기 신청, 서버 대화가 즉시 삭제됩니다. 신고 보존 중인 자료는 보관 기간까지 유지됩니다. 방을 폐기할까요?');
   if (!ok) return;
   try {
     await call('messengerDiscardRoom', { roomId: state.room.roomId });
@@ -3544,7 +3545,7 @@ async function setMessengerBan(banned) {
   const uid = $('#admin-ban-uid').value.trim();
   const reason = $('#admin-ban-reason').value.trim();
   if (banned && !reason) { showError({ message: '정지 사유를 입력해 주세요.' }); return; }
-  if (!window.confirm(banned ? '이 계정의 메신저 이용을 정지할까요? 다른 서비스에는 적용되지 않습니다.' : '이 계정의 메신저 이용 정지를 해제할까요?')) return;
+  if (!(await api().confirmDialog(banned ? '이 계정의 메신저 이용을 정지할까요? 다른 서비스에는 적용되지 않습니다.' : '이 계정의 메신저 이용 정지를 해제할까요?'))) return;
   const button = banned ? $('#admin-ban-submit') : $('#admin-unban-submit'); button.disabled = true;
   try {
     await call('messengerAdminSetBan', { uid, banned, reason });
@@ -3608,7 +3609,7 @@ async function updateAdminReportStatus(status) {
   const note = $('#report-review-note').value.trim();
   if (!note) { showError({ message: '처리 의견을 입력해 주세요.' }); return; }
   const action = ({ reviewed: '확인 완료', dismissed: '기각', pending: '대기 상태로 되돌리기' })[status] || '처리';
-  if (!window.confirm(`신고를 ${action}로 처리할까요?\n처리 의견: ${note}`)) return;
+  if (!(await api().confirmDialog(`신고를 ${action}로 처리할까요?\n처리 의견: ${note}`))) return;
   const buttons = ['#report-mark-reviewed', '#report-mark-dismissed', '#report-reopen'].map((selector) => $(selector));
   buttons.forEach((button) => { button.disabled = true; });
   try {
@@ -3899,7 +3900,7 @@ function bindEvents() {
   $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
   $('#room-menu-button').addEventListener('click', openReportDialog);
   $('#submit-report').addEventListener('click', submitReport);
-  $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = window.confirm('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });
+  $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = await api().confirmDialog('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok || !state.room || !state.selectedFanUid) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });
   $('#save-room-settings').addEventListener('click', saveRoomSettings);
   $('#discard-room').addEventListener('click', discardRoom);
   $('#room-visibility').addEventListener('change', updateRoomPasswordControls);
@@ -3918,6 +3919,8 @@ function bindEvents() {
   $('#profile-soop-id').addEventListener('input', updateProfilePreview);
   $('#generic-close').addEventListener('click', () => closeDialog('generic-dialog'));
   $('#generic-cancel').addEventListener('click', () => closeDialog('generic-dialog'));
+  $('#notice-close').addEventListener('click', () => closeDialog('notice-dialog'));
+  $('#notice-confirm').addEventListener('click', () => closeDialog('notice-dialog'));
   $('#report-detail-close').addEventListener('click', () => closeDialog('report-detail-dialog'));
 }
 
