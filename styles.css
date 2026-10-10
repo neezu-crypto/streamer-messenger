@@ -314,7 +314,7 @@
 .room-tools-pip-bar{display:none}
 .room-tools-pip-resize-handle{display:none}
 @media(min-width:900px){
-  .room-tools-sticky-slot{position:fixed;top:86px;right:22px;z-index:30;width:min(500px,calc(100vw - 36px));height:auto;max-height:none;overflow:visible;margin:0;padding:8px 8px 31px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transform:scale(var(--room-tools-pip-scale,1));transform-origin:top left;will-change:transform}
+  .room-tools-sticky-slot{position:fixed;top:var(--room-tools-pip-top,86px);left:var(--room-tools-pip-left,auto);right:var(--room-tools-pip-right,22px);z-index:30;width:min(500px,calc(100vw - 36px));height:auto;max-height:none;overflow:visible;margin:0;padding:8px 8px 31px;border:1px solid rgba(255,255,255,.9);border-radius:20px;background:rgba(245,248,255,.96);box-shadow:0 22px 70px rgba(31,48,83,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transform:scale(var(--room-tools-pip-scale,1));transform-origin:top left;will-change:transform}
   .room-tools-sticky-slot.is-dragging,.room-tools-sticky-slot.is-resizing{user-select:none;transition:none}
   .room-tools-pip-bar{position:relative;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin:0 1px 6px;padding:0 1px}
   .room-tools-pip-drag-handle{display:flex;align-items:center;gap:9px;min-width:0;min-height:32px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#344260;font-size:11px;font-weight:800;text-align:left;cursor:grab;touch-action:none;user-select:none}
