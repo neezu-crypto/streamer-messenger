@@ -9,11 +9,17 @@ function loadRoomToolsPipPreferences() {
     const value = JSON.parse(window.localStorage.getItem(ROOM_TOOLS_PIP_STORAGE_KEY) || 'null');
     if (!value || !Number.isFinite(Number(value.left)) || !Number.isFinite(Number(value.top))) return null;
     const scale = Number(value.scale);
-    return { left: Number(value.left), top: Number(value.top), scale: Number.isFinite(scale) ? Math.min(1.5, Math.max(0.68, scale)) : 1 };
+    return {
+      left: Number(value.left),
+      top: Number(value.top),
+      scale: Number.isFinite(scale) ? Math.min(1.5, Math.max(0.68, scale)) : 1,
+      collapsed: value.collapsed === true
+    };
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
@@ -1260,7 +1266,7 @@ function updateRoomToolsPipTitle() {
     : '채팅 도구';
 }
 
-function setRoomToolsPipCollapsed(collapsed) {
+function setRoomToolsPipCollapsed(collapsed, { persist = true } = {}) {
   state.roomToolsPipCollapsed = !!collapsed && isDesktopRoomToolsPip();
   const slot = $('#room-tools-sticky-slot');
   const content = $('#room-tools-content');
@@ -1276,11 +1282,17 @@ function setRoomToolsPipCollapsed(collapsed) {
     : '채팅 도구 패널을 접습니다';
   toggle.querySelector('[aria-hidden="true"]').textContent = state.roomToolsPipCollapsed ? '⌄' : '⌃';
   updateRoomToolsPipTitle();
-  if (!state.roomToolsPipCollapsed && isDesktopRoomToolsPip() && slot.style.getPropertyValue('--room-tools-pip-left')) {
+  const shouldPersist = persist && isDesktopRoomToolsPip();
+  if (!state.roomToolsPipCollapsed && isDesktopRoomToolsPip()) {
     requestAnimationFrame(() => {
-      const rect = slot.getBoundingClientRect();
-      setRoomToolsPipPosition(rect.left, rect.top);
+      if (slot.style.getPropertyValue('--room-tools-pip-left')) {
+        const rect = slot.getBoundingClientRect();
+        setRoomToolsPipPosition(rect.left, rect.top);
+      }
+      if (shouldPersist) persistRoomToolsPipPosition();
     });
+  } else if (shouldPersist) {
+    persistRoomToolsPipPosition();
   }
 }
 
@@ -1324,7 +1336,7 @@ function persistRoomToolsPipPosition() {
   const slot = $('#room-tools-sticky-slot');
   if (!slot || slot.hidden) return;
   const rect = slot.getBoundingClientRect();
-  const preferences = { left: Math.round(rect.left), top: Math.round(rect.top), scale: state.roomToolsPipScale };
+  const preferences = { left: Math.round(rect.left), top: Math.round(rect.top), scale: state.roomToolsPipScale, collapsed: state.roomToolsPipCollapsed };
   roomToolsPipPreferences = preferences;
   try { window.localStorage.setItem(ROOM_TOOLS_PIP_STORAGE_KEY, JSON.stringify(preferences)); } catch (_) { /* Storage may be unavailable in private browsing. */ }
 }
@@ -1332,7 +1344,7 @@ function persistRoomToolsPipPosition() {
 function restoreRoomToolsPipPosition(force = false) {
   if (!isDesktopRoomToolsPip() || !roomToolsPipPreferences) return;
   const slot = $('#room-tools-sticky-slot');
-  if (!slot || slot.hidden || state.roomToolsPipCollapsed) return;
+  if (!slot || slot.hidden) return;
   if (!force && slot.style.getPropertyValue('--room-tools-pip-left')) return;
   const { left, top, scale } = roomToolsPipPreferences;
   state.roomToolsPipScale = scale;
@@ -1347,7 +1359,7 @@ function restoreRoomToolsPipPosition(force = false) {
 
 function syncRoomToolsPipPosition() {
   const slot = $('#room-tools-sticky-slot');
-  if (!isDesktopRoomToolsPip() || !slot || slot.hidden || state.roomToolsPipCollapsed) return;
+  if (!isDesktopRoomToolsPip() || !slot || slot.hidden) return;
   if (roomToolsPipPreferences) {
     restoreRoomToolsPipPosition(true);
     return;
@@ -1419,6 +1431,9 @@ function renderRoomToolSwitcher(preferredKey = '') {
   }
 
   slot.hidden = false;
+  if (isDesktopRoomToolsPip()) {
+    setRoomToolsPipCollapsed(state.roomToolsPipCollapsed, { persist: false });
+  }
   switcher.hidden = slides.length < 2;
   const desktopCompactTabs = isDesktopRoomToolsPip() && slides.length <= 3;
   switcher.classList.toggle('is-scrollable', slides.length >= 3 && !desktopCompactTabs);
@@ -1670,7 +1685,8 @@ function renderMiniGame(errorMessage = '') {
   const gameStarted = !!gameId && gameId !== state.renderedMiniGameId;
   const gameFinished = !gameId && !!state.renderedMiniGameId && state.activeRoomTool === 'mini-game';
   if (gameStarted) {
-    setRoomToolsPipCollapsed(false);
+    const preserveSavedDesktopFold = isDesktopRoomToolsPip() && roomToolsPipPreferences && roomToolsPipPreferences.collapsed;
+    if (!preserveSavedDesktopFold) setRoomToolsPipCollapsed(false);
     if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
   }
   state.renderedMiniGameId = gameId;
