@@ -439,12 +439,143 @@
 .message-image-open{display:block;max-width:min(100%,340px);padding:0;border:0;border-radius:12px;background:transparent;line-height:0;text-align:left;cursor:zoom-in}.message-image-open:hover,.message-image-open:focus-visible{outline:2px solid rgba(93,121,228,.55);outline-offset:3px}.image-viewer-dialog{width:min(96vw,1440px);height:min(94vh,1040px);height:min(94dvh,1040px);max-width:none;max-height:none;padding:0;overflow:visible;border:0;background:transparent;box-shadow:none}.image-viewer-dialog::backdrop{background:rgba(9,15,28,.88);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}.image-viewer-stage{position:relative;display:grid;width:100%;height:100%;place-items:center;overflow:hidden;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:18px;background:rgba(10,16,28,.54);box-shadow:0 24px 80px rgba(0,0,0,.34)}.image-viewer-image{display:block;max-width:100%;max-height:100%;border-radius:9px;object-fit:contain}.image-viewer-close{position:absolute;top:10px;right:10px;z-index:1;display:grid;place-items:center;width:40px;height:40px;border:1px solid rgba(255,255,255,.3);border-radius:12px;background:rgba(17,27,45,.78);color:#fff;font-size:25px;line-height:1}.image-viewer-close:hover,.image-viewer-close:focus-visible{border-color:#fff;background:rgba(17,27,45,.96);outline:2px solid rgba(255,255,255,.4);outline-offset:2px}
 @media(max-width:680px){.image-viewer-dialog{width:calc(100vw - 16px);height:calc(100dvh - 20px)}.image-viewer-stage{padding:8px;border-radius:13px}.image-viewer-image{max-height:100%}.image-viewer-close{top:7px;right:7px;width:36px;height:36px}}
 
+/* Mobile chat controls live in a right drawer; the room title stays visible. */
+.mobile-quick-menu-backdrop,.mobile-quick-menu{display:none}
+.mobile-quick-menu-backdrop[hidden],.mobile-quick-menu[hidden]{display:none!important}
+.mobile-quick-menu-trigger[hidden],.mobile-room-tools-trigger[hidden]{display:none!important}
+.mobile-quick-menu-badge{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;display:grid;place-items:center;padding:0 4px;border:2px solid #fff;border-radius:999px;background:#eaf0ff;color:#526fd7;font-size:9px;font-weight:800;line-height:1}
+.mobile-quick-menu-badge[hidden]{display:none!important}
+.mobile-quick-menu-trigger{position:relative}
+.mobile-quick-menu-trigger.has-unseen::after{position:absolute;top:-3px;left:-2px;width:10px;height:10px;border:2px solid #fff;border-radius:50%;background:#f05d72;box-shadow:0 0 0 0 rgba(240,93,114,.55);content:"";animation:aside-notice-pulse 1.35s ease-out infinite}
+.mobile-room-tools-trigger{position:relative;display:grid;place-items:center;width:34px;min-width:34px;height:34px;flex:0 0 34px;padding:0;border-radius:11px;font-size:16px}
+.mobile-room-tools-trigger[aria-expanded="true"]{border-color:#9aafff;color:#4f6fe1;background:#f6f8ff}
+.mobile-room-tools-live-dot{position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:50%;background:#35b7e8;box-shadow:0 0 0 2px #fff}
+.mobile-room-tools-live-dot[hidden]{display:none!important}
+.mobile-requests-shortcut{display:none}
+
+@media(max-width:680px){
+  body.messenger-chat-open .topbar{height:52px;flex:0 0 52px;padding:0 12px}
+  body.messenger-chat-open .brand{gap:0}
+  body.messenger-chat-open .brand-name{display:none}
+  body.messenger-chat-open .topbar-actions{gap:0}
+  body.messenger-chat-open .mobile-quick-menu-trigger{display:grid;width:38px;min-width:38px;height:38px;place-items:center;padding:0;border-radius:12px;font-size:23px;line-height:1}
+  body.messenger-chat-open .chat-header{min-height:58px;flex:0 0 58px;flex-wrap:nowrap;gap:6px;padding:5px 8px;overflow:hidden}
+  body.messenger-chat-open .chat-header .back-button{flex:0 0 23px;width:23px;padding:0;text-align:center}
+  body.messenger-chat-open .chat-header .chat-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:12px}
+  body.messenger-chat-open .chat-title-wrap{flex:1 1 auto;min-width:0}
+  body.messenger-chat-open .chat-title-wrap h2{font-size:13px}
+  body.messenger-chat-open .chat-title-wrap p{display:none}
+  body.messenger-chat-open .chat-header-actions{display:none}
+  body.messenger-chat-open .chat-fullscreen-button{width:34px;min-width:34px;height:34px;flex:0 0 34px}
+  body.messenger-chat-open .aside-toggle-button{width:32px;height:32px;flex:0 0 32px}
+  body.messenger-chat-open .room-tools-sticky-slot:not([hidden]){position:fixed;top:var(--mobile-room-tools-top,120px);left:50%;right:auto;z-index:30;flex:0 0 auto;width:min(var(--mobile-room-tools-width,calc(100vw - 16px)),calc(100vw - 16px));max-width:calc(100vw - 16px);max-height:none;overflow:visible;margin:0;padding:6px;border:1px solid rgba(255,255,255,.94);border-radius:16px;background:rgba(245,248,255,.96);box-shadow:0 16px 44px rgba(31,48,83,.22);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transform:translateX(-50%)}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-content{width:100%;min-width:0;padding:0}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-switcher{position:relative;z-index:7;width:100%;min-height:32px;margin:0 0 5px;padding:2px;border-radius:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tool-tab{min-height:28px;padding:0 8px;font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-viewport{position:relative;inset:auto;width:100%;height:auto!important;aspect-ratio:16/9;margin:0;overflow:hidden;touch-action:pan-y}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-track,body.messenger-chat-open .room-tools-sticky-slot .room-tool-slide{height:100%;min-height:0}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-track{align-items:stretch}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tool-slide{width:100%;align-items:stretch;justify-content:stretch}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-panel,body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel,body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-panel{width:100%;height:100%;max-width:100%;max-height:none;aspect-ratio:16/9;box-sizing:border-box;margin:0;border-radius:12px;overflow:hidden}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-panel{display:flex;flex-direction:column;gap:5px;padding:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-heading{flex:0 0 auto;gap:6px;padding-bottom:5px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-heading .eyebrow,body.messenger-chat-open .room-tools-sticky-slot .room-market-heading p:not(.eyebrow){display:none}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-heading h3{font-size:12px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-header-actions{gap:4px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-collapse-button{width:28px;height:28px}
+  body.messenger-chat-open .room-tools-sticky-slot #add-room-stock{height:28px;padding:0 7px;font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-content{display:grid;flex:1 1 auto;grid-template-rows:minmax(0,1fr) auto;gap:4px;min-height:0;overflow:hidden;padding-top:0}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:3px;min-height:0;overflow:hidden;padding:0}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-wrap{min-width:0}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-card{height:30px;min-height:0;padding:3px 5px;border-radius:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-card>strong{padding-right:16px;font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-metrics{gap:2px;margin-top:1px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-metrics small,body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-change{font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-sparkline{display:none}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-empty-stock{grid-column:1/-1;min-height:38px;padding:5px 7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-empty-stock .room-market-empty-icon{width:25px;height:25px;font-size:15px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-empty-copy strong{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-empty-copy small{font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed-wrap{min-width:0;margin:0;padding:4px 5px;border:1px solid #334155;border-radius:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed-heading{margin-bottom:3px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed-heading strong{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed-heading span{font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;overflow:hidden}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-feed-item{min-width:0;max-width:none;overflow:hidden;padding:2px 4px;border-radius:5px;font-size:7px;text-overflow:ellipsis}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel{display:flex;flex-direction:column;gap:4px;padding:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading{flex:0 0 auto;gap:5px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading .eyebrow{display:none}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading h3{font-size:11px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-actions{gap:4px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading .button,body.messenger-chat-open .room-tools-sticky-slot .mini-game-collapse-button{width:27px;height:27px;min-height:27px;padding:0;font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading #mini-game-clear{width:auto;padding:0 7px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-sticky-content{display:grid;flex:1 1 auto;grid-template-rows:auto minmax(0,1fr) auto auto;gap:3px;min-height:0;overflow:hidden}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-instructions{min-width:0;margin:0;overflow:hidden;font-size:7px;text-overflow:ellipsis;white-space:nowrap}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-board-scroll{width:100%;min-width:0;min-height:0;height:100%;overflow:hidden;padding:0}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-board{display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:100%;height:100%;min-width:0;margin:0;padding:4px;overflow:hidden;border-radius:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-choices,body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-outcomes{gap:2px;min-height:0}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-svg{width:100%;height:100%;min-height:0;overflow:hidden}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-choice,body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-outcome{padding:2px 1px;font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-result{min-width:0;min-height:0;overflow:hidden;padding:4px 5px;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-error:not([hidden]){grid-row:4;margin:0;padding:3px 5px;overflow:hidden;font-size:7px;text-overflow:ellipsis;white-space:nowrap}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-panel{position:relative;padding:0;background:#050a14}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-heading{position:absolute;top:0;left:0;right:0;z-index:2;gap:6px;margin:0;padding:8px 9px 22px;border:0;background:linear-gradient(180deg,rgba(5,10,20,.92),rgba(5,10,20,.55) 76%,transparent);opacity:0;pointer-events:none;transition:opacity .16s ease}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-panel:hover .room-video-tool-heading,body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-panel:focus-within .room-video-tool-heading{opacity:1;pointer-events:auto}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-heading .eyebrow{display:none}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-heading h3{font-size:11px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-heading p:not(.eyebrow){margin-top:2px;font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-actions{gap:4px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-tool-actions .button{min-height:26px;padding:0 7px;font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-close-button{width:26px;height:26px;font-size:17px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-player{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:16/9;border:0;border-radius:12px}
+  body.messenger-chat-open .timeline-history-status{position:static;top:auto;margin:0 auto 3px}
+  body.messenger-chat-open .chat-composer-wrap{position:relative;z-index:3;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+  body.messenger-chat-open .chat-composer{gap:7px;padding:5px 6px 5px 8px;border-radius:15px}
+  body.messenger-chat-open .chat-composer textarea{min-height:34px;padding:7px 2px;font-size:14px}
+  body.messenger-chat-open .attach-button,body.messenger-chat-open .send-button{width:34px;height:34px}
+  body.messenger-chat-open .streamer-compose-options{gap:5px;margin:0 2px 5px}
+  body.messenger-chat-open .streamer-compose-options select{min-height:28px;padding:4px 8px;font-size:9px}
+  body.messenger-chat-open .composer-hint{margin:4px 3px 0;font-size:8px}
+  body.messenger-chat-open.messenger-keyboard-open{position:fixed;top:var(--messenger-chat-viewport-offset-top,0px);left:0;right:0;width:100%;}
+  body.messenger-chat-open.messenger-keyboard-open .chat-composer-wrap{padding-bottom:6px}
+  body.messenger-chat-open.messenger-keyboard-open .composer-hint{display:none}
+  body.messenger-chat-open.messenger-keyboard-open .streamer-compose-options{margin-bottom:3px}
+  body.messenger-chat-open .app-toast{bottom:calc(var(--messenger-chat-composer-height,86px) + var(--messenger-chat-keyboard-inset,0px) + 12px + env(safe-area-inset-bottom));z-index:45;max-width:calc(100vw - 28px);font-size:11px}
+  .mobile-quick-menu-backdrop:not([hidden]){position:fixed;inset:0;z-index:1100;display:block;width:100%;height:100%;padding:0;border:0;background:rgba(22,33,57,.28);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);opacity:0;transition:opacity .22s ease}
+  .mobile-quick-menu-backdrop.is-open{opacity:1}
+  .mobile-quick-menu:not([hidden]){position:fixed;inset:0 0 0 auto;z-index:1101;display:flex;width:min(86vw,360px);max-width:calc(100vw - 40px);height:var(--messenger-chat-viewport-height,100dvh);flex-direction:column;gap:18px;margin:0;padding:calc(12px + env(safe-area-inset-top)) 15px calc(15px + env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;border:1px solid rgba(255,255,255,.9);border-right:0;border-radius:22px 0 0 22px;background:rgba(248,250,255,.98);box-shadow:-18px 0 50px rgba(27,43,77,.22);transform:translateX(102%);transition:transform .22s cubic-bezier(.2,.7,.2,1);overscroll-behavior:contain}
+  .mobile-quick-menu.is-open{transform:translateX(0)}
+  .mobile-quick-menu-header{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid rgba(126,148,185,.16)}
+  .mobile-quick-menu-header .eyebrow{margin:0 0 4px;font-size:8px}
+  .mobile-quick-menu-header h2{margin:0;font-size:17px}
+  .mobile-quick-menu-close{width:36px;min-width:36px;height:36px;padding:0;font-size:22px}
+  .mobile-quick-menu-section{display:grid;gap:8px;flex:0 0 auto}
+  .mobile-quick-menu-section h3{margin:0;color:#8895aa;font-size:10px;font-weight:800;letter-spacing:.08em}
+  .mobile-quick-menu-actions{display:grid;gap:7px}
+  .mobile-quick-menu-actions>.button,.mobile-quick-menu-actions>.profile-button,.mobile-quick-menu-actions>.icon-button,.mobile-quick-menu-actions .chat-header-actions>.button,.mobile-quick-menu-actions .chat-header-actions>.icon-button{position:relative;width:100%;min-width:0;height:auto;min-height:42px;justify-content:flex-start;padding:9px 12px;border:1px solid rgba(126,148,185,.17);border-radius:12px;background:rgba(255,255,255,.86);color:#52617d;font-size:12px;text-align:left;white-space:normal}
+  .mobile-quick-menu-actions .profile-button{display:flex;align-items:center;max-width:none;overflow:visible;text-overflow:clip}
+  .mobile-quick-menu-actions .profile-button img{flex:0 0 24px}
+  .mobile-quick-menu-actions .my-rooms-button{display:flex;justify-content:flex-start;gap:8px}
+  body.messenger-chat-open .mobile-quick-menu-actions .chat-header-actions{display:grid;gap:7px;flex:0 0 auto;width:100%;justify-content:stretch}
+  .mobile-quick-menu-actions .chat-header-actions>.room-state-pill{padding:10px 12px;border:1px solid rgba(126,148,185,.17);border-radius:12px;background:rgba(255,255,255,.86);font-size:12px}
+  .mobile-quick-menu-actions .mini-game-trigger-label,.mobile-quick-menu-actions .donation-shortcut-wide,.mobile-quick-menu-actions .fanpage-shortcut-wide,.mobile-quick-menu-actions .donation-shortcut-compact,.mobile-quick-menu-actions .fanpage-shortcut-compact{display:inline}
+  .mobile-quick-menu-actions .desktop-action-label,.mobile-quick-menu-actions .mobile-action-label{display:inline}
+  .mobile-quick-menu-actions .mobile-admin-icon{display:none}
+  .mobile-quick-menu-actions #notification-button::after{content:"브라우저 알림 설정";margin-left:10px}
+  .mobile-quick-menu-actions #room-menu-button::after{content:"채팅방 신고";margin-left:10px}
+  .mobile-requests-shortcut:not([hidden]){display:flex;align-items:center;justify-content:space-between;width:100%;min-height:42px;padding:9px 12px;border:1px solid rgba(126,148,185,.17);border-radius:12px;background:rgba(255,255,255,.86);color:#52617d;font-size:12px;font-weight:700;text-align:left}
+  .mobile-requests-count{display:grid;min-width:20px;height:20px;place-items:center;padding:0 5px;border-radius:999px;background:#eaf0ff;color:#526fd7;font-size:10px}
+  .mobile-requests-count[hidden]{display:none!important}
+  body.messenger-quick-menu-open{overflow:hidden;overscroll-behavior:none}
+}
+
+@media(prefers-reduced-motion:reduce){.mobile-quick-menu-trigger.has-unseen::after{animation:none}.mobile-quick-menu,.mobile-quick-menu-backdrop{transition:none!important}}
+
 @media(max-width:680px){
   html.mobile-chat-locked{height:100%;overflow:hidden;overscroll-behavior:none}
   body.messenger-chat-open{display:flex;flex-direction:column;width:100%;height:var(--messenger-chat-viewport-height,100dvh);min-height:0;max-height:var(--messenger-chat-viewport-height,100dvh);overflow:hidden;overscroll-behavior:none}
   body.messenger-chat-open .devbar,body.messenger-chat-open>.site-footer{display:none}
-  body.messenger-chat-open .topbar{position:relative;top:auto;z-index:20;flex:0 0 62px}
-  body.messenger-chat-open .room-tools-sticky-slot:not([hidden]){position:relative;top:auto;z-index:9;flex:0 0 auto;width:100%;max-width:100%;max-height:none;overflow:visible}
+  body.messenger-chat-open .topbar{position:relative;top:auto;z-index:20;height:52px;flex:0 0 52px;padding:0 12px}
   body.messenger-chat-open .page-shell.chat-open{display:flex;flex:1 1 0;width:100%;height:auto;min-height:0;max-height:none;margin:0;padding:0;overflow:hidden}
   body.messenger-chat-open .chat-view{display:flex;flex:1 1 0;height:100%;min-height:0;padding:0;overflow:hidden}
   body.messenger-chat-open .chat-layout{display:block;flex:1 1 0;height:100%;min-height:0;overflow:hidden}

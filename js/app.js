@@ -3,7 +3,7 @@ import './firebase-init.js';
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'my-rooms-dialog'];
@@ -16,6 +16,9 @@ let asideSwipeStart = null;
 let asideSwipeSuppressClickUntil = 0;
 let mobileChatViewportFrame = 0;
 let mobileChatRestingViewportHeight = 0;
+let mobileQuickMenuCloseTimer = 0;
+let mobileQuickMenuTransitionToken = 0;
+const mobileQuickActionOrigins = new Map();
 
 function syncMobileChatViewport() {
   const mobile = window.matchMedia('(max-width: 680px)').matches;
@@ -26,12 +29,17 @@ function syncMobileChatViewport() {
   if (!chatOpen) {
     body.classList.remove('messenger-keyboard-open');
     body.style.removeProperty('--messenger-chat-viewport-height');
+    body.style.removeProperty('--messenger-chat-viewport-offset-top');
+    body.style.removeProperty('--messenger-chat-keyboard-inset');
+    body.style.removeProperty('--messenger-chat-composer-height');
     mobileChatRestingViewportHeight = 0;
+    syncMobileRoomToolsOverlay();
     return;
   }
 
   const visualViewport = window.visualViewport;
   const viewportHeight = visualViewport?.height || window.innerHeight;
+  const viewportOffsetTop = visualViewport?.offsetTop || 0;
   const inputFocused = document.activeElement?.id === 'message-input';
   if (!mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
   const keyboardOpen = !!(inputFocused && visualViewport && visualViewport.scale <= 1.05
@@ -40,7 +48,17 @@ function syncMobileChatViewport() {
   else if (!keyboardOpen && viewportHeight > mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
 
   body.style.setProperty('--messenger-chat-viewport-height', `${Math.round(viewportHeight)}px`);
+  body.style.setProperty('--messenger-chat-viewport-offset-top', `${Math.round(viewportOffsetTop)}px`);
+  const keyboardInset = Math.max(0, Math.round(window.innerHeight - viewportHeight - viewportOffsetTop));
+  body.style.setProperty('--messenger-chat-keyboard-inset', `${keyboardInset}px`);
   body.classList.toggle('messenger-keyboard-open', keyboardOpen);
+  if (keyboardOpen) {
+    if (document.body.classList.contains('messenger-quick-menu-open')) setMobileQuickMenuOpen(false, false);
+    if (state.mobileRoomToolsOpen) setMobileRoomToolsOpen(false);
+  }
+  const composerHeight = $('.chat-composer-wrap')?.getBoundingClientRect().height || 86;
+  body.style.setProperty('--messenger-chat-composer-height', `${Math.ceil(composerHeight)}px`);
+  syncMobileRoomToolsOverlay();
 }
 
 function scheduleMobileChatViewportSync() {
@@ -53,6 +71,139 @@ function scheduleMobileChatViewportSync() {
 
 function isMobileChatLayout() {
   return window.matchMedia('(max-width: 680px)').matches;
+}
+
+function isActiveMobileChat() {
+  return isMobileChatLayout() && state.activeView === 'chat' && !!state.room;
+}
+
+function syncMobileQuickActionPlacement() {
+  const shouldRelocate = isActiveMobileChat();
+  const placements = [
+    ['#notification-button', '#mobile-app-quick-actions'],
+    ['#profile-button', '#mobile-app-quick-actions'],
+    ['#my-rooms-button', '#mobile-app-quick-actions'],
+    ['#create-room-button', '#mobile-app-quick-actions'],
+    ['#admin-tab-button', '#mobile-app-quick-actions'],
+    ['.chat-header-actions', '#mobile-room-quick-actions'],
+  ];
+
+  for (const [selector, targetSelector] of placements) {
+    const element = $(selector);
+    const target = $(targetSelector);
+    if (!element || !target) continue;
+    let origin = mobileQuickActionOrigins.get(element);
+    if (!origin) {
+      const placeholder = document.createComment(`original position for ${selector}`);
+      element.parentNode.insertBefore(placeholder, element);
+      origin = { placeholder };
+      mobileQuickActionOrigins.set(element, origin);
+    }
+    if (shouldRelocate) target.appendChild(element);
+    else if (origin.placeholder.parentNode && element.parentNode !== origin.placeholder.parentNode) {
+      origin.placeholder.parentNode.insertBefore(element, origin.placeholder.nextSibling);
+    }
+  }
+
+  const trigger = $('#toggle-mobile-quick-menu');
+  if (trigger) trigger.hidden = !shouldRelocate;
+  if (!shouldRelocate) setMobileQuickMenuOpen(false, false);
+}
+
+function setMobileQuickMenuOpen(open, restoreFocus = true) {
+  const panel = $('#mobile-quick-menu');
+  const backdrop = $('#mobile-quick-menu-backdrop');
+  const trigger = $('#toggle-mobile-quick-menu');
+  if (!panel || !backdrop || !trigger) return;
+  const shouldOpen = isActiveMobileChat() && !!open;
+  clearTimeout(mobileQuickMenuCloseTimer);
+  mobileQuickMenuTransitionToken += 1;
+  const transitionToken = mobileQuickMenuTransitionToken;
+
+  if (shouldOpen) {
+    if ($('.chat-layout')?.classList.contains('is-aside-open')) setAsideDrawerOpen(false, false);
+    panel.hidden = false;
+    backdrop.hidden = false;
+    panel.inert = false;
+    $('#page-shell').inert = true;
+    $('#room-tools-sticky-slot').inert = true;
+    document.body.classList.add('messenger-quick-menu-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => {
+      if (transitionToken !== mobileQuickMenuTransitionToken || !document.body.classList.contains('messenger-quick-menu-open')) return;
+      panel.classList.add('is-open');
+      backdrop.classList.add('is-open');
+      $('#close-mobile-quick-menu')?.focus();
+    });
+    return;
+  }
+
+  document.body.classList.remove('messenger-quick-menu-open');
+  $('#page-shell').inert = false;
+  $('#room-tools-sticky-slot').inert = false;
+  panel.inert = true;
+  panel.classList.remove('is-open');
+  backdrop.classList.remove('is-open');
+  trigger.setAttribute('aria-expanded', 'false');
+  mobileQuickMenuCloseTimer = setTimeout(() => {
+    if (transitionToken !== mobileQuickMenuTransitionToken) return;
+    panel.hidden = true;
+    backdrop.hidden = true;
+  }, 230);
+  if (restoreFocus && !trigger.hidden) trigger.focus();
+}
+
+function syncMobileRoomToolsOverlay() {
+  const slot = $('#room-tools-sticky-slot');
+  const trigger = $('#toggle-mobile-room-tools');
+  const dot = $('#mobile-room-tools-live-dot');
+  if (!slot || !trigger) return;
+  const hasTools = !!state.room && availableRoomToolSlides().length > 0;
+  const mobileChat = isActiveMobileChat();
+  if (!mobileChat) {
+    trigger.hidden = true;
+    slot.style.removeProperty('--mobile-room-tools-top');
+    slot.style.removeProperty('--mobile-room-tools-width');
+    slot.style.removeProperty('left');
+    slot.style.removeProperty('right');
+    slot.style.removeProperty('top');
+    slot.style.removeProperty('transform');
+    return;
+  }
+
+  trigger.hidden = !hasTools;
+  const keyboardOpen = document.body.classList.contains('messenger-keyboard-open');
+  const isOpen = hasTools && state.mobileRoomToolsOpen && !keyboardOpen;
+  slot.hidden = !isOpen;
+  trigger.setAttribute('aria-expanded', String(isOpen));
+  const label = isOpen ? '채팅 도구 접기' : '채팅 도구 펼치기';
+  trigger.setAttribute('aria-label', label);
+  trigger.title = isOpen ? '채팅 도구를 닫습니다' : '채팅 도구를 표시합니다';
+  const icon = trigger.querySelector('[aria-hidden="true"]');
+  if (icon) icon.textContent = isOpen ? '⌃' : '▤';
+  if (dot) dot.hidden = !state.miniGame;
+  if (!isOpen) return;
+
+  const header = $('#chat-header');
+  const composer = $('.chat-composer-wrap');
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const top = Math.max(62, Math.ceil(header?.getBoundingClientRect().bottom || 120) + 6);
+  const composerTop = composer?.getBoundingClientRect().top || viewportHeight - 96;
+  const switcherHeight = $('#room-tools-switcher').hidden ? 0 : 48;
+  const availableHeight = Math.max(108, composerTop - top - switcherHeight - 28);
+  const width = Math.max(190, Math.min(window.innerWidth - 16, availableHeight * 16 / 9));
+  slot.style.setProperty('--mobile-room-tools-top', `${top}px`);
+  slot.style.setProperty('--mobile-room-tools-width', `${width}px`);
+  slot.style.left = '50%';
+  slot.style.right = 'auto';
+  slot.style.top = 'var(--mobile-room-tools-top)';
+  slot.style.transform = 'translateX(-50%)';
+}
+
+function setMobileRoomToolsOpen(open) {
+  if (!isActiveMobileChat()) return;
+  state.mobileRoomToolsOpen = !!open;
+  syncMobileRoomToolsOverlay();
 }
 
 function canRequestPageFullscreen() {
@@ -575,7 +726,12 @@ function updateAsideAttention() {
   const toggle = $('#toggle-streamer-aside');
   if (!toggle) return;
   const pendingCount = state.applications.length;
-  const unseenCount = state.unseenApplicationUids.size;
+  const unseenCount = state.isOwner ? state.unseenApplicationUids.size : 0;
+  const visiblePendingCount = state.isOwner ? pendingCount : 0;
+  const quickMenuTrigger = $('#toggle-mobile-quick-menu');
+  const quickMenuBadge = $('#mobile-quick-menu-badge');
+  const requestsShortcut = $('#mobile-open-requests');
+  const requestsCount = $('#mobile-requests-count');
   const isOpen = $('.chat-layout')?.classList.contains('is-aside-open');
   const actionLabel = isOpen ? '대화 관리 닫기' : '대화 관리 열기';
   const count = $('#aside-toggle-count');
@@ -588,6 +744,24 @@ function updateAsideAttention() {
   toggle.title = !isOpen && unseenCount
     ? `새 대화 신청 ${unseenCount}건이 있어요. 눌러 확인하세요.`
     : actionLabel;
+  if (quickMenuTrigger) {
+    quickMenuTrigger.classList.toggle('has-unseen', unseenCount > 0);
+    quickMenuTrigger.setAttribute('aria-label', unseenCount
+      ? `채팅방 기능과 앱 설정 열기 · 새 신청 ${unseenCount}건`
+      : '채팅방 기능과 앱 설정 열기');
+    quickMenuTrigger.title = unseenCount
+      ? `새 대화 신청 ${unseenCount}건이 있어요. 눌러 확인하세요.`
+      : '채팅방 기능과 앱 설정 열기';
+  }
+  if (quickMenuBadge) {
+    quickMenuBadge.textContent = String(visiblePendingCount);
+    quickMenuBadge.hidden = visiblePendingCount === 0;
+  }
+  if (requestsShortcut) requestsShortcut.hidden = !state.isOwner;
+  if (requestsCount) {
+    requestsCount.textContent = String(visiblePendingCount);
+    requestsCount.hidden = visiblePendingCount === 0;
+  }
   const requestTab = $('#streamer-aside .aside-tab[data-list-tab="requests"]');
   if (requestTab) requestTab.classList.toggle('has-unseen', unseenCount > 0);
 }
@@ -600,6 +774,7 @@ function setAsideDrawerOpen(open, restoreFocus = true) {
   if (!layout || !aside || (!state.isOwner && open)) return;
   const mobile = window.matchMedia('(max-width: 680px)').matches;
   const shouldOpen = mobile && !!open;
+  if (shouldOpen && document.body.classList.contains('messenger-quick-menu-open')) setMobileQuickMenuOpen(false, false);
   layout.classList.toggle('is-aside-open', shouldOpen);
   if (backdrop) backdrop.hidden = !shouldOpen;
   aside.inert = mobile && !shouldOpen;
@@ -803,6 +978,7 @@ async function openChat(room, isOwner) {
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.miniGameCollapsed = false;
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  state.mobileRoomToolsOpen = true;
   resetRoomToolsPip();
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
@@ -860,6 +1036,7 @@ async function openChat(room, isOwner) {
   subscribeTimeline();
   subscribeRoomMarket();
   state.activeView = 'chat';
+  syncMobileQuickActionPlacement();
   renderChatFullscreenButton();
   // 방 진입 시 목록에서 스크롤한 위치를 물려받지 않도록 맨 위에서 채팅을 연다.
   window.scrollTo(0, 0);
@@ -1135,7 +1312,10 @@ function setRoomToolsPipScale(scale) {
 function focusRoomTool(key) {
   setRoomToolsPipCollapsed(false);
   selectRoomTool(key);
-  if (!isDesktopRoomToolsPip()) {
+  if (isActiveMobileChat()) {
+    setMobileRoomToolsOpen(true);
+    syncMobileRoomToolsOverlay();
+  } else if (!isDesktopRoomToolsPip()) {
     $('#room-tools-sticky-slot').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
@@ -1185,6 +1365,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
     track.style.transform = '';
     viewport.style.removeProperty('height');
     updateRoomToolsPipTitle();
+    syncMobileRoomToolsOverlay();
     return;
   }
 
@@ -1258,11 +1439,13 @@ function renderRoomToolSwitcher(preferredKey = '') {
       }
     }
   }
+  syncMobileRoomToolsOverlay();
 }
 
 function selectRoomTool(key) {
   if (!availableRoomToolSlides().some((slide) => slide.dataset.roomTool === key)) return;
   state.activeRoomTool = key;
+  if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
   renderRoomToolSwitcher();
 }
 
@@ -1432,7 +1615,10 @@ function renderMiniGame(errorMessage = '') {
   const gameId = game && game.gameId || '';
   const gameStarted = !!gameId && gameId !== state.renderedMiniGameId;
   const gameFinished = !gameId && !!state.renderedMiniGameId && state.activeRoomTool === 'mini-game';
-  if (gameStarted) setRoomToolsPipCollapsed(false);
+  if (gameStarted) {
+    setRoomToolsPipCollapsed(false);
+    if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
+  }
   state.renderedMiniGameId = gameId;
   setMiniGameCollapsed(state.miniGameCollapsed);
   start.disabled = state.miniGameMutationPending;
@@ -3150,6 +3336,7 @@ async function discardRoom() {
 }
 
 function leaveChat() {
+  setMobileQuickMenuOpen(false, false);
   setAsideDrawerOpen(false, false);
   clearSubscriptions();
   resetRoomToolVideo();
@@ -3157,6 +3344,7 @@ function leaveChat() {
   exitChatFullscreen();
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
+  state.mobileRoomToolsOpen = false;
   resetRoomToolsPip();
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
@@ -3173,6 +3361,7 @@ function leaveChat() {
   document.body.classList.remove('messenger-chat-open');
   $('#chat-view').hidden = true; $('#directory-view').hidden = false;
   $('#toggle-streamer-aside').hidden = true;
+  syncMobileQuickActionPlacement();
   syncMobileChatViewport();
 }
 
@@ -3518,6 +3707,7 @@ function bindEvents() {
   bindRoomToolControls();
   window.addEventListener('resize', () => {
     scheduleMobileChatViewportSync();
+    syncMobileQuickActionPlacement();
     renderChatFullscreenButton();
   }, { passive: true });
   window.addEventListener('orientationchange', scheduleMobileChatViewportSync, { passive: true });
@@ -3530,8 +3720,27 @@ function bindEvents() {
   window.visualViewport?.addEventListener('scroll', scheduleMobileChatViewportSync, { passive: true });
   document.addEventListener('focusin', scheduleMobileChatViewportSync);
   document.addEventListener('focusout', scheduleMobileChatViewportSync);
+  syncMobileQuickActionPlacement();
   syncMobileChatViewport();
   renderChatFullscreenButton();
+  $('#toggle-mobile-quick-menu').addEventListener('click', () => {
+    setMobileQuickMenuOpen(!document.body.classList.contains('messenger-quick-menu-open'));
+  });
+  $('#close-mobile-quick-menu').addEventListener('click', () => setMobileQuickMenuOpen(false));
+  $('#mobile-quick-menu-backdrop').addEventListener('click', () => setMobileQuickMenuOpen(false));
+  $('#mobile-quick-menu').addEventListener('click', (event) => {
+    const action = event.target.closest('button, a');
+    if (action && action.id !== 'close-mobile-quick-menu') setMobileQuickMenuOpen(false, false);
+  });
+  $('#mobile-open-requests').addEventListener('click', () => {
+    if (!state.isOwner) return;
+    setMobileQuickMenuOpen(false, false);
+    switchAside('requests');
+    setAsideDrawerOpen(true);
+  });
+  $('#toggle-mobile-room-tools').addEventListener('click', () => {
+    setMobileRoomToolsOpen(!state.mobileRoomToolsOpen);
+  });
   $('#toggle-chat-fullscreen').addEventListener('click', enterChatFullscreenFromButton);
   $('#toggle-streamer-aside').addEventListener('click', () => {
     if (Date.now() < asideSwipeSuppressClickUntil) return;
@@ -3540,10 +3749,28 @@ function bindEvents() {
   $('#close-streamer-aside').addEventListener('click', () => setAsideDrawerOpen(false));
   $('#chat-aside-backdrop').addEventListener('click', () => setAsideDrawerOpen(false));
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && $('.chat-layout')?.classList.contains('is-aside-open') && !document.querySelector('dialog[open]')) {
+    if (document.querySelector('dialog[open]')) return;
+    const quickMenuOpen = document.body.classList.contains('messenger-quick-menu-open');
+    if (quickMenuOpen && event.key === 'Escape') {
+      event.preventDefault(); setMobileQuickMenuOpen(false); return;
+    }
+    if (quickMenuOpen && event.key === 'Tab') {
+      const focusable = Array.from($('#mobile-quick-menu').querySelectorAll('button:not([disabled]):not([hidden]),a[href]:not([hidden]),select:not([disabled]):not([hidden]),input:not([disabled]):not([hidden])'));
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      return;
+    }
+    if (event.key === 'Escape' && $('.chat-layout')?.classList.contains('is-aside-open')) {
       event.preventDefault(); setAsideDrawerOpen(false);
     }
   });
+  document.addEventListener('pointerdown', (event) => {
+    if (!isActiveMobileChat() || !state.mobileRoomToolsOpen) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && !target.closest('#room-tools-sticky-slot, #toggle-mobile-room-tools')) setMobileRoomToolsOpen(false);
+  }, { passive: true });
   document.addEventListener('pointerdown', (event) => {
     if (!state.isOwner || !window.matchMedia('(max-width: 680px)').matches || event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
