@@ -14,6 +14,42 @@ let toastTimer = 0;
 let imageViewerToken = 0;
 let asideSwipeStart = null;
 let asideSwipeSuppressClickUntil = 0;
+let mobileChatViewportFrame = 0;
+let mobileChatRestingViewportHeight = 0;
+
+function syncMobileChatViewport() {
+  const mobile = window.matchMedia('(max-width: 680px)').matches;
+  const chatOpen = mobile && state.activeView === 'chat' && !!state.room;
+  const root = document.documentElement;
+  const body = document.body;
+  root.classList.toggle('mobile-chat-locked', chatOpen);
+  if (!chatOpen) {
+    body.classList.remove('messenger-keyboard-open');
+    body.style.removeProperty('--messenger-chat-viewport-height');
+    mobileChatRestingViewportHeight = 0;
+    return;
+  }
+
+  const visualViewport = window.visualViewport;
+  const viewportHeight = visualViewport?.height || window.innerHeight;
+  const inputFocused = document.activeElement?.id === 'message-input';
+  if (!mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
+  const keyboardOpen = !!(inputFocused && visualViewport && visualViewport.scale <= 1.05
+    && mobileChatRestingViewportHeight - viewportHeight > 120);
+  if (!inputFocused && !keyboardOpen) mobileChatRestingViewportHeight = viewportHeight;
+  else if (!keyboardOpen && viewportHeight > mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
+
+  body.style.setProperty('--messenger-chat-viewport-height', `${Math.round(viewportHeight)}px`);
+  body.classList.toggle('messenger-keyboard-open', keyboardOpen);
+}
+
+function scheduleMobileChatViewportSync() {
+  if (mobileChatViewportFrame) cancelAnimationFrame(mobileChatViewportFrame);
+  mobileChatViewportFrame = requestAnimationFrame(() => {
+    mobileChatViewportFrame = 0;
+    syncMobileChatViewport();
+  });
+}
 
 function tooltipText(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 
@@ -728,6 +764,7 @@ async function openChat(room, isOwner) {
   state.activeView = 'chat';
   // 방 진입 시 목록에서 스크롤한 위치를 물려받지 않도록 맨 위에서 채팅을 연다.
   window.scrollTo(0, 0);
+  syncMobileChatViewport();
 }
 
 function renderRoomState(room) {
@@ -3028,6 +3065,7 @@ function leaveChat() {
   document.body.classList.remove('messenger-chat-open');
   $('#chat-view').hidden = true; $('#directory-view').hidden = false;
   $('#toggle-streamer-aside').hidden = true;
+  syncMobileChatViewport();
 }
 
 function switchAside(tab) {
@@ -3370,6 +3408,13 @@ async function handleStreamerVerification(mode) {
 
 function bindEvents() {
   bindRoomToolControls();
+  window.addEventListener('resize', scheduleMobileChatViewportSync, { passive: true });
+  window.addEventListener('orientationchange', scheduleMobileChatViewportSync, { passive: true });
+  window.visualViewport?.addEventListener('resize', scheduleMobileChatViewportSync, { passive: true });
+  window.visualViewport?.addEventListener('scroll', scheduleMobileChatViewportSync, { passive: true });
+  document.addEventListener('focusin', scheduleMobileChatViewportSync);
+  document.addEventListener('focusout', scheduleMobileChatViewportSync);
+  syncMobileChatViewport();
   $('#toggle-streamer-aside').addEventListener('click', () => {
     if (Date.now() < asideSwipeSuppressClickUntil) return;
     setAsideDrawerOpen(!$('.chat-layout').classList.contains('is-aside-open'));
