@@ -585,3 +585,47 @@
   body.messenger-chat-open .chat-composer-wrap{padding-bottom:calc(9px + env(safe-area-inset-bottom))}
   body.messenger-chat-open.messenger-keyboard-open .room-tools-sticky-slot{display:none!important}
 }
+
+/* Keep the mobile chat chrome compact and group moved controls by purpose. */
+@media(max-width:680px){
+  body.messenger-chat-open .topbar{height:46px;min-height:46px;flex-basis:46px;padding:0 10px}
+  body.messenger-chat-open .brand-mark{width:30px;height:30px;border-radius:10px}
+  body.messenger-chat-open .mobile-quick-menu-trigger{width:34px;min-width:34px;height:34px;border-radius:11px;font-size:21px}
+  body.messenger-chat-open .chat-header{min-height:50px;flex-basis:50px;gap:5px;padding:4px 7px}
+  body.messenger-chat-open .chat-header .back-button{flex-basis:20px;width:20px;font-size:23px}
+  body.messenger-chat-open .chat-header .chat-avatar{width:30px;height:30px;flex-basis:30px;border-radius:10px}
+  body.messenger-chat-open .chat-title-wrap h2{font-size:12px}
+  body.messenger-chat-open .mobile-room-tools-trigger{width:31px;min-width:31px;height:31px;flex-basis:31px;font-size:14px}
+  .mobile-quick-menu:not([hidden]){gap:12px;padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .mobile-quick-menu-header{padding-bottom:8px}
+  .mobile-quick-menu-header .eyebrow{font-size:7px}
+  .mobile-quick-menu-header h2{font-size:16px}
+  .mobile-quick-menu-section{gap:5px}
+  .mobile-quick-menu-section h3{font-size:9px}
+  .mobile-quick-menu-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+  .mobile-quick-menu-actions>.button,.mobile-quick-menu-actions>.profile-button,.mobile-quick-menu-actions>.icon-button,.mobile-quick-menu-actions .chat-header-actions>.button,.mobile-quick-menu-actions .chat-header-actions>.icon-button{min-height:38px;padding:7px 9px;border-radius:10px;font-size:11px}
+  .mobile-quick-menu-actions .profile-button{grid-column:1/-1}
+  .mobile-quick-menu-actions .desktop-action-label{display:none!important}
+  .mobile-quick-menu-actions .mobile-action-label{display:inline!important}
+  .mobile-quick-menu-actions .mobile-admin-icon{display:none!important}
+  .mobile-quick-menu-actions #admin-tab-button .desktop-action-label{display:inline!important}
+  .mobile-quick-menu-actions .donation-shortcut-wide,.mobile-quick-menu-actions .fanpage-shortcut-wide{display:none!important}
+  .mobile-quick-menu-actions .donation-shortcut-compact,.mobile-quick-menu-actions .fanpage-shortcut-compact{display:inline!important}
+  .mobile-quick-menu-actions .mini-game-trigger-label{display:inline!important}
+  .mobile-quick-menu-actions #toggle-streamer-aside{grid-column:1/-1;display:flex;width:100%;height:auto;min-height:38px;flex:0 0 auto;justify-content:flex-start;gap:8px;padding:7px 9px;border-radius:10px;font-size:11px}
+  .mobile-quick-menu-actions #toggle-streamer-aside .aside-toggle-icon{font-size:15px}
+  .mobile-quick-menu-actions #toggle-streamer-aside .aside-toggle-count{position:static;min-width:18px;height:18px;border:0}
+  .mobile-quick-menu-actions #toggle-streamer-aside.has-unseen::after{top:5px;right:6px;left:auto}
+  .mobile-quick-menu-actions .room-state-pill{grid-column:1/-1;display:flex;align-items:center;min-height:34px;padding:7px 9px;border:1px solid rgba(126,148,185,.17);border-radius:10px;background:rgba(255,255,255,.86);font-size:10px}
+  .mobile-quick-menu-actions #notification-button::after{content:"브라우저 알림 설정";margin-left:8px}
+  .mobile-quick-menu-actions #room-menu-button::after{content:"채팅방 신고";margin-left:8px}
+  .mobile-quick-menu-section[hidden]{display:none!important}
+  body.messenger-chat-open.messenger-keyboard-open .chat-composer-wrap{padding-bottom:0}
+  body.messenger-chat-open.messenger-keyboard-open .chat-panel{padding-bottom:0}
+  body.messenger-chat-open.messenger-keyboard-open .chat-body{scroll-padding-bottom:8px}
+  body.messenger-chat-open.messenger-keyboard-open .chat-composer{margin-bottom:0}
+  body.messenger-chat-open.messenger-keyboard-open .composer-hint{display:none}
+  .message-video-preview.soop-live-preview{width:min(100%,260px)}
+  .soop-live-preview-badge{top:7px;left:7px;padding:4px 7px;font-size:8px}
+  .soop-live-preview .video-play-button{width:48px;height:35px;font-size:18px}
+}

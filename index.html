@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261010-keyboard-composer-visible">
+  <link rel="stylesheet" href="styles.css?v=20261010-mobile-chat-design-refresh">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -31,7 +31,7 @@
       <button class="button button-quiet my-rooms-button" id="my-rooms-button" type="button" aria-label="참여 중인 방 빠른 이동" title="참여 중인 방 빠른 이동" hidden><span class="my-rooms-button-icon" aria-hidden="true">↔</span><span class="my-rooms-button-label">참여방</span><span class="my-rooms-count" id="my-rooms-count">0</span></button>
       <button class="button button-primary" id="create-room-button" type="button" hidden><span class="desktop-action-label" id="create-room-desktop-label">내 채팅방</span><span class="mobile-action-label" id="create-room-mobile-label">내 방</span></button>
       <button class="icon-button admin-tab-button" id="admin-tab-button" type="button" hidden aria-label="관리자" title="관리자"><span class="desktop-action-label">관리자</span><span class="mobile-admin-icon" aria-hidden="true">⚙</span></button>
-      <button class="icon-button mobile-quick-menu-trigger" id="toggle-mobile-quick-menu" type="button" aria-expanded="false" aria-controls="mobile-quick-menu" aria-label="채팅방 기능과 앱 설정 열기" title="채팅방 기능과 앱 설정 열기" hidden><span aria-hidden="true">⋯</span><span class="mobile-quick-menu-badge" id="mobile-quick-menu-badge" hidden>0</span></button>
+      <button class="icon-button mobile-quick-menu-trigger" id="toggle-mobile-quick-menu" type="button" aria-expanded="false" aria-controls="mobile-quick-menu" aria-label="빠른 메뉴 열기" title="계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다" hidden><span aria-hidden="true">⋯</span></button>
     </div>
   </header>
 
@@ -124,7 +124,7 @@
         <section class="chat-panel glass-card">
           <div class="chat-header" id="chat-header">
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
-            <button class="aside-toggle-button" id="toggle-streamer-aside" type="button" aria-expanded="false" aria-controls="streamer-aside" aria-label="대화 관리 열기" title="대화 관리 열기" hidden><span aria-hidden="true">☰</span><span class="aside-toggle-count" id="aside-toggle-count" hidden>0</span></button>
+            <button class="aside-toggle-button" id="toggle-streamer-aside" type="button" aria-expanded="false" aria-controls="streamer-aside" aria-label="대화 관리 열기" title="대화 관리 열기" hidden><span class="aside-toggle-icon" aria-hidden="true">☰</span><span class="mobile-action-label">대화 관리</span><span class="aside-toggle-count" id="aside-toggle-count" hidden>0</span></button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
             <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
             <button class="icon-button mobile-room-tools-trigger" id="toggle-mobile-room-tools" type="button" aria-expanded="false" aria-controls="room-tools-sticky-slot" aria-label="채팅 도구 열기" title="채팅 도구를 표시합니다" hidden><span aria-hidden="true">▤</span><span class="mobile-room-tools-live-dot" id="mobile-room-tools-live-dot" aria-hidden="true" hidden></span></button>
@@ -388,14 +388,29 @@
       <div><p class="eyebrow">MESSENGER MENU</p><h2 id="mobile-quick-menu-title">빠른 메뉴</h2></div>
       <button class="icon-button mobile-quick-menu-close" id="close-mobile-quick-menu" type="button" aria-label="빠른 메뉴 닫기" title="빠른 메뉴 닫기">×</button>
     </header>
-    <section class="mobile-quick-menu-section" aria-labelledby="mobile-app-menu-heading">
-      <h3 id="mobile-app-menu-heading">앱</h3>
+    <section class="mobile-quick-menu-section" id="mobile-account-menu-section" aria-labelledby="mobile-account-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-account-menu-heading">계정</h3>
+      <div class="mobile-quick-menu-actions" id="mobile-account-quick-actions"></div>
+    </section>
+    <section class="mobile-quick-menu-section" id="mobile-navigation-menu-section" aria-labelledby="mobile-navigation-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-navigation-menu-heading">방 이동</h3>
+      <div class="mobile-quick-menu-actions" id="mobile-navigation-quick-actions"></div>
+    </section>
+    <section class="mobile-quick-menu-section" id="mobile-app-menu-section" aria-labelledby="mobile-app-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-app-menu-heading">앱 설정</h3>
       <div class="mobile-quick-menu-actions" id="mobile-app-quick-actions"></div>
     </section>
-    <section class="mobile-quick-menu-section" aria-labelledby="mobile-room-menu-heading">
-      <h3 id="mobile-room-menu-heading">현재 채팅방</h3>
-      <button class="mobile-requests-shortcut" id="mobile-open-requests" type="button" aria-label="새 대화 신청 확인" title="새 대화 신청을 확인합니다" hidden><span>대화 신청</span><span class="mobile-requests-count" id="mobile-requests-count" hidden>0</span></button>
-      <div class="mobile-quick-menu-actions" id="mobile-room-quick-actions"></div>
+    <section class="mobile-quick-menu-section" id="mobile-management-menu-section" aria-labelledby="mobile-management-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-management-menu-heading">대화 관리</h3>
+      <div class="mobile-quick-menu-actions" id="mobile-management-quick-actions"></div>
+    </section>
+    <section class="mobile-quick-menu-section" id="mobile-tools-menu-section" aria-labelledby="mobile-tools-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-tools-menu-heading">빠른 작업</h3>
+      <div class="mobile-quick-menu-actions" id="mobile-tools-quick-actions"></div>
+    </section>
+    <section class="mobile-quick-menu-section" id="mobile-conversation-menu-section" aria-labelledby="mobile-conversation-menu-heading" data-mobile-menu-section>
+      <h3 id="mobile-conversation-menu-heading">채팅방 정보와 대화</h3>
+      <div class="mobile-quick-menu-actions" id="mobile-conversation-quick-actions"></div>
     </section>
   </aside>
 
@@ -406,6 +421,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261010-keyboard-composer-visible"></script>
+  <script type="module" src="js/app.js?v=20261010-mobile-chat-design-refresh"></script>
 </body>
 </html>

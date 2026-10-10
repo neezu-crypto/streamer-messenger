@@ -38,19 +38,26 @@ function syncMobileChatViewport() {
   }
 
   const visualViewport = window.visualViewport;
-  const viewportHeight = visualViewport?.height || window.innerHeight;
   const viewportOffsetTop = visualViewport?.offsetTop || 0;
+  const visualViewportHeight = visualViewport?.height || window.innerHeight;
+  const layoutViewportHeight = Math.max(0, window.innerHeight - viewportOffsetTop);
   const inputFocused = document.activeElement?.id === 'message-input';
-  if (!mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = viewportHeight;
-  const viewportHeightDrop = mobileChatRestingViewportHeight - viewportHeight;
-  const keyboardInset = Math.max(0, Math.round(window.innerHeight - viewportHeight - viewportOffsetTop));
+  if (!mobileChatRestingViewportHeight) mobileChatRestingViewportHeight = visualViewportHeight;
+  const viewportHeightDrop = mobileChatRestingViewportHeight - visualViewportHeight;
+  const rawKeyboardInset = Math.max(0, Math.round(layoutViewportHeight - visualViewportHeight));
   const keyboardResizeDetected = !!(visualViewport && visualViewport.scale <= 1.05
-    && (viewportHeightDrop > 120 || keyboardInset > 120));
+    && (viewportHeightDrop > 120 || rawKeyboardInset > 120));
   const keyboardOpen = inputFocused && keyboardResizeDetected;
+  // Whale can leave a small gap between visualViewport.height and the resized
+  // layout viewport while the keyboard is open. Use that remaining layout area
+  // when the difference is small; large differences indicate an overlay keyboard.
+  const useLayoutViewportHeight = keyboardOpen && rawKeyboardInset > 0 && rawKeyboardInset <= 120;
+  const viewportHeight = useLayoutViewportHeight ? layoutViewportHeight : visualViewportHeight;
+  const keyboardInset = Math.max(0, Math.round(layoutViewportHeight - viewportHeight));
   // Some mobile browsers resize the visual viewport before dispatching focusin.
   // Keep the expanded height as the baseline until the keyboard has fully closed.
-  if (!keyboardResizeDetected && (viewportHeight > mobileChatRestingViewportHeight || !inputFocused)) {
-    mobileChatRestingViewportHeight = viewportHeight;
+  if (!keyboardResizeDetected && (visualViewportHeight > mobileChatRestingViewportHeight || !inputFocused)) {
+    mobileChatRestingViewportHeight = visualViewportHeight;
   }
 
   body.style.setProperty('--messenger-chat-viewport-height', `${Math.round(viewportHeight)}px`);
@@ -85,12 +92,19 @@ function isActiveMobileChat() {
 function syncMobileQuickActionPlacement() {
   const shouldRelocate = isActiveMobileChat();
   const placements = [
+    ['#profile-button', '#mobile-account-quick-actions'],
+    ['#my-rooms-button', '#mobile-navigation-quick-actions'],
+    ['#create-room-button', '#mobile-navigation-quick-actions'],
     ['#notification-button', '#mobile-app-quick-actions'],
-    ['#profile-button', '#mobile-app-quick-actions'],
-    ['#my-rooms-button', '#mobile-app-quick-actions'],
-    ['#create-room-button', '#mobile-app-quick-actions'],
     ['#admin-tab-button', '#mobile-app-quick-actions'],
-    ['.chat-header-actions', '#mobile-room-quick-actions'],
+    ['#toggle-streamer-aside', '#mobile-management-quick-actions'],
+    ['#open-mini-game', '#mobile-tools-quick-actions'],
+    ['#chat-donation-link', '#mobile-tools-quick-actions'],
+    ['#chat-fanpage-link', '#mobile-tools-quick-actions'],
+    ['#room-state-pill', '#mobile-conversation-quick-actions'],
+    ['#export-chat-button', '#mobile-conversation-quick-actions'],
+    ['#member-action', '#mobile-conversation-quick-actions'],
+    ['#room-menu-button', '#mobile-conversation-quick-actions'],
   ];
 
   for (const [selector, targetSelector] of placements) {
@@ -112,6 +126,15 @@ function syncMobileQuickActionPlacement() {
 
   const trigger = $('#toggle-mobile-quick-menu');
   if (trigger) trigger.hidden = !shouldRelocate;
+  const managementSection = $('#mobile-management-menu-section');
+  if (managementSection) managementSection.hidden = !state.isOwner;
+  for (const section of document.querySelectorAll('[data-mobile-menu-section]')) {
+    if (section === managementSection && !state.isOwner) continue;
+    section.hidden = false;
+    const hasVisibleAction = Array.from(section.querySelectorAll('button, a, .room-state-pill'))
+      .some((action) => !action.hidden);
+    section.hidden = !hasVisibleAction;
+  }
   if (!shouldRelocate) setMobileQuickMenuOpen(false, false);
 }
 
@@ -732,11 +755,7 @@ function updateAsideAttention() {
   if (!toggle) return;
   const pendingCount = state.applications.length;
   const unseenCount = state.isOwner ? state.unseenApplicationUids.size : 0;
-  const visiblePendingCount = state.isOwner ? pendingCount : 0;
   const quickMenuTrigger = $('#toggle-mobile-quick-menu');
-  const quickMenuBadge = $('#mobile-quick-menu-badge');
-  const requestsShortcut = $('#mobile-open-requests');
-  const requestsCount = $('#mobile-requests-count');
   const isOpen = $('.chat-layout')?.classList.contains('is-aside-open');
   const actionLabel = isOpen ? '대화 관리 닫기' : '대화 관리 열기';
   const count = $('#aside-toggle-count');
@@ -752,20 +771,11 @@ function updateAsideAttention() {
   if (quickMenuTrigger) {
     quickMenuTrigger.classList.toggle('has-unseen', unseenCount > 0);
     quickMenuTrigger.setAttribute('aria-label', unseenCount
-      ? `채팅방 기능과 앱 설정 열기 · 새 신청 ${unseenCount}건`
-      : '채팅방 기능과 앱 설정 열기');
+      ? `빠른 메뉴 열기 · 새 대화 신청 ${unseenCount}건`
+      : '빠른 메뉴 열기');
     quickMenuTrigger.title = unseenCount
       ? `새 대화 신청 ${unseenCount}건이 있어요. 눌러 확인하세요.`
-      : '채팅방 기능과 앱 설정 열기';
-  }
-  if (quickMenuBadge) {
-    quickMenuBadge.textContent = String(visiblePendingCount);
-    quickMenuBadge.hidden = visiblePendingCount === 0;
-  }
-  if (requestsShortcut) requestsShortcut.hidden = !state.isOwner;
-  if (requestsCount) {
-    requestsCount.textContent = String(visiblePendingCount);
-    requestsCount.hidden = visiblePendingCount === 0;
+      : '계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다';
   }
   const requestTab = $('#streamer-aside .aside-tab[data-list-tab="requests"]');
   if (requestTab) requestTab.classList.toggle('has-unseen', unseenCount > 0);
@@ -788,7 +798,11 @@ function setAsideDrawerOpen(open, restoreFocus = true) {
   updateAsideAttention();
   if (restoreFocus) {
     if (shouldOpen) $('#close-streamer-aside').focus();
-    else if (mobile) toggle?.focus();
+    else if (mobile) {
+      const focusTarget = $('#toggle-mobile-quick-menu');
+      if (focusTarget && !focusTarget.hidden) focusTarget.focus();
+      else toggle?.focus();
+    }
   }
 }
 
@@ -3740,19 +3754,15 @@ function bindEvents() {
     const action = event.target.closest('button, a');
     if (action && action.id !== 'close-mobile-quick-menu') setMobileQuickMenuOpen(false, false);
   });
-  $('#mobile-open-requests').addEventListener('click', () => {
-    if (!state.isOwner) return;
-    setMobileQuickMenuOpen(false, false);
-    switchAside('requests');
-    setAsideDrawerOpen(true);
-  });
   $('#toggle-mobile-room-tools').addEventListener('click', () => {
     setMobileRoomToolsOpen(!state.mobileRoomToolsOpen);
   });
   $('#toggle-chat-fullscreen').addEventListener('click', enterChatFullscreenFromButton);
   $('#toggle-streamer-aside').addEventListener('click', () => {
     if (Date.now() < asideSwipeSuppressClickUntil) return;
-    setAsideDrawerOpen(!$('.chat-layout').classList.contains('is-aside-open'));
+    const isOpen = $('.chat-layout').classList.contains('is-aside-open');
+    if (!isOpen && state.unseenApplicationUids.size) switchAside('requests');
+    setAsideDrawerOpen(!isOpen);
   });
   $('#close-streamer-aside').addEventListener('click', () => setAsideDrawerOpen(false));
   $('#chat-aside-backdrop').addEventListener('click', () => setAsideDrawerOpen(false));
