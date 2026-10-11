@@ -456,6 +456,13 @@
 .mobile-requests-shortcut{display:none}
 
 @media(max-width:680px){
+  .topbar{gap:8px;padding:0 12px}
+  .topbar-actions{flex:0 0 auto;gap:0}
+  .topbar-actions>#notification-button,.topbar-actions>#profile-button,.topbar-actions>#my-rooms-button,.topbar-actions>#create-room-button,.topbar-actions>#admin-tab-button{display:none!important}
+  .topbar-actions>.mobile-quick-menu-trigger{display:grid;width:38px;min-width:38px;height:38px;place-items:center;padding:0;border-radius:12px;font-size:23px;line-height:1}
+  .chat-header{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+  .chat-title-wrap{flex:1 1 0%;min-width:0;overflow:hidden}
+  .chat-header>.back-button,.chat-header>.aside-toggle-button,.chat-header>.chat-avatar,.chat-header>.mobile-room-tools-trigger,.chat-header>.chat-fullscreen-button{flex-shrink:0}
   body.messenger-chat-open .topbar{height:52px;flex:0 0 52px;padding:0 12px}
   body.messenger-chat-open .brand{gap:0}
   body.messenger-chat-open .brand-name{display:none}

@@ -130,7 +130,7 @@ function isActiveMobileChat() {
 }
 
 function syncMobileQuickActionPlacement() {
-  const shouldRelocate = isActiveMobileChat();
+  const shouldRelocate = isMobileChatLayout();
   const placements = [
     ['#profile-button', '#mobile-account-quick-actions'],
     ['#my-rooms-button', '#mobile-navigation-quick-actions'],
@@ -165,7 +165,7 @@ function syncMobileQuickActionPlacement() {
   }
 
   const trigger = $('#toggle-mobile-quick-menu');
-  if (trigger) trigger.hidden = !shouldRelocate;
+  if (trigger) trigger.hidden = !isMobileChatLayout();
   const managementSection = $('#mobile-management-menu-section');
   if (managementSection) managementSection.hidden = !state.isOwner;
   for (const section of document.querySelectorAll('[data-mobile-menu-section]')) {
@@ -183,7 +183,7 @@ function setMobileQuickMenuOpen(open, restoreFocus = true) {
   const backdrop = $('#mobile-quick-menu-backdrop');
   const trigger = $('#toggle-mobile-quick-menu');
   if (!panel || !backdrop || !trigger) return;
-  const shouldOpen = isActiveMobileChat() && !!open;
+  const shouldOpen = isMobileChatLayout() && !!open;
   clearTimeout(mobileQuickMenuCloseTimer);
   mobileQuickMenuTransitionToken += 1;
   const transitionToken = mobileQuickMenuTransitionToken;
