@@ -953,7 +953,16 @@ const messengerSetMemberStatus = onCall(async (request) => {
   return { status };
 });
 
-const ROOM_MARKET_STOCK_LIMIT = 12;
+function isRoomMarketStockNameForStreamer(stockName, streamerName) {
+  const normalize = (value) => String(value || '').normalize('NFC').trim().toLocaleLowerCase('ko-KR');
+  const stock = normalize(stockName);
+  const streamer = normalize(streamerName);
+  if (!stock || !streamer) return false;
+  if (stock === streamer) return true;
+  const crewPrefixedName = stock.match(/^\[crew\]\s*(.+)$/);
+  return !!crewPrefixedName && normalize(crewPrefixedName[1]) === streamer;
+}
+
 const messengerRoomMarketUpdate = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId: rawRoomId, stockId: rawStockId, action } = request.data || {};
@@ -961,7 +970,7 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
   const stockId = String(rawStockId || '');
   if (!['add', 'remove'].includes(action)) throw new HttpsError('invalid-argument', '요청이 올바르지 않습니다.');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
-  const { isOwner } = await requireRoomMember(p, roomId);
+  const { isOwner, meta } = await requireRoomMember(p, roomId);
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(stockId)) throw new HttpsError('invalid-argument', '종목 정보가 올바르지 않습니다.');
   const stocksRef = db().ref(`${ROOT}/roomMarkets/${roomId}/stocks`);
 
@@ -976,17 +985,19 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
   const publicStockSnap = await db().ref(`stocksPublic/${stockId}`).get();
   const stockSnap = await db().ref(`stocks/${stockId}`).get();
   if (!publicStockSnap.exists() || !stockSnap.exists()) throw new HttpsError('not-found', '현재 거래할 수 있는 종목이 아닙니다.');
-  const stock = publicStockSnap.val() || {};
+  const stock = stockSnap.val() || {};
+  if (!isRoomMarketStockNameForStreamer(stock.name, meta.streamerNickname)) {
+    throw new HttpsError('failed-precondition', '이 채팅방에서는 해당 스트리머의 종목만 연결할 수 있습니다.');
+  }
   const addedAt = now();
   let alreadyAdded = false;
   const result = await stocksRef.transaction((current) => {
     const stocks = current || {};
-    alreadyAdded = Object.prototype.hasOwnProperty.call(stocks, stockId);
+    alreadyAdded = Object.prototype.hasOwnProperty.call(stocks, stockId) && Object.keys(stocks).length === 1;
     if (alreadyAdded) return stocks;
-    if (Object.keys(stocks).length >= ROOM_MARKET_STOCK_LIMIT) return;
-    return { ...stocks, [stockId]: { stockId, name: String(stock.name || stockId).slice(0, 80), addedAt } };
+    return { [stockId]: { stockId, name: String(stock.name || stockId).slice(0, 80), addedAt } };
   });
-  if (!result.committed) throw new HttpsError('resource-exhausted', `채팅방에는 종목을 최대 ${ROOM_MARKET_STOCK_LIMIT}개까지 공유할 수 있습니다.`);
+  if (!result.committed) throw new HttpsError('aborted', '스트리머 종목을 연결하지 못했습니다. 다시 시도해 주세요.');
   try { await writeAudit(p.uid, 'roomMarket.stock.add', `${roomId}/${stockId}`); }
   catch (error) { logger.warn('공유 종목 추가 감사 기록 실패', error); }
   return { action, stock: result.snapshot.child(stockId).val(), alreadyAdded };
