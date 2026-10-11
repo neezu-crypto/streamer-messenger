@@ -25,7 +25,7 @@ function loadRoomToolsPipPreferences() {
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
@@ -55,11 +55,15 @@ const mobileQuickActionOrigins = new Map();
 
 function syncMobileChatViewport() {
   const mobile = window.matchMedia('(max-width: 680px)').matches;
-  const chatOpen = mobile && state.activeView === 'chat' && !!state.room;
+  const hasActiveChat = state.activeView === 'chat' && !!state.room;
+  const chatOpen = mobile && hasActiveChat;
+  const browserChromeRecovery = chatOpen && state.chatFullscreenRecovery;
   const root = document.documentElement;
   const body = document.body;
-  root.classList.toggle('mobile-chat-locked', chatOpen);
+  root.classList.toggle('mobile-chat-locked', chatOpen && !browserChromeRecovery);
+  body.classList.toggle('messenger-chat-browser-recovery', browserChromeRecovery);
   if (!chatOpen) {
+    if (!hasActiveChat) state.chatFullscreenRecovery = false;
     body.classList.remove('messenger-keyboard-open');
     window.clearTimeout(mobileChatKeyboardScrollTimer);
     mobileChatKeyboardScrollTimer = 0;
@@ -336,6 +340,7 @@ async function settleChatFullscreenRequest(attempt, keepFullscreen) {
 function exitChatFullscreen() {
   const shouldExit = state.chatFullscreenOwned;
   state.chatFullscreenOwned = false;
+  state.chatFullscreenRecovery = false;
   if (shouldExit && document.fullscreenElement && typeof document.exitFullscreen === 'function') {
     try {
       const result = document.exitFullscreen();
@@ -349,6 +354,10 @@ async function enterChatFullscreenFromButton() {
   if (state.activeView !== 'chat' || !state.room) return;
   const attempt = beginChatFullscreenRequest();
   const entered = await settleChatFullscreenRequest(attempt, true);
+  if (entered) {
+    state.chatFullscreenRecovery = false;
+    syncMobileChatViewport();
+  }
   if (!entered) showToast('이 브라우저에서 전체 화면 전환을 허용하지 않았어요.');
 }
 
@@ -1051,6 +1060,7 @@ async function selectRoom(room) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  state.chatFullscreenRecovery = false;
   resetRoomToolVideo();
   state.asideTab = 'fans';
   setAsideDrawerOpen(false, false);
@@ -3987,7 +3997,14 @@ function bindEvents() {
     scheduleMobileChatViewportSync();
   }, { passive: true });
   document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) state.chatFullscreenOwned = false;
+    if (!document.fullscreenElement) {
+      const exitedOwnedFullscreen = state.chatFullscreenOwned;
+      state.chatFullscreenOwned = false;
+      if (exitedOwnedFullscreen && state.activeView === 'chat' && state.room) state.chatFullscreenRecovery = true;
+    } else {
+      state.chatFullscreenRecovery = false;
+    }
+    if (!document.body.classList.contains('messenger-keyboard-open')) mobileChatRestingViewportHeight = 0;
     renderChatFullscreenButton();
     scheduleMobileChatViewportSync();
   });

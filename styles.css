@@ -595,6 +595,20 @@
   body.messenger-chat-open.messenger-keyboard-open .room-tools-sticky-slot:not(.is-keyboard-pinned){display:none!important}
 }
 
+/* Let Whale and other mobile browsers reveal their navigation controls after fullscreen exits. */
+@media(max-width:680px){
+  body.messenger-chat-open.messenger-chat-browser-recovery{height:auto;min-height:100vh;min-height:100dvh;max-height:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:auto}
+  body.messenger-chat-open.messenger-chat-browser-recovery .devbar,body.messenger-chat-open.messenger-chat-browser-recovery>.site-footer{display:flex}
+  body.messenger-chat-open.messenger-chat-browser-recovery .topbar{position:sticky;top:0;z-index:20}
+  body.messenger-chat-open.messenger-chat-browser-recovery .page-shell.chat-open{display:block;flex:0 0 auto;width:100%;height:auto;min-height:0;max-height:none;margin:0;padding:0;overflow:visible}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-view{display:block;flex:0 0 auto;height:auto;min-height:0;margin:0;padding:0;overflow:visible}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-layout{display:block;height:auto;min-height:0;overflow:visible}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-panel{height:auto;min-height:0;max-height:none;overflow:visible}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-header{position:sticky;top:46px;z-index:19}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-body{flex:0 0 auto;height:max(240px,calc(var(--messenger-chat-viewport-height,100dvh) - 190px));min-height:0;max-height:none;overflow-y:auto}
+  body.messenger-chat-open.messenger-chat-browser-recovery .chat-composer-wrap{position:sticky;bottom:0;z-index:12}
+}
+
 /* Keep the mobile chat chrome compact and group moved controls by purpose. */
 @media(max-width:680px){
   body.messenger-chat-open .topbar{height:46px;min-height:46px;flex-basis:46px;padding:0 10px}
