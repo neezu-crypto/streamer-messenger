@@ -4,6 +4,13 @@ const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 100;
 const ROOM_TOOLS_PIP_STORAGE_KEY = 'streamerMessenger.roomToolsPip';
+const MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY = 'streamerMessenger.mobileRoomToolsOpen';
+function loadMobileRoomToolsOpenPreference() {
+  try {
+    const value = window.localStorage.getItem(MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY);
+    return value === null ? true : value === 'true';
+  } catch (_) { return true; }
+}
 function loadRoomToolsPipPreferences() {
   try {
     const value = JSON.parse(window.localStorage.getItem(ROOM_TOOLS_PIP_STORAGE_KEY) || 'null');
@@ -19,6 +26,7 @@ function loadRoomToolsPipPreferences() {
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], messageSending: false, galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), linkPreviewCache: new Map(), roomselfTargetUid: '', roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: 'market', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
@@ -260,6 +268,7 @@ function syncMobileRoomToolsOverlay() {
 function setMobileRoomToolsOpen(open) {
   if (!isActiveMobileChat()) return;
   state.mobileRoomToolsOpen = !!open;
+  try { window.localStorage.setItem(MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY, String(state.mobileRoomToolsOpen)); } catch (_) { /* Storage may be unavailable in private browsing. */ }
   syncMobileRoomToolsOverlay();
 }
 
@@ -1029,7 +1038,6 @@ async function openChat(room, isOwner) {
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = ''; state.miniGameMutationPending = false;
   state.miniGameCollapsed = false;
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
-  state.mobileRoomToolsOpen = true;
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
@@ -1532,7 +1540,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
 function selectRoomTool(key) {
   if (!availableRoomToolSlides().some((slide) => slide.dataset.roomTool === key)) return;
   state.activeRoomTool = key;
-  if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
+  if (isActiveMobileChat()) setMobileRoomToolsOpen(true);
   renderRoomToolSwitcher();
 }
 
@@ -1707,7 +1715,6 @@ function renderMiniGame(errorMessage = '') {
   if (gameStarted) {
     const preserveSavedDesktopFold = isDesktopRoomToolsPip() && roomToolsPipPreferences && roomToolsPipPreferences.collapsed;
     if (!preserveSavedDesktopFold) setRoomToolsPipCollapsed(false);
-    if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
   }
   state.renderedMiniGameId = gameId;
   setMiniGameCollapsed(state.miniGameCollapsed);
@@ -2775,7 +2782,7 @@ function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', 
     state.roomVideoSourceCard = sourceCard;
   }
   setRoomToolsPipCollapsed(false);
-  if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
+  if (isActiveMobileChat()) setMobileRoomToolsOpen(true);
   renderRoomToolSwitcher('video');
   if (media instanceof HTMLVideoElement) media.play().catch(() => {});
   requestAnimationFrame(() => {
@@ -3434,7 +3441,6 @@ function leaveChat() {
   exitChatFullscreen();
   state.miniGame = null; state.miniGameSelectedLane = -1; state.miniGameSelectedId = '';
   state.activeRoomTool = 'market'; state.roomToolTabKeys = ''; state.renderedMiniGameId = '';
-  state.mobileRoomToolsOpen = false;
   $('#room-tools-sticky-slot').hidden = true;
   $('#room-tool-market-slide').hidden = true;
   $('#room-tool-mini-game-slide').hidden = true;
