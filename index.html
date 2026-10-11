@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-market-layout-fix2">
+  <link rel="stylesheet" href="styles.css?v=20261012-room-market-stacked-chart">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -64,10 +64,8 @@
                   <div class="room-market-chart" id="room-market-chart" aria-label="최근 주가 흐름"><span>차트를 불러오는 중…</span></div>
                   <p class="room-market-trade-note">현재 채팅방 스트리머 종목의 가격 흐름과 내 보유량입니다.</p>
                   <div class="room-market-order-row"><input class="text-input" id="room-market-qty" type="number" min="1" max="10" step="1" value="1" aria-label="거래 수량" title="1주부터 10주까지 거래 수량을 입력합니다"><button class="button room-market-sell-button" id="room-market-sell" type="button" title="선택한 스트리머 종목을 매도합니다">매도</button><button class="button room-market-buy-button" id="room-market-buy" type="button" title="선택한 스트리머 종목을 매수합니다">매수</button></div>
-                  <label class="room-market-nickname-option"><input id="room-market-show-nickname" type="checkbox" title="거래 피드에 공개 프로필 닉네임을 표시합니다"><span>내 공개 프로필 닉네임을 거래 피드에 표시</span></label>
                   <p class="room-market-trade-status" id="room-market-trade-status" role="status" aria-live="polite" hidden></p>
                 </section>
-                <div class="room-market-feed-wrap"><div class="room-market-feed-heading"><strong>실시간 거래</strong><span id="room-market-feed-count">최근 거래</span></div><div class="room-market-feed" id="room-market-feed" aria-live="polite"><p class="room-market-empty">아직 채팅방 거래가 없습니다.</p></div></div>
               </div>
             </section>
           </div>
@@ -500,6 +498,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-room-market-one-screen"></script>
+  <script type="module" src="js/app.js?v=20261012-room-market-stacked-chart"></script>
 </body>
 </html>

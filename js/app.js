@@ -25,7 +25,7 @@ function loadRoomToolsPipPreferences() {
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketFeed: [], roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
@@ -2097,7 +2097,7 @@ function bindRoomToolControls() {
 
   let touchStart = null;
   viewport.addEventListener('touchstart', (event) => {
-    if (event.touches.length !== 1 || event.target.closest('button,a,input,textarea,select,.room-market-stock-list,.room-market-feed,.ladder-board-scroll')) {
+    if (event.touches.length !== 1 || event.target.closest('button,a,input,textarea,select,.room-market-stock-list,.ladder-board-scroll')) {
       touchStart = null;
       return;
     }
@@ -2421,7 +2421,6 @@ function subscribeRoomMarket() {
   renderRoomToolSwitcher();
   if (panel.hidden) return;
   state.roomMarketStocks = {};
-  state.roomMarketFeed = [];
   state.roomMarketQuotes = {};
   state.roomMarketPriceHistory = {};
   state.roomMarketInvalidStockIds = new Set();
@@ -2430,8 +2429,7 @@ function subscribeRoomMarket() {
   state.roomMarketSelectedStockId = '';
   $('#room-market-trade-view').hidden = true;
   $('#room-market-stock-list').innerHTML = '<p class="room-market-empty">공유 종목을 불러오는 중…</p>';
-  $('#room-market-feed').innerHTML = '<p class="room-market-empty">거래 내역을 불러오는 중…</p>';
-  const { db, ref, onValue, query, orderByKey, limitToLast } = api();
+  const { db, ref, onValue } = api();
   state.unsubscribers.push(onValue(ref(db, `streamerMessenger/roomMarkets/${roomId}/stocks`), (snapshot) => {
     if (!state.room || state.room.roomId !== roomId) return;
     state.roomMarketStocks = snapshot.val() || {};
@@ -2448,15 +2446,6 @@ function subscribeRoomMarket() {
   }, (error) => {
     console.warn('채팅방 공유 종목을 구독하지 못했습니다.', error);
     $('#room-market-stock-list').innerHTML = '<p class="room-market-empty">공유 종목을 불러오지 못했습니다.</p>';
-  }));
-  const feedQuery = query(ref(db, `streamerMessenger/roomMarkets/${roomId}/trades`), orderByKey(), limitToLast(8));
-  state.unsubscribers.push(onValue(feedQuery, (snapshot) => {
-    if (!state.room || state.room.roomId !== roomId) return;
-    state.roomMarketFeed = Object.values(snapshot.val() || {}).sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
-    renderRoomMarketFeed();
-  }, (error) => {
-    console.warn('채팅방 거래 피드를 구독하지 못했습니다.', error);
-    $('#room-market-feed').innerHTML = '<p class="room-market-empty">거래 내역을 불러오지 못했습니다.</p>';
   }));
 }
 
@@ -2613,22 +2602,6 @@ function renderRoomMarketStocks() {
   }
 }
 
-function renderRoomMarketFeed() {
-  const host = $('#room-market-feed'); host.replaceChildren();
-  const recentItems = state.roomMarketFeed.filter((item) => isRoomStreamerMarketStockName(item.stockName || item.stockId)).slice(0, 4);
-  $('#room-market-feed-count').textContent = `최근 ${recentItems.length}건`;
-  if (!recentItems.length) {
-    const empty = document.createElement('p'); empty.className = 'room-market-empty'; empty.textContent = '아직 채팅방 거래가 없습니다.'; host.appendChild(empty); return;
-  }
-  for (const item of recentItems) {
-    const row = document.createElement('div'); row.className = 'room-market-feed-item';
-    const person = document.createElement('span'); person.textContent = item.nickname ? `${item.nickname} · ` : '참여자 · ';
-    const action = document.createElement('strong'); action.className = item.type === 'buy' ? 'buy' : 'sell'; action.textContent = item.type === 'buy' ? '매수' : '매도';
-    const detail = document.createElement('span'); detail.textContent = ` ${item.stockName || item.stockId} ${Number(item.qty) || 0}주 · ${Number(item.price || 0).toLocaleString('ko-KR')}원`;
-    row.append(person, action, detail); host.appendChild(row);
-  }
-}
-
 async function openRoomMarketAddDialog() {
   if (!state.room) return;
   const roomId = state.room.roomId;
@@ -2696,7 +2669,7 @@ async function openRoomMarketTrade(stockId) {
   if (!state.room || !getRoomStreamerMarketStockEntries().some(([id]) => id === stockId)) return;
   state.roomMarketSelectedStockId = stockId;
   $('#room-market-trade-view').hidden = false;
-  $('#room-market-qty').value = '1'; $('#room-market-show-nickname').checked = false;
+  $('#room-market-qty').value = '1';
   $('#room-market-trade-status').hidden = true;
   $('#room-market-trade-title').textContent = state.roomMarketQuotes[stockId]?.name || state.roomMarketStocks[stockId].name || stockId;
   renderRoomMarketQuote(stockId);
@@ -2763,7 +2736,7 @@ async function executeRoomMarketTrade(type) {
   $('#room-market-trade-status').hidden = false; $('#room-market-trade-status').textContent = '거래를 처리하고 있습니다…';
   const stockId = state.roomMarketSelectedStockId; const roomId = state.room.roomId;
   try {
-    const result = await call('trade', { stockId, type, qty, messengerRoomId: roomId, showNickname: $('#room-market-show-nickname').checked });
+    const result = await call('trade', { stockId, type, qty, messengerRoomId: roomId });
     call('triggerBotReaction', { stockId, type }).catch(() => {});
     $('#room-market-trade-status').textContent = `${type === 'buy' ? '매수' : '매도'} 체결 · ${qty}주 · 체결가 ${Number(result.price || 0).toLocaleString('ko-KR')}원`;
     $('#room-market-personal-cash').textContent = `${Number(result.cash || 0).toLocaleString('ko-KR')}원`;
