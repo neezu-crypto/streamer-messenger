@@ -942,7 +942,7 @@
 }
 
 /* Put stock cards above the detail panel and let the chart use the remaining tool height. */
-@media(min-width:900px){#room-tools-viewport:has(#room-tool-market-slide[aria-hidden="false"]){aspect-ratio:4/3}}
+@media(min-width:900px){#room-tools-viewport:has(#room-tool-market-slide[aria-hidden="false"]){aspect-ratio:4/3!important}}
 .room-tools-sticky-slot .room-market-heading{gap:6px;padding-bottom:4px}
 .room-tools-sticky-slot .room-market-collapse-button{width:28px;height:28px}
 .room-tools-sticky-slot #add-room-stock{height:28px}
