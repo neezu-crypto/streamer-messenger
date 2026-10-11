@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-pip-frame-drag">
+  <link rel="stylesheet" href="styles.css?v=20261012-room-tool-launcher">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -41,6 +41,16 @@
       <button class="room-tools-pip-collapse" id="toggle-room-tools-pip" type="button" aria-expanded="true" aria-controls="room-tools-content" aria-label="채팅 도구 패널 접기" title="채팅 도구 패널을 접습니다"><span aria-hidden="true">⌃</span></button>
     </div>
     <div class="room-tools-content" id="room-tools-content">
+      <section class="room-tools-launcher" id="room-tools-launcher" aria-label="채팅 도구 선택" hidden>
+        <p class="room-tools-launcher-heading">원하는 채팅 도구를 선택하세요</p>
+        <div class="room-tools-launcher-grid">
+          <button class="room-tools-launcher-option" type="button" data-room-tool-launch="market" title="채팅방 주식시장과 공유 종목을 엽니다"><span class="room-tools-launcher-icon market" aria-hidden="true">↗</span><span><strong>주식시장</strong><small>공유 종목과 거래</small></span></button>
+          <button class="room-tools-launcher-option" type="button" data-room-tool-launch="mini-game" title="진행 중인 미니게임을 보거나 사다리 게임을 시작합니다"><span class="room-tools-launcher-icon game" aria-hidden="true">🎲</span><span><strong>미니게임</strong><small>게임 시작과 참여</small></span></button>
+          <button class="room-tools-launcher-option" type="button" data-room-tool-launch="video" title="채팅에서 선택한 영상이나 스트리머 클립을 재생합니다"><span class="room-tools-launcher-icon video" aria-hidden="true">▶</span><span><strong>영상보기</strong><small>영상과 클립 재생</small></span></button>
+          <button class="room-tools-launcher-option" type="button" data-room-tool-launch="party" title="같이보기 영상을 예약하거나 진행 중인 영상에 참여합니다"><span class="room-tools-launcher-icon party" aria-hidden="true">◷</span><span><strong>같이보기</strong><small>참여자와 함께 재생</small></span></button>
+        </div>
+      </section>
+      <button class="room-tools-home-button" id="room-tools-home-button" type="button" title="주식시장, 미니게임, 영상보기, 같이보기 메뉴를 표시합니다" hidden>‹ 도구 선택</button>
       <nav class="room-tools-switcher" id="room-tools-switcher" role="tablist" aria-label="채팅방 기능" hidden></nav>
       <div class="room-tools-viewport" id="room-tools-viewport">
         <div class="room-tools-track" id="room-tools-track">
@@ -69,6 +79,12 @@
               <button class="room-video-mode-tab" type="button" role="tab" data-room-video-mode="personal" aria-selected="true">개인 영상</button>
               <button class="room-video-mode-tab" type="button" role="tab" data-room-video-mode="party" aria-selected="false">같이보기</button>
             </nav>
+            <section class="room-video-empty-state" id="room-video-empty-state" aria-label="영상 보기 안내" hidden>
+              <span class="room-video-empty-icon" aria-hidden="true">▶</span>
+              <strong>채팅에서 영상을 선택해 보세요</strong>
+              <p>메시지의 영상 재생 버튼을 누르면 이 도구에서 재생돼요.</p>
+              <button class="button button-quiet" id="open-room-clips-from-tool" type="button" title="이 채팅방 스트리머의 클립을 찾아 재생합니다">스트리머 클립 찾기</button>
+            </section>
             <section class="room-video-tool-panel" id="room-video-tool-panel" data-empty="true" aria-labelledby="room-video-tool-title" hidden>
               <header class="room-video-tool-heading">
                 <div><p class="eyebrow">ROOM VIDEO</p><h3 id="room-video-tool-title">채팅 영상</h3><p id="room-video-tool-caption">메시지에서 선택한 영상을 재생합니다.</p></div>
@@ -488,6 +504,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-pip-frame-drag"></script>
+  <script type="module" src="js/app.js?v=20261012-room-tool-launcher"></script>
 </body>
 </html>

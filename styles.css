@@ -283,6 +283,27 @@
 .room-tool-slide{display:flex;flex:0 0 100%;justify-content:center;min-width:0}
 .room-tool-slide.is-compact{justify-content:flex-start}
 .room-tool-slide[hidden],.room-tools-sticky-slot[hidden],.room-tools-switcher[hidden]{display:none!important}
+.room-tools-launcher{display:grid;grid-template-rows:auto minmax(0,1fr);gap:9px;width:100%;aspect-ratio:16/9;padding:11px;border:1px solid rgba(126,148,185,.18);border-radius:15px;background:rgba(255,255,255,.76)}
+.room-tools-launcher-heading{margin:0;color:#74829c;font-size:10px;font-weight:750;letter-spacing:.04em}
+.room-tools-launcher-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:7px;min-height:0}
+.room-tools-launcher-option{display:flex;align-items:center;gap:9px;min-width:0;min-height:62px;padding:8px 10px;border:1px solid rgba(126,148,185,.18);border-radius:12px;background:rgba(255,255,255,.92);color:#344260;text-align:left;transition:border-color .16s,background .16s,transform .16s}
+.room-tools-launcher-option:hover,.room-tools-launcher-option:focus-visible{border-color:rgba(91,119,225,.4);background:#fff;outline:0;transform:translateY(-1px)}
+.room-tools-launcher-option strong,.room-tools-launcher-option small{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-tools-launcher-option strong{font-size:11px;font-weight:800}
+.room-tools-launcher-option small{margin-top:3px;color:#8592a8;font-size:9px}
+.room-tools-launcher-icon{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border-radius:10px;background:#eef2ff;color:#5e79e6;font-size:18px;font-weight:800}
+.room-tools-launcher-icon.game{background:#fff5e4;color:#b47b20;font-size:16px}
+.room-tools-launcher-icon.video{background:#e9f8ff;color:#159fce;font-size:15px}
+.room-tools-launcher-icon.party{background:#f0edff;color:#7562d2;font-size:20px}
+.room-tools-home-button{display:block;min-height:28px;margin:0 0 5px;padding:0 5px;border:0;background:transparent;color:#647490;font-size:10px;font-weight:750;text-align:left}
+.room-tools-home-button:hover,.room-tools-home-button:focus-visible{color:#526fd7;outline:0}
+.room-video-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;height:100%;min-height:150px;padding:12px;border:1px solid rgba(126,148,185,.18);border-radius:15px;background:linear-gradient(145deg,#f8fbff,#edf4ff);color:#344260;text-align:center}
+.room-video-empty-state[hidden]{display:none!important}
+.room-video-empty-icon{display:grid;width:34px;height:34px;place-items:center;border-radius:11px;background:#e4f6fc;color:#149dc9;font-size:15px}
+.room-video-empty-state strong{font-size:12px}
+.room-video-empty-state p{max-width:100%;margin:0;color:#8290a8;font-size:9px}
+.room-video-empty-state .button{min-height:30px;margin-top:3px;padding:0 10px;font-size:9px}
+.room-tools-launcher[hidden],.room-tools-home-button[hidden]{display:none!important}
 .room-tools-sticky-slot .room-market-panel{width:100%;margin:0}
 .room-tools-sticky-slot .mini-game-live-panel{width:100%;margin:0;border:1px solid rgba(126,148,185,.2);border-radius:16px;box-shadow:0 10px 30px rgba(63,91,144,.12)}
 .room-tools-sticky-slot .room-video-tool-panel{width:100%;margin:0}
@@ -291,7 +312,23 @@
   .room-tools-switcher{margin-bottom:5px;padding:3px;border-radius:12px}
   .room-tool-tab{min-height:32px;padding:0 10px;font-size:10px}
   .room-tools-switcher.is-scrollable .room-tool-tab{padding:0 12px}
+  .room-tools-launcher{gap:7px;padding:8px;border-radius:12px}
+  .room-tools-launcher-grid{gap:5px}
+  .room-tools-launcher-option{min-height:0;gap:7px;padding:6px 7px;border-radius:10px}
+  .room-tools-launcher-icon{width:29px;height:29px;flex-basis:29px;border-radius:9px;font-size:16px}
+  .room-tools-launcher-option strong{font-size:10px}
+  .room-tools-launcher-option small{font-size:8px}
+  .room-video-empty-state{min-height:120px;border-radius:12px}
   .room-tools-sticky-slot .mini-game-live-panel{border-radius:14px}
+}
+@media(max-width:680px) and (max-height:520px){
+  .room-tools-launcher{gap:3px;padding:5px;border-radius:10px}
+  .room-tools-launcher-heading{display:none}
+  .room-tools-launcher-grid{gap:4px}
+  .room-tools-launcher-option{gap:5px;padding:4px;border-radius:8px}
+  .room-tools-launcher-icon{width:22px;height:22px;flex-basis:22px;font-size:13px}
+  .room-tools-launcher-option strong{font-size:9px}
+  .room-tools-launcher-option small{display:none}
 }
 .mini-game-live-actions{display:flex;align-items:center;gap:7px}
 .mini-game-collapse-button{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border:1px solid rgba(126,148,185,.2);border-radius:9px;background:rgba(255,255,255,.76);color:#64748b;font-size:16px}
