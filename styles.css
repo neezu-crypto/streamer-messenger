@@ -704,3 +704,9 @@
   .room-clip-actions{grid-column:1/-1;justify-content:flex-end}
   .room-clip-actions .button{min-height:30px;flex:1;padding:0 7px;font-size:9px}
 }
+
+@media(max-width:680px){
+  .chat-header{padding-right:max(14px,env(safe-area-inset-right,0px))}
+  .chat-header>.mobile-room-tools-trigger,.chat-header>.chat-fullscreen-button{box-sizing:border-box;flex-shrink:0;width:34px;min-width:34px;max-width:34px;padding:0}
+  body.messenger-chat-open .chat-header>.mobile-room-tools-trigger{width:31px;min-width:31px;max-width:31px;flex-basis:31px}
+}
