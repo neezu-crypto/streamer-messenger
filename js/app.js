@@ -82,7 +82,6 @@ function syncMobileChatViewport() {
   body.classList.toggle('messenger-keyboard-open', keyboardOpen);
   if (keyboardOpen) {
     if (document.body.classList.contains('messenger-quick-menu-open')) setMobileQuickMenuOpen(false, false);
-    if (state.mobileRoomToolsOpen) setMobileRoomToolsOpen(false);
   }
   const composerHeight = $('.chat-composer-wrap')?.getBoundingClientRect().height || 86;
   body.style.setProperty('--messenger-chat-composer-height', `${Math.ceil(composerHeight)}px`);
@@ -3834,11 +3833,6 @@ function bindEvents() {
       event.preventDefault(); setAsideDrawerOpen(false);
     }
   });
-  document.addEventListener('pointerdown', (event) => {
-    if (!isActiveMobileChat() || !state.mobileRoomToolsOpen) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (target && !target.closest('#room-tools-sticky-slot, #toggle-mobile-room-tools')) setMobileRoomToolsOpen(false);
-  }, { passive: true });
   document.addEventListener('pointerdown', (event) => {
     if (!state.isOwner || !window.matchMedia('(max-width: 680px)').matches || event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
