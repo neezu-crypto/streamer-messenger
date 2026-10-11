@@ -32,6 +32,8 @@ let asideSwipeStart = null;
 let asideSwipeSuppressClickUntil = 0;
 let mobileChatViewportFrame = 0;
 let mobileChatRestingViewportHeight = 0;
+let mobileChatKeyboardScrollTimer = 0;
+let mobileChatFollowLatestOnKeyboard = false;
 let mobileQuickMenuCloseTimer = 0;
 let mobileQuickMenuTransitionToken = 0;
 const mobileQuickActionOrigins = new Map();
@@ -44,6 +46,9 @@ function syncMobileChatViewport() {
   root.classList.toggle('mobile-chat-locked', chatOpen);
   if (!chatOpen) {
     body.classList.remove('messenger-keyboard-open');
+    window.clearTimeout(mobileChatKeyboardScrollTimer);
+    mobileChatKeyboardScrollTimer = 0;
+    mobileChatFollowLatestOnKeyboard = false;
     body.style.removeProperty('--messenger-chat-viewport-height');
     body.style.removeProperty('--messenger-chat-viewport-offset-top');
     body.style.removeProperty('--messenger-chat-keyboard-inset');
@@ -80,6 +85,18 @@ function syncMobileChatViewport() {
   body.style.setProperty('--messenger-chat-viewport-offset-top', `${Math.round(viewportOffsetTop)}px`);
   body.style.setProperty('--messenger-chat-keyboard-inset', `${keyboardInset}px`);
   body.classList.toggle('messenger-keyboard-open', keyboardOpen);
+  if (keyboardOpen && mobileChatFollowLatestOnKeyboard) {
+    window.clearTimeout(mobileChatKeyboardScrollTimer);
+    mobileChatKeyboardScrollTimer = window.setTimeout(() => {
+      mobileChatKeyboardScrollTimer = 0;
+      if (!isActiveMobileChat() || !document.body.classList.contains('messenger-keyboard-open')) return;
+      const timeline = $('#timeline');
+      if (timeline) timeline.scrollTop = timeline.scrollHeight;
+    }, 140);
+  } else if (!keyboardOpen) {
+    window.clearTimeout(mobileChatKeyboardScrollTimer);
+    mobileChatKeyboardScrollTimer = 0;
+  }
   if (keyboardOpen) {
     if (document.body.classList.contains('messenger-quick-menu-open')) setMobileQuickMenuOpen(false, false);
   }
@@ -3793,7 +3810,14 @@ function bindEvents() {
   });
   window.visualViewport?.addEventListener('resize', scheduleMobileChatViewportSync, { passive: true });
   window.visualViewport?.addEventListener('scroll', scheduleMobileChatViewportSync, { passive: true });
-  document.addEventListener('focusin', scheduleMobileChatViewportSync);
+  document.addEventListener('focusin', (event) => {
+    if (event.target?.id === 'message-input' && isActiveMobileChat()) {
+      const timeline = $('#timeline');
+      mobileChatFollowLatestOnKeyboard = !!timeline
+        && timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 64;
+    }
+    scheduleMobileChatViewportSync();
+  });
   document.addEventListener('focusout', scheduleMobileChatViewportSync);
   syncMobileQuickActionPlacement();
   syncMobileChatViewport();
@@ -3874,7 +3898,11 @@ function bindEvents() {
     $('#fan-search').focus();
   });
   $('#timeline').addEventListener('scroll', () => {
-    if ($('#timeline').scrollTop <= 36 && state.hasOlderMessages) loadOlderMessages();
+    const timeline = $('#timeline');
+    if (isActiveMobileChat() && !document.body.classList.contains('messenger-keyboard-open')) {
+      mobileChatFollowLatestOnKeyboard = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 64;
+    }
+    if (timeline.scrollTop <= 36 && state.hasOlderMessages) loadOlderMessages();
   }, { passive: true });
   $('#profile-button').addEventListener('click', openProfile);
   $('#create-room-button').addEventListener('click', openOwnRoom);
