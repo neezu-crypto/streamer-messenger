@@ -1415,11 +1415,14 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
   }
   const nextStatus = action === 'cancel' ? 'cancelled' : 'ended';
   const changed = await partyRef.transaction((current) => {
-    if (!current || current.partyId !== partyId || !['scheduled', 'active'].includes(current.status)) return;
-    if (action === 'cancel' && at >= Number(current.startsAt)) return;
-    if (action === 'finish' && at < Number(current.startsAt)) return;
-    if (action === 'complete' && (!Number(current.endsAt) || at < Number(current.endsAt) - 5000)) return;
-    return { ...current, status: nextStatus, updatedAt: at, ...(nextStatus === 'ended' ? { endedAt: at } : { cancelledAt: at, cancelledByUid: principal.uid }) };
+    // A transaction can start with an empty local cache even after the preceding get().
+    // Use that verified read as its candidate; RTDB retries with the server value if it changed.
+    const latest = current || before;
+    if (!latest || latest.partyId !== partyId || !['scheduled', 'active'].includes(latest.status)) return;
+    if (action === 'cancel' && at >= Number(latest.startsAt)) return;
+    if (action === 'finish' && at < Number(latest.startsAt)) return;
+    if (action === 'complete' && (!Number(latest.endsAt) || at < Number(latest.endsAt) - 5000)) return;
+    return { ...latest, status: nextStatus, updatedAt: at, ...(nextStatus === 'ended' ? { endedAt: at } : { cancelledAt: at, cancelledByUid: principal.uid }) };
   });
   return { watchParty: changed.snapshot.val() || before, stale: !changed.committed };
 });
