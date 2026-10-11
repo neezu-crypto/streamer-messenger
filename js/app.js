@@ -3213,7 +3213,7 @@ function openRoomWatchPartyDialog(prefill = {}) {
   $('#room-watch-party-form-error').hidden = true;
   $('#room-watch-party-url').value = String(prefill.url || '');
   $('#room-watch-party-title-input').value = String(prefill.title || '');
-  $('#room-watch-party-delay').value = '1';
+  $('#room-watch-party-delay').value = '60';
   $('#room-watch-party-duration').value = Number(prefill.durationSeconds) > 0 ? String(Math.floor(Number(prefill.durationSeconds))) : '';
   $('#room-watch-party-submit').disabled = false;
   $('#room-watch-party-submit').textContent = '채팅 도구에 예약';
@@ -3225,20 +3225,20 @@ async function submitRoomWatchParty(event) {
   event.preventDefault();
   if (!state.room || state.watchPartyMutationPending) return;
   const url = $('#room-watch-party-url').value.trim();
-  const delayMinutes = Number($('#room-watch-party-delay').value);
+  const delaySeconds = Number($('#room-watch-party-delay').value);
   const durationInput = $('#room-watch-party-duration').value.trim();
   const durationSeconds = durationInput ? Number(durationInput) : 0;
   const title = $('#room-watch-party-title-input').value.trim();
   const error = $('#room-watch-party-form-error');
   error.hidden = true;
-  if (!url || !Number.isInteger(delayMinutes) || delayMinutes < 0 || delayMinutes > 120
+  if (!url || !Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 7200 || delaySeconds % 10 !== 0
     || (durationInput && (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 43200))) {
-    error.hidden = false; error.textContent = '영상 링크, 시작 시간 또는 영상 길이를 확인해 주세요.'; return;
+    error.hidden = false; error.textContent = '영상 링크, 시작 대기 시간(10초 단위) 또는 영상 길이를 확인해 주세요.'; return;
   }
   const submit = $('#room-watch-party-submit');
   state.watchPartyMutationPending = true; submit.disabled = true; submit.textContent = '예약 중…';
   try {
-    const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, action: 'create', url, title, startDelayMinutes: delayMinutes, durationSeconds });
+    const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, action: 'create', url, title, startDelaySeconds: delaySeconds, durationSeconds });
     closeDialog('room-watch-party-dialog');
     if (result && result.watchParty) {
       state.watchPartyArmedId = '';

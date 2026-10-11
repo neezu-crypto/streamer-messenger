@@ -1371,16 +1371,19 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
 
   if (action === 'create') {
     const video = parseWatchPartyVideo(safeText(String(data.url || ''), 2048, true));
-    const delayMinutes = Number(data.startDelayMinutes);
+    // Older open pages may still submit minutes; convert those while new pages submit seconds.
+    const delaySeconds = data.startDelaySeconds == null
+      ? Number(data.startDelayMinutes) * 60
+      : Number(data.startDelaySeconds);
     const durationSeconds = Number(data.durationSeconds || 0);
-    if (!Number.isInteger(delayMinutes) || delayMinutes < 0 || delayMinutes > 120
+    if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 7200 || delaySeconds % 10 !== 0
       || !Number.isInteger(durationSeconds) || durationSeconds < 0 || durationSeconds > 43200
       || (durationSeconds > 0 && durationSeconds <= video.baseSecond)) {
-      throw new HttpsError('invalid-argument', '시작 시간 또는 영상 길이를 확인해 주세요. 영상 길이는 시작 위치보다 길어야 합니다.');
+      throw new HttpsError('invalid-argument', '시작 대기 시간은 10초 단위로, 영상 길이는 시작 위치보다 길게 입력해 주세요.');
     }
     const title = safeText(String(data.title || (video.provider === 'youtube' ? 'YouTube 영상' : 'SOOP VOD · 클립')), 160, true);
     const createdAt = now();
-    const startsAt = createdAt + Math.max(2500, delayMinutes * 60 * 1000);
+    const startsAt = createdAt + Math.max(2500, delaySeconds * 1000);
     const endsAt = durationSeconds ? startsAt + (durationSeconds - video.baseSecond) * 1000 : 0;
     const candidate = {
       partyId: crypto.randomBytes(12).toString('hex'), status: 'scheduled',
