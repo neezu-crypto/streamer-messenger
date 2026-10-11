@@ -646,11 +646,14 @@ function syncHeader() {
   $('#admin-tab-button').hidden = !session.isAdmin;
   const hasRoom = (session.isVerifiedStreamer || session.isAdmin) && !!session.ownRoom;
   $('#create-room-desktop-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
-  $('#create-room-mobile-label').textContent = hasRoom ? '내 방' : '방 만들기';
+  $('#create-room-mobile-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
+  $('#create-room-button').setAttribute('aria-label', hasRoom ? '내 채팅방 입장' : '내 채팅방 만들기');
+  $('#create-room-button').title = hasRoom ? '내 채팅방으로 입장합니다' : '내 채팅방을 만들고 입장합니다';
   $('#my-rooms-button').hidden = !session.trusted;
   $('#my-rooms-count').textContent = String(state.myRooms.length);
   $('#my-rooms-button').setAttribute('aria-label', `참여 중인 방 ${state.myRooms.length}개 빠른 이동`);
   $('#my-rooms-button').title = `참여 중인 방 ${state.myRooms.length}개 빠른 이동`;
+  syncMobileQuickActionPlacement();
 }
 
 async function loadMyRooms(force = false) {
