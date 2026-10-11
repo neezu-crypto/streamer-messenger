@@ -1388,8 +1388,8 @@ function renderRoomWatchParty() {
   join.hidden = !active || loaded;
   sync.hidden = !active || !loaded;
   replay.hidden = status !== 'ended';
-  finish.hidden = !active || !responsible || Number(party.endsAt) > 0;
-  cancel.hidden = !['scheduled', 'active'].includes(status) || !responsible;
+  finish.hidden = !active || !responsible;
+  cancel.hidden = status !== 'scheduled' || !responsible;
   const cancelLabel = status === 'scheduled' ? '같이보기 예약 취소' : '같이보기 취소';
   cancel.setAttribute('aria-label', cancelLabel);
   cancel.title = cancelLabel;
@@ -3265,11 +3265,11 @@ function bindRoomWatchPartyControls() {
     if (!openRoomToolVideo({ ...target, href: party.video.url })) showError({ message: '개인 영상으로 재생할 수 없습니다.' });
   });
   $('#room-watch-party-cancel').addEventListener('click', async () => {
-    if (!await api().confirmDialog('예약하거나 진행 중인 영상 같이보기를 취소할까요?')) return;
+    if (!await api().confirmDialog('시작 전인 같이보기를 취소할까요? 채팅방 참여자의 예약 영상이 모두 종료됩니다.')) return;
     await updateRoomWatchParty('cancel');
   });
   $('#room-watch-party-finish').addEventListener('click', async () => {
-    if (!await api().confirmDialog('이 영상 같이보기를 종료할까요? 모든 참여자에게 종료 상태가 표시됩니다.')) return;
+    if (!await api().confirmDialog('진행 중인 같이보기를 마칠까요? 모든 참여자의 공유 영상이 종료됩니다.')) return;
     await updateRoomWatchParty('finish');
   });
   $('#room-video-mode-switcher').addEventListener('click', (event) => {

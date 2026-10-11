@@ -1408,14 +1408,16 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
   if (action === 'cancel' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 취소할 수 있습니다.');
   if (action === 'finish' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 마칠 수 있습니다.');
   const at = now();
+  if (action === 'cancel' && at >= Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작되기 전에만 같이보기를 취소할 수 있습니다.');
   if (action === 'finish' && at < Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작된 뒤에 같이보기를 마칠 수 있습니다.');
-  if (action === 'finish' && Number(before.endsAt) > 0) throw new HttpsError('failed-precondition', '등록한 영상 길이대로 같이보기가 자동 종료됩니다.');
   if (action === 'complete' && (!Number(before.endsAt) || at < Number(before.endsAt) - 5000)) {
     throw new HttpsError('failed-precondition', '등록된 영상 길이만큼 재생한 뒤 종료할 수 있습니다.');
   }
   const nextStatus = action === 'cancel' ? 'cancelled' : 'ended';
   const changed = await partyRef.transaction((current) => {
     if (!current || current.partyId !== partyId || !['scheduled', 'active'].includes(current.status)) return;
+    if (action === 'cancel' && at >= Number(current.startsAt)) return;
+    if (action === 'finish' && at < Number(current.startsAt)) return;
     if (action === 'complete' && (!Number(current.endsAt) || at < Number(current.endsAt) - 5000)) return;
     return { ...current, status: nextStatus, updatedAt: at, ...(nextStatus === 'ended' ? { endedAt: at } : { cancelledAt: at, cancelledByUid: principal.uid }) };
   });
