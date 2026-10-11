@@ -137,24 +137,25 @@ function isActiveMobileChat() {
 }
 
 function syncMobileQuickActionPlacement() {
-  const shouldRelocate = isMobileChatLayout();
+  const isMobile = isMobileChatLayout();
+  const isInChat = isActiveMobileChat();
   const placements = [
     ['#profile-button', '#mobile-account-quick-actions'],
     ['#my-rooms-button', '#mobile-navigation-quick-actions'],
     ['#create-room-button', '#mobile-navigation-quick-actions'],
     ['#notification-button', '#mobile-app-quick-actions'],
     ['#admin-tab-button', '#mobile-app-quick-actions'],
-    ['#toggle-streamer-aside', '#mobile-management-quick-actions'],
-    ['#open-mini-game', '#mobile-tools-quick-actions'],
-    ['#chat-donation-link', '#mobile-tools-quick-actions'],
-    ['#chat-fanpage-link', '#mobile-tools-quick-actions'],
-    ['#room-state-pill', '#mobile-conversation-quick-actions'],
-    ['#export-chat-button', '#mobile-conversation-quick-actions'],
-    ['#member-action', '#mobile-conversation-quick-actions'],
-    ['#room-menu-button', '#mobile-conversation-quick-actions'],
+    ['#toggle-streamer-aside', '#mobile-management-quick-actions', true],
+    ['#open-mini-game', '#mobile-tools-quick-actions', true],
+    ['#chat-donation-link', '#mobile-tools-quick-actions', true],
+    ['#chat-fanpage-link', '#mobile-tools-quick-actions', true],
+    ['#room-state-pill', '#mobile-conversation-quick-actions', true],
+    ['#export-chat-button', '#mobile-conversation-quick-actions', true],
+    ['#member-action', '#mobile-conversation-quick-actions', true],
+    ['#room-menu-button', '#mobile-conversation-quick-actions', true],
   ];
 
-  for (const [selector, targetSelector] of placements) {
+  for (const [selector, targetSelector, chatOnly = false] of placements) {
     const element = $(selector);
     const target = $(targetSelector);
     if (!element || !target) continue;
@@ -165,6 +166,7 @@ function syncMobileQuickActionPlacement() {
       origin = { placeholder };
       mobileQuickActionOrigins.set(element, origin);
     }
+    const shouldRelocate = isMobile && (!chatOnly || isInChat);
     if (shouldRelocate) target.appendChild(element);
     else if (origin.placeholder.parentNode && element.parentNode !== origin.placeholder.parentNode) {
       origin.placeholder.parentNode.insertBefore(element, origin.placeholder.nextSibling);
@@ -172,7 +174,12 @@ function syncMobileQuickActionPlacement() {
   }
 
   const trigger = $('#toggle-mobile-quick-menu');
-  if (trigger) trigger.hidden = !isMobileChatLayout();
+  if (trigger) {
+    trigger.hidden = !isMobile;
+    trigger.title = isInChat
+      ? '계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다'
+      : '계정, 방 이동, 앱 설정 메뉴를 엽니다';
+  }
   const managementSection = $('#mobile-management-menu-section');
   if (managementSection) managementSection.hidden = !state.isOwner;
   for (const section of document.querySelectorAll('[data-mobile-menu-section]')) {
@@ -182,7 +189,7 @@ function syncMobileQuickActionPlacement() {
       .some((action) => !action.hidden);
     section.hidden = !hasVisibleAction;
   }
-  if (!shouldRelocate) setMobileQuickMenuOpen(false, false);
+  if (!isMobile) setMobileQuickMenuOpen(false, false);
 }
 
 function setMobileQuickMenuOpen(open, restoreFocus = true) {
@@ -823,7 +830,9 @@ function updateAsideAttention() {
       : '빠른 메뉴 열기');
     quickMenuTrigger.title = unseenCount
       ? `새 대화 신청 ${unseenCount}건이 있어요. 눌러 확인하세요.`
-      : '계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다';
+      : isActiveMobileChat()
+        ? '계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다'
+        : '계정, 방 이동, 앱 설정 메뉴를 엽니다';
   }
   const requestTab = $('#streamer-aside .aside-tab[data-list-tab="requests"]');
   if (requestTab) requestTab.classList.toggle('has-unseen', unseenCount > 0);
