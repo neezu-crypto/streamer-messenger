@@ -2699,7 +2699,8 @@ function resetRoomToolVideo() {
 }
 
 function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', href = '', sourceCard = null }) {
-  if (!isDesktopRoomToolsPip() || !state.room) return false;
+  const canPlayInMobileRoomTools = isActiveMobileChat() && ['youtube', 'soop-live'].includes(kind);
+  if ((!isDesktopRoomToolsPip() && !canPlayInMobileRoomTools) || !state.room) return false;
   const player = $('#room-video-player');
   const panel = $('#room-video-tool-panel');
   const slide = $('#room-tool-video-slide');
@@ -2754,6 +2755,7 @@ function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', 
     state.roomVideoSourceCard = sourceCard;
   }
   setRoomToolsPipCollapsed(false);
+  if (isActiveMobileChat()) state.mobileRoomToolsOpen = true;
   renderRoomToolSwitcher('video');
   if (media instanceof HTMLVideoElement) media.play().catch(() => {});
   requestAnimationFrame(() => {
