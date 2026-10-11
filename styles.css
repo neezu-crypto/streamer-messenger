@@ -710,3 +710,56 @@
   .chat-header>.mobile-room-tools-trigger,.chat-header>.chat-fullscreen-button{box-sizing:border-box;flex-shrink:0;width:34px;min-width:34px;max-width:34px;padding:0}
   body.messenger-chat-open .chat-header>.mobile-room-tools-trigger{width:31px;min-width:31px;max-width:31px;flex-basis:31px}
 }
+
+.room-tool-slide[data-room-tool="video"]{position:relative;flex-direction:column}
+.room-tool-slide[data-room-tool="video"] .room-video-tool-panel{position:absolute;inset:0}
+.room-video-tool-panel.is-video-mode-inactive{visibility:hidden;opacity:0;pointer-events:none}
+.room-video-mode-switcher{position:absolute;top:8px;left:8px;z-index:5;display:inline-flex;gap:3px;padding:3px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(9,17,30,.78);box-shadow:0 4px 16px rgba(0,0,0,.18);backdrop-filter:blur(10px)}
+.room-video-mode-switcher[hidden]{display:none!important}
+.room-video-mode-tab{min-height:26px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:#c5d2e6;font-size:9px;font-weight:800;white-space:nowrap}
+.room-video-mode-tab[aria-selected="true"]{border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.17);color:#f8fafc}
+.room-watch-party-panel{position:absolute;width:100%;height:100%;padding:0;box-sizing:border-box;aspect-ratio:16/9;background:#0b1424}
+.room-watch-party-heading{position:absolute;top:0;left:0;right:0;z-index:2;gap:8px;margin:0;padding:12px 12px 24px;border:0;background:linear-gradient(180deg,rgba(5,10,20,.94),rgba(5,10,20,.58) 74%,transparent)}
+.room-watch-party-heading .eyebrow{display:none}
+.room-watch-party-heading h3{font-size:12px}
+.room-watch-party-heading p:not(.eyebrow){max-width:34ch;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-watch-party-heading .room-video-tool-actions .button{min-height:27px;padding:0 8px;font-size:8px}
+.room-watch-party-create-inline[hidden]{display:none!important}
+.room-watch-party-status-card{position:absolute;right:10px;bottom:50px;left:10px;z-index:2;display:grid;gap:2px;max-width:calc(100% - 20px);padding:8px 10px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(10,18,32,.8);color:#f8fafc;backdrop-filter:blur(10px);pointer-events:none}
+.room-watch-party-status-card strong{font-size:10px}
+.room-watch-party-status-card span{color:#7dd3fc;font-size:10px;font-variant-numeric:tabular-nums;font-weight:800}
+.room-watch-party-status-card small{overflow:hidden;color:#c3cee0;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
+.room-watch-party-actions{position:absolute;right:8px;bottom:8px;z-index:3;display:flex;gap:5px;max-width:calc(100% - 16px)}
+.room-watch-party-actions .button{min-height:28px;margin:0;padding:0 9px;border-color:rgba(255,255,255,.22);background:rgba(15,23,42,.9);color:#f8fafc;font-size:8px;white-space:nowrap}
+.room-watch-party-actions .button-primary{border-color:#22b7eb;background:#0daedc;color:#05233a}
+.room-watch-party-actions .button-danger{border-color:rgba(248,113,113,.4);background:rgba(127,29,29,.86)}
+.room-watch-party-error{position:absolute;right:10px;bottom:42px;left:10px;z-index:3;margin:0;padding:5px 8px;background:rgba(127,29,29,.92);font-size:9px}
+.room-watch-party-player{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:inherit;aspect-ratio:auto}
+.room-watch-party-player:empty::after{display:grid;width:100%;height:100%;place-items:center;background:radial-gradient(ellipse at 50% 42%,#1c3a5b,#0b1424 72%);color:rgba(226,238,255,.48);content:"영상 재생을 준비하고 있어요";font-size:11px;font-weight:700}
+.room-watch-party-player iframe{position:relative;z-index:1}
+.room-watch-party-dialog{width:min(500px,calc(100vw - 26px));max-width:500px;max-height:min(90dvh,760px);padding:0;overflow:auto}
+.room-watch-party-dialog .dialog-card{padding:30px 25px 22px}
+.room-watch-party-dialog h2{margin:0 40px 8px 0;font-size:21px}
+.room-watch-party-dialog .dialog-copy{font-size:11px;line-height:1.65}
+.room-watch-party-dialog .field-label{margin-top:14px}
+.room-watch-party-dialog .text-input{width:100%;box-sizing:border-box}
+.room-watch-party-dialog .room-watch-party-note{margin:9px 0;color:#8592a8;font-size:10px}
+.room-watch-party-dialog .room-watch-party-note code{padding:1px 4px;border-radius:4px;background:#eef2fa;color:#4d6288;font-size:9px}
+@media(max-width:680px){
+  .room-video-mode-switcher{top:7px;left:7px;padding:2px}
+  .room-video-mode-tab{min-height:23px;padding:0 7px;font-size:8px}
+  .room-watch-party-heading{gap:5px;padding:9px 9px 21px}
+  .room-watch-party-heading h3{font-size:10px}
+  .room-watch-party-heading p:not(.eyebrow){max-width:25ch;font-size:7px}
+  .room-watch-party-heading .room-video-tool-actions{gap:3px}
+  .room-watch-party-heading .room-video-tool-actions .button{min-height:24px;padding:0 6px;font-size:7px}
+  .room-watch-party-status-card{right:7px;bottom:39px;left:7px;gap:1px;padding:6px 7px;border-radius:8px}
+  .room-watch-party-status-card strong,.room-watch-party-status-card span{font-size:8px}
+  .room-watch-party-status-card small{font-size:7px}
+  .room-watch-party-actions{right:6px;bottom:6px;gap:3px}
+  .room-watch-party-actions .button{min-height:24px;padding:0 6px;font-size:7px}
+  .room-watch-party-error{right:7px;bottom:35px;left:7px;padding:4px 6px;font-size:7px}
+  .room-watch-party-dialog{width:calc(100vw - 18px);max-height:min(88dvh,720px)}
+  .room-watch-party-dialog .dialog-card{padding:27px 16px 17px;border-radius:20px}
+  .room-watch-party-dialog h2{font-size:19px}
+}

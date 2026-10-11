@@ -1310,6 +1310,118 @@ const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => 
   return { miniGame: started.snapshot.val() };
 });
 
+const WATCH_PARTY_SOOP_PARAMS = new Set([
+  'isAfreeca', 'szBjId', 'nStationNo', 'nBbsNo', 'nTitleNo', 'szCategory', 'szPart', 'type', 'szSysType',
+]);
+
+function parseWatchPartySeconds(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  if (/^\d{1,7}$/.test(raw)) return Number(raw);
+  const match = raw.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!match || !match.slice(1).some(Boolean)) return null;
+  return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+}
+
+function parseWatchPartyVideo(value) {
+  let url;
+  try { url = new URL(value); } catch (_) { throw new HttpsError('invalid-argument', '영상 링크를 확인해 주세요.'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.href.length > 2048) {
+    throw new HttpsError('invalid-argument', 'HTTPS 영상 링크만 사용할 수 있습니다.');
+  }
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (['youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'youtu.be'].includes(host)) {
+    let videoId = '';
+    if (host === 'youtu.be') videoId = url.pathname.split('/').filter(Boolean)[0] || '';
+    else if (url.pathname === '/watch') videoId = url.searchParams.get('v') || '';
+    else videoId = url.pathname.match(/^\/(?:shorts|embed|live)\/([A-Za-z0-9_-]{11})(?:\/|$)/)?.[1] || '';
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw new HttpsError('invalid-argument', 'YouTube 영상 링크를 확인해 주세요.');
+    const rawStart = url.searchParams.get('start') || url.searchParams.get('t') || '';
+    const baseSecond = parseWatchPartySeconds(rawStart);
+    if (baseSecond == null || baseSecond > 86400) throw new HttpsError('invalid-argument', 'YouTube 시작 위치가 올바르지 않습니다.');
+    return { provider: 'youtube', videoId, baseSecond, url: `https://www.youtube.com/watch?v=${videoId}${baseSecond ? `&t=${baseSecond}s` : ''}` };
+  }
+  if (host === 'vod.sooplive.com') {
+    const clipId = url.pathname.match(/^\/player\/(\d{1,20})(?:\/embed)?\/?$/)?.[1] || '';
+    if (!clipId) throw new HttpsError('invalid-argument', 'SOOP VOD 또는 클립 링크를 확인해 주세요.');
+    const rawStart = url.searchParams.get('change_second');
+    const baseSecond = rawStart == null || rawStart === '' ? 0 : (/^\d{1,7}$/.test(rawStart) ? Number(rawStart) : null);
+    if (baseSecond == null || baseSecond > 86400) throw new HttpsError('invalid-argument', 'SOOP 영상 시작 위치가 올바르지 않습니다.');
+    const embedParams = {};
+    for (const name of WATCH_PARTY_SOOP_PARAMS) {
+      const paramValue = url.searchParams.get(name);
+      if (paramValue && paramValue.length <= 160 && /^[A-Za-z0-9_.-]+$/.test(paramValue)) embedParams[name] = paramValue;
+    }
+    return { provider: 'soop-vod', videoId: clipId, baseSecond, embedParams, url: `https://vod.sooplive.com/player/${clipId}${baseSecond ? `?change_second=${baseSecond}` : ''}` };
+  }
+  throw new HttpsError('invalid-argument', 'YouTube 또는 SOOP VOD·클립 링크만 같이볼 수 있습니다.');
+}
+
+const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) => {
+  const principal = await getPrincipal(request, { requireTrusted: true });
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const action = String(data.action || '');
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['create', 'cancel', 'finish', 'complete', 'sync'].includes(action)) {
+    throw new HttpsError('invalid-argument', '채팅방 또는 같이보기 요청 정보가 올바르지 않습니다.');
+  }
+  const { meta, isOwner, member } = await requireRoomMember(principal, roomId);
+  const partyRef = roomRef(roomId).child('meta/watchParty');
+  if (action === 'sync') return { watchParty: (await partyRef.get()).val() || null };
+
+  if (action === 'create') {
+    const video = parseWatchPartyVideo(safeText(String(data.url || ''), 2048, true));
+    const delayMinutes = Number(data.startDelayMinutes);
+    const durationSeconds = Number(data.durationSeconds || 0);
+    if (!Number.isInteger(delayMinutes) || delayMinutes < 0 || delayMinutes > 120
+      || !Number.isInteger(durationSeconds) || durationSeconds < 0 || durationSeconds > 43200
+      || (durationSeconds > 0 && durationSeconds <= video.baseSecond)) {
+      throw new HttpsError('invalid-argument', '시작 시간 또는 영상 길이를 확인해 주세요. 영상 길이는 시작 위치보다 길어야 합니다.');
+    }
+    const title = safeText(String(data.title || (video.provider === 'youtube' ? 'YouTube 영상' : 'SOOP VOD · 클립')), 160, true);
+    const createdAt = now();
+    const startsAt = createdAt + Math.max(2500, delayMinutes * 60 * 1000);
+    const endsAt = durationSeconds ? startsAt + (durationSeconds - video.baseSecond) * 1000 : 0;
+    const candidate = {
+      partyId: crypto.randomBytes(12).toString('hex'), status: 'scheduled',
+      createdByUid: principal.uid,
+      createdByName: String(isOwner ? meta.streamerNickname || '스트리머' : member && member.profile && member.profile.nickname || principal.profile && principal.profile.nickname || '참여자').slice(0, 30),
+      video: { ...video, title, durationSeconds }, startsAt, endsAt, createdAt, updatedAt: createdAt,
+    };
+    const result = await partyRef.transaction((current) => {
+      const active = current && ['scheduled', 'active'].includes(current.status)
+        && !(Number(current.endsAt) > 0 && Number(current.endsAt) <= createdAt);
+      if (active) return;
+      return candidate;
+    });
+    if (!result.committed) throw new HttpsError('already-exists', '이 채팅방에서 이미 같이보기가 예약되었거나 진행 중입니다.');
+    return { watchParty: result.snapshot.val() };
+  }
+
+  const partyId = String(data.partyId || '');
+  if (!/^[a-f0-9]{24}$/.test(partyId)) throw new HttpsError('invalid-argument', '같이보기 식별자를 확인해 주세요.');
+  const before = (await partyRef.get()).val();
+  if (!before || before.partyId !== partyId || !['scheduled', 'active'].includes(before.status)) {
+    return { watchParty: before || null, stale: true };
+  }
+  const mayManage = isOwner || before.createdByUid === principal.uid;
+  if (action === 'cancel' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 취소할 수 있습니다.');
+  if (action === 'finish' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 마칠 수 있습니다.');
+  const at = now();
+  if (action === 'finish' && at < Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작된 뒤에 같이보기를 마칠 수 있습니다.');
+  if (action === 'finish' && Number(before.endsAt) > 0) throw new HttpsError('failed-precondition', '등록한 영상 길이대로 같이보기가 자동 종료됩니다.');
+  if (action === 'complete' && (!Number(before.endsAt) || at < Number(before.endsAt) - 5000)) {
+    throw new HttpsError('failed-precondition', '등록된 영상 길이만큼 재생한 뒤 종료할 수 있습니다.');
+  }
+  const nextStatus = action === 'cancel' ? 'cancelled' : 'ended';
+  const changed = await partyRef.transaction((current) => {
+    if (!current || current.partyId !== partyId || !['scheduled', 'active'].includes(current.status)) return;
+    if (action === 'complete' && (!Number(current.endsAt) || at < Number(current.endsAt) - 5000)) return;
+    return { ...current, status: nextStatus, updatedAt: at, ...(nextStatus === 'ended' ? { endedAt: at } : { cancelledAt: at, cancelledByUid: principal.uid }) };
+  });
+  return { watchParty: changed.snapshot.val() || before, stale: !changed.committed };
+});
+
 async function galleryImageForChat(roomId, imageId) {
   const rawMeta = (await roomRef(roomId).child('meta').get()).val() || {};
   const meta = await ensureGalleryLink(roomId, rawMeta);
@@ -1858,7 +1970,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 module.exports = {
   messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
-  messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate,
+  messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate, messengerWatchPartyUpdate,
   messengerSendMessage, messengerGetLinkPreview, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261011-mobile-aside-no-blur">
+  <link rel="stylesheet" href="styles.css?v=20261012-watch-party-sync">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -65,12 +65,36 @@
             </section>
           </div>
           <div class="room-tool-slide" id="room-tool-video-slide" data-room-tool="video" data-room-tool-label="영상" role="tabpanel" aria-label="채팅방 영상" hidden>
-            <section class="room-video-tool-panel" id="room-video-tool-panel" aria-labelledby="room-video-tool-title" hidden>
+            <nav class="room-video-mode-switcher" id="room-video-mode-switcher" role="tablist" aria-label="개인 영상과 같이보기" hidden>
+              <button class="room-video-mode-tab" type="button" role="tab" data-room-video-mode="personal" aria-selected="true">개인 영상</button>
+              <button class="room-video-mode-tab" type="button" role="tab" data-room-video-mode="party" aria-selected="false">같이보기</button>
+            </nav>
+            <section class="room-video-tool-panel" id="room-video-tool-panel" data-empty="true" aria-labelledby="room-video-tool-title" hidden>
               <header class="room-video-tool-heading">
                 <div><p class="eyebrow">ROOM VIDEO</p><h3 id="room-video-tool-title">채팅 영상</h3><p id="room-video-tool-caption">메시지에서 선택한 영상을 재생합니다.</p></div>
                 <div class="room-video-tool-actions"><a class="button button-quiet" id="room-video-open-link" href="#" target="_blank" rel="noopener noreferrer" title="원본 영상을 새 탭에서 엽니다">원본 열기 ↗</a><button class="room-video-close-button" id="room-video-close" type="button" aria-label="영상 재생 닫기" title="채팅 도구에서 영상 재생을 닫습니다">×</button></div>
               </header>
               <div class="room-video-player" id="room-video-player"></div>
+            </section>
+            <section class="room-video-tool-panel room-watch-party-panel" id="room-watch-party-panel" aria-labelledby="room-watch-party-title" hidden>
+              <header class="room-video-tool-heading room-watch-party-heading">
+                <div><p class="eyebrow">WATCH TOGETHER</p><h3 id="room-watch-party-title">영상 같이보기</h3><p id="room-watch-party-caption">공유한 영상 재생을 준비하고 있어요.</p></div>
+                <div class="room-video-tool-actions"><a class="button button-quiet" id="room-watch-party-open-link" href="#" target="_blank" rel="noopener noreferrer" title="공유 영상 원본을 새 탭에서 엽니다" hidden>원본 열기 ↗</a><button class="button button-quiet room-watch-party-create-inline" id="room-watch-party-create-inline" type="button">영상 예약</button></div>
+              </header>
+              <div class="room-watch-party-status-card" id="room-watch-party-status-card" role="status" aria-live="polite">
+                <strong id="room-watch-party-status">같이보기 영상이 없습니다.</strong>
+                <span id="room-watch-party-countdown"></span>
+                <small id="room-watch-party-details"></small>
+              </div>
+              <div class="room-watch-party-actions">
+                <button class="button button-primary" id="room-watch-party-join" type="button" hidden>현재 위치에서 참여</button>
+                <button class="button button-quiet" id="room-watch-party-sync" type="button" hidden>현재 위치로 동기화</button>
+                <button class="button button-quiet" id="room-watch-party-replay" type="button" hidden>개인 영상으로 다시보기</button>
+                <button class="button button-quiet" id="room-watch-party-finish" type="button" hidden>같이보기 마치기</button>
+                <button class="button button-danger" id="room-watch-party-cancel" type="button" hidden>같이보기 취소</button>
+              </div>
+              <p class="dialog-error room-watch-party-error" id="room-watch-party-error" role="alert" hidden></p>
+              <div class="room-video-player room-watch-party-player" id="room-watch-party-player"></div>
             </section>
           </div>
         </div>
@@ -146,6 +170,7 @@
                 <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="사진과 클립 첨부" hidden>
                   <button class="attachment-tool-option" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="스트리머 갤러리에서 이미지를 골라 채팅방에 보내기"><span class="attachment-tool-icon" aria-hidden="true">▧</span><span><strong>갤러리 이미지</strong><small>사진을 골라 채팅에 보내기</small></span></button>
                   <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 클립 찾아 공유" title="이 채팅방 스트리머의 클립을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 클립</strong><small>클립을 검색해 공유하거나 재생</small></span></button>
+                  <button class="attachment-tool-option" id="open-room-watch-party" type="button" aria-label="영상 같이보기 예약" title="영상 링크와 재생 시간을 정해 채팅방 참여자와 같이봅니다"><span class="attachment-tool-icon clip" aria-hidden="true">◷</span><span><strong>영상 같이보기</strong><small>영상 링크를 예약하고 함께 재생</small></span></button>
                 </div>
               </div>
               <textarea id="message-input" rows="1" maxlength="1000" placeholder="메시지를 입력하세요" aria-label="메시지 입력"></textarea>
@@ -271,6 +296,26 @@
       <div class="room-clips-results" id="room-clips-results" aria-live="polite"></div>
       <button class="button button-quiet full-width room-clips-load-more" id="room-clips-load-more" type="button" title="다음 클립 목록을 불러옵니다" hidden>클립 더 보기</button>
     </section>
+  </dialog>
+
+  <dialog class="app-dialog room-watch-party-dialog" id="room-watch-party-dialog" aria-labelledby="room-watch-party-form-title">
+    <form class="dialog-card" id="room-watch-party-form" method="dialog">
+      <button class="dialog-close" id="close-room-watch-party" type="button" aria-label="닫기" title="같이보기 예약 닫기">×</button>
+      <p class="eyebrow">WATCH TOGETHER</p>
+      <h2 id="room-watch-party-form-title">영상 같이보기 예약</h2>
+      <p class="dialog-copy">YouTube 또는 SOOP VOD·클립 링크를 등록하면 채팅 도구에 준비돼요. 예약 시각에 재생을 시작하고, 늦게 온 참여자는 현재 위치로 참여할 수 있어요. 자동 재생이 차단되면 영상 안의 재생 버튼을 눌러 주세요.</p>
+      <label class="field-label" for="room-watch-party-url">영상 링크</label>
+      <input class="text-input" id="room-watch-party-url" type="url" maxlength="2048" placeholder="https://vod.sooplive.com/player/... 또는 YouTube 링크" autocomplete="url" required>
+      <label class="field-label" for="room-watch-party-title-input">영상 이름 <span class="optional">선택</span></label>
+      <input class="text-input" id="room-watch-party-title-input" type="text" maxlength="160" placeholder="채팅 도구에 표시할 이름">
+      <label class="field-label" for="room-watch-party-delay">몇 분 후 시작할까요?</label>
+      <input class="text-input" id="room-watch-party-delay" type="number" min="0" max="120" step="1" value="1" inputmode="numeric" required>
+      <label class="field-label" for="room-watch-party-duration">영상 전체 길이(초) <span class="optional">선택</span></label>
+      <input class="text-input" id="room-watch-party-duration" type="number" min="1" max="43200" step="1" inputmode="numeric" placeholder="입력하면 종료 시점도 함께 맞춰요">
+      <p class="dialog-copy room-watch-party-note">영상 길이를 입력하면 링크의 시작 위치부터 남은 시간을 계산해 자동 종료해요. 길이를 모르면 방 소유자나 예약자가 직접 마칠 수 있어요. SOOP 링크에 <code>change_second</code>가 없으면 0초부터 시작합니다.</p>
+      <p class="dialog-error" id="room-watch-party-form-error" role="alert" hidden></p>
+      <button class="button button-primary full-width" id="room-watch-party-submit" type="submit">채팅 도구에 예약</button>
+    </form>
   </dialog>
 
   <dialog class="app-dialog image-viewer-dialog" id="image-viewer-dialog" aria-label="채팅 이미지 크게 보기">
@@ -443,6 +488,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261011-message-page-size-20"></script>
+  <script type="module" src="js/app.js?v=20261012-watch-party-sync"></script>
 </body>
 </html>
