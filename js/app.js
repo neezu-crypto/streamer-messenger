@@ -1259,6 +1259,9 @@ function applyWatchPartyState(value) {
   const party = normalizeWatchParty(value);
   state.watchParty = party;
   clearWatchPartyTimers();
+  if (!previousParty || !party || previousParty.partyId !== party.partyId || previousParty.status !== party.status) {
+    $('#room-watch-party-error').hidden = true;
+  }
   if (!party) {
     state.watchPartyArmedId = ''; state.watchPartyPlayingId = '';
     $('#room-watch-party-player').replaceChildren();
@@ -1367,7 +1370,6 @@ function renderRoomWatchParty() {
   open.href = String(video.url || '#');
   open.hidden = ['ended', 'cancelled'].includes(status);
   create.hidden = !['ended', 'cancelled'].includes(status);
-  error.hidden = true;
   details.textContent = `${title} · 예약: ${new Date(Number(party.startsAt)).toLocaleString('ko-KR')} · 등록: ${party.createdByName || '참여자'}`;
 
   if (status === 'scheduled') {
@@ -1399,9 +1401,8 @@ function renderRoomWatchParty() {
   replay.title = replay.getAttribute('aria-label');
   [join, sync, finish, cancel].forEach((button) => { button.disabled = state.watchPartyMutationPending; });
   if (['ended', 'cancelled'].includes(status)) {
-    if (state.watchPartyPlayingId === party.partyId) {
-      player.replaceChildren(); state.watchPartyPlayingId = '';
-    }
+    player.replaceChildren();
+    state.watchPartyPlayingId = '';
   }
   if (personal.dataset.empty !== 'true' && state.roomVideoMode !== 'party') {
     // Private playback keeps its own player and remains selectable while the shared stream continues.
@@ -1467,7 +1468,17 @@ async function updateRoomWatchParty(action) {
   $('#room-watch-party-error').hidden = true;
   try {
     const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, partyId: party.partyId, action });
-    if (result && result.watchParty) applyWatchPartyState(result.watchParty);
+    if (result && result.watchParty) {
+      const updatedParty = normalizeWatchParty(result.watchParty);
+      applyWatchPartyState(updatedParty);
+      if (result.stale && updatedParty && updatedParty.partyId === party.partyId && ['scheduled', 'active'].includes(updatedParty.status)) {
+        const error = $('#room-watch-party-error');
+        error.hidden = false;
+        error.textContent = '같이보기 상태가 변경되어 종료 요청을 적용하지 못했습니다. 상태를 새로 확인한 뒤 다시 시도해 주세요.';
+      }
+    } else {
+      throw new Error('서버에서 같이보기 종료 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   } catch (error) {
     $('#room-watch-party-error').hidden = false;
     $('#room-watch-party-error').textContent = error && error.message || '같이보기 상태를 변경하지 못했습니다.';
