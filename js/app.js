@@ -1321,10 +1321,15 @@ function updateRoomVideoMode() {
   });
   const slide = $('#room-tool-video-slide');
   if (slide) slide.hidden = !hasPersonal && !hasParty && state.activeRoomTool !== 'video';
-  const partyModeActive = hasParty && state.roomVideoMode === 'party';
+  const videoToolActive = state.activeRoomTool === 'video';
+  const personalModeActive = hasPersonal && !personalInactive && videoToolActive;
+  const partyModeActive = hasParty && state.roomVideoMode === 'party' && videoToolActive;
   if (slide) slide.classList.toggle('is-watch-party-active', partyModeActive);
   const viewport = $('#room-tools-viewport');
-  if (viewport) viewport.classList.toggle('is-watch-party-active', partyModeActive);
+  if (viewport) {
+    viewport.classList.toggle('is-watch-party-active', partyModeActive);
+    viewport.classList.toggle('is-personal-video-active', personalModeActive);
+  }
 }
 
 function watchPartyCanManage(party = state.watchParty) {
@@ -1914,6 +1919,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
 function selectRoomTool(key) {
   if (!availableRoomToolSlides().some((slide) => slide.dataset.roomTool === key)) return;
   state.activeRoomTool = key;
+  updateRoomVideoMode();
   if (isActiveMobileChat()) setMobileRoomToolsOpen(true);
   renderRoomToolSwitcher();
 }
@@ -1921,6 +1927,7 @@ function selectRoomTool(key) {
 function returnToRoomToolLauncher() {
   if (!state.room) return;
   state.activeRoomTool = '';
+  updateRoomVideoMode();
   renderRoomToolSwitcher();
 }
 
