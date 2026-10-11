@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261011-mobile-tools-open-state">
+  <link rel="stylesheet" href="styles.css?v=20261011-streamer-verification-cta">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -181,7 +181,11 @@
       <p class="dialog-copy">기존 자매 서비스 계정으로 로그인할 수 있어요.</p>
       <button class="button button-dark full-width" id="google-login" type="button">Google로 계속하기</button>
       <button class="button button-kakao full-width" id="kakao-login" type="button">카카오로 계속하기</button>
-      <button class="text-button full-width" id="verify-streamer" type="button">스트리머 인증으로 계속하기</button>
+      <button class="streamer-verification-cta full-width" id="verify-streamer" type="button" aria-label="스트리머 인증하기, SOOP 아이디로 인증 절차 시작">
+        <span class="streamer-verification-icon" aria-hidden="true">✦</span>
+        <span class="streamer-verification-copy"><small>SOOP STREAMER</small><strong>스트리머 인증하기</strong><span>SOOP 아이디로 스트리머 인증을 진행해요.</span></span>
+        <span class="streamer-verification-arrow" aria-hidden="true">→</span>
+      </button>
       <p class="fine-print">로그인 정보는 기존 계정과 공유되며, SOOP 아이디의 실제 소유 여부는 확인하지 않습니다.</p>
     </form>
   </dialog>
