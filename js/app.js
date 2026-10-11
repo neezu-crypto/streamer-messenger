@@ -1318,6 +1318,10 @@ function updateRoomVideoMode() {
   });
   const slide = $('#room-tool-video-slide');
   if (slide) slide.hidden = !hasPersonal && !hasParty && state.activeRoomTool !== 'video';
+  const partyModeActive = hasParty && state.roomVideoMode === 'party';
+  if (slide) slide.classList.toggle('is-watch-party-active', partyModeActive);
+  const viewport = $('#room-tools-viewport');
+  if (viewport) viewport.classList.toggle('is-watch-party-active', partyModeActive);
 }
 
 function watchPartyCanManage(party = state.watchParty) {
@@ -1382,12 +1386,17 @@ function renderRoomWatchParty() {
 
   const active = status === 'active';
   join.hidden = !active || loaded;
-  join.textContent = '현재 위치에서 참여';
   sync.hidden = !active || !loaded;
   replay.hidden = status !== 'ended';
   finish.hidden = !active || !responsible || Number(party.endsAt) > 0;
   cancel.hidden = !['scheduled', 'active'].includes(status) || !responsible;
-  cancel.textContent = status === 'scheduled' ? '예약 취소' : '같이보기 취소';
+  const cancelLabel = status === 'scheduled' ? '같이보기 예약 취소' : '같이보기 취소';
+  cancel.setAttribute('aria-label', cancelLabel);
+  cancel.title = cancelLabel;
+  join.title = join.getAttribute('aria-label');
+  sync.title = sync.getAttribute('aria-label');
+  finish.title = finish.getAttribute('aria-label');
+  replay.title = replay.getAttribute('aria-label');
   [join, sync, finish, cancel].forEach((button) => { button.disabled = state.watchPartyMutationPending; });
   if (['ended', 'cancelled'].includes(status)) {
     if (state.watchPartyPlayingId === party.partyId) {
@@ -1412,7 +1421,7 @@ function watchPartyEmbedUrl(party, positionSeconds) {
   }
   const embed = new URL(`https://vod.sooplive.com/player/${encodeURIComponent(video.videoId)}/embed`);
   Object.entries(video.embedParams || {}).forEach(([key, value]) => embed.searchParams.set(key, String(value)));
-  embed.searchParams.set('autoPlay', 'true'); embed.searchParams.set('mutePlay', 'true'); embed.searchParams.set('showChat', 'true');
+  embed.searchParams.set('autoPlay', 'true'); embed.searchParams.set('mutePlay', 'true'); embed.searchParams.set('showChat', 'false');
   embed.searchParams.set('change_second', String(Number.isFinite(positionSeconds) ? positionSeconds : position));
   return embed.href;
 }
@@ -3399,7 +3408,7 @@ function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', 
   } else if (kind === 'soop-vod-clip' && /^\d{1,20}$/.test(clipId)) {
     media = document.createElement('iframe');
     const clipEmbed = new URL(`https://vod.sooplive.com/player/${encodeURIComponent(clipId)}/embed`);
-    clipEmbed.searchParams.set('autoPlay', 'true'); clipEmbed.searchParams.set('showChat', 'true'); clipEmbed.searchParams.set('mutePlay', 'true');
+    clipEmbed.searchParams.set('autoPlay', 'true'); clipEmbed.searchParams.set('showChat', 'false'); clipEmbed.searchParams.set('mutePlay', 'true');
     if (Number(baseSecond) > 0) clipEmbed.searchParams.set('change_second', String(Math.floor(Number(baseSecond))));
     media.src = clipEmbed.href;
     media.title = `${clipTitle || 'SOOP 클립'} 재생`;

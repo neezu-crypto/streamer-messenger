@@ -801,3 +801,34 @@
   .room-watch-party-dialog .dialog-card{padding:27px 16px 17px;border-radius:20px}
   .room-watch-party-dialog h2{font-size:19px}
 }
+
+/* Keep shared-video status and controls in the tool panel, outside the embedded video. */
+#room-tools-viewport.is-watch-party-active{height:auto!important;aspect-ratio:auto!important}
+#room-tools-viewport.is-watch-party-active .room-tools-track{height:auto;align-items:flex-start}
+#room-tools-viewport.is-watch-party-active .room-tool-slide{height:auto;min-height:0}
+#room-tools-viewport.is-watch-party-active .room-watch-party-panel{position:relative;inset:auto;display:flex;flex-direction:column;gap:8px;width:100%;height:auto;min-height:0;padding:9px;box-sizing:border-box;aspect-ratio:auto;overflow:hidden;border-radius:15px;background:#0b1424}
+#room-tools-viewport.is-watch-party-active .room-watch-party-heading{top:0;left:0;right:0}
+#room-tools-viewport.is-watch-party-active .room-watch-party-player{position:relative;inset:auto;order:0;flex:0 0 auto;width:100%;height:auto;aspect-ratio:16/9;border:0;border-radius:10px;background:#050a14}
+#room-tools-viewport.is-watch-party-active .room-watch-party-player:empty::after{height:100%;aspect-ratio:16/9}
+#room-tools-viewport.is-watch-party-active .room-watch-party-footer{display:flex;align-items:center;gap:8px;min-width:0}
+#room-tools-viewport.is-watch-party-active .room-watch-party-status-card{position:static;flex:1 1 auto;min-width:0;max-width:none;margin:0;padding:7px 9px;border-color:rgba(148,163,184,.2);border-radius:9px;background:#172337;backdrop-filter:none}
+#room-tools-viewport.is-watch-party-active .room-watch-party-status-card strong{font-size:10px}
+#room-tools-viewport.is-watch-party-active .room-watch-party-status-card span{font-size:10px}
+#room-tools-viewport.is-watch-party-active .room-watch-party-status-card small{font-size:8px}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions{position:static;display:flex;flex:0 0 auto;align-items:center;gap:5px;max-width:none}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions .button{display:grid;place-items:center;width:32px;min-width:32px;height:32px;min-height:32px;margin:0;padding:0;border:1px solid rgba(148,163,184,.24);border-radius:9px;background:#1b2940;color:#e5eefb}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions .button-primary{border-color:rgba(34,183,235,.6);background:#0daedc;color:#05233a}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions .button-danger{border-color:rgba(248,113,113,.44);background:#7f292d;color:#fff}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions .button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#room-tools-viewport.is-watch-party-active .room-watch-party-actions #room-watch-party-join svg path{fill:currentColor;stroke:none}
+#room-tools-viewport.is-watch-party-active .room-watch-party-open-link{opacity:0;pointer-events:none;transform:translateY(2px);transition:opacity .14s ease,transform .14s ease}
+#room-tools-viewport.is-watch-party-active .room-watch-party-panel:hover .room-watch-party-open-link,#room-tools-viewport.is-watch-party-active .room-watch-party-panel:focus-within .room-watch-party-open-link{opacity:1;pointer-events:auto;transform:none}
+#room-tools-viewport.is-watch-party-active .room-watch-party-error{position:static;margin:0;padding:5px 8px;border-radius:8px;font-size:9px}
+@media(hover:none){#room-tools-viewport.is-watch-party-active .room-watch-party-open-link{opacity:1;pointer-events:auto;transform:none}}
+@media(max-width:420px){
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel{gap:6px;padding:7px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-footer{align-items:stretch;flex-direction:column;gap:5px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-status-card{padding:6px 7px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-actions{justify-content:flex-end}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-actions .button{width:29px;min-width:29px;height:29px;min-height:29px}
+}

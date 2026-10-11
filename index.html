@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-tool-launcher">
+  <link rel="stylesheet" href="styles.css?v=20261012-watch-party-video-controls">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -95,22 +95,25 @@
             <section class="room-video-tool-panel room-watch-party-panel" id="room-watch-party-panel" aria-labelledby="room-watch-party-title" hidden>
               <header class="room-video-tool-heading room-watch-party-heading">
                 <div><p class="eyebrow">WATCH TOGETHER</p><h3 id="room-watch-party-title">영상 같이보기</h3><p id="room-watch-party-caption">공유한 영상 재생을 준비하고 있어요.</p></div>
-                <div class="room-video-tool-actions"><a class="button button-quiet" id="room-watch-party-open-link" href="#" target="_blank" rel="noopener noreferrer" title="공유 영상 원본을 새 탭에서 엽니다" hidden>원본 열기 ↗</a><button class="button button-quiet room-watch-party-create-inline" id="room-watch-party-create-inline" type="button">영상 예약</button></div>
+                <div class="room-video-tool-actions"><button class="button button-quiet room-watch-party-create-inline" id="room-watch-party-create-inline" type="button" title="다른 영상을 같이보기로 예약합니다">영상 예약</button></div>
               </header>
-              <div class="room-watch-party-status-card" id="room-watch-party-status-card" role="status" aria-live="polite">
-                <strong id="room-watch-party-status">같이보기 영상이 없습니다.</strong>
-                <span id="room-watch-party-countdown"></span>
-                <small id="room-watch-party-details"></small>
-              </div>
-              <div class="room-watch-party-actions">
-                <button class="button button-primary" id="room-watch-party-join" type="button" hidden>현재 위치에서 참여</button>
-                <button class="button button-quiet" id="room-watch-party-sync" type="button" hidden>현재 위치로 동기화</button>
-                <button class="button button-quiet" id="room-watch-party-replay" type="button" hidden>개인 영상으로 다시보기</button>
-                <button class="button button-quiet" id="room-watch-party-finish" type="button" hidden>같이보기 마치기</button>
-                <button class="button button-danger" id="room-watch-party-cancel" type="button" hidden>같이보기 취소</button>
+              <div class="room-video-player room-watch-party-player" id="room-watch-party-player"></div>
+              <div class="room-watch-party-footer">
+                <div class="room-watch-party-status-card" id="room-watch-party-status-card" role="status" aria-live="polite">
+                  <strong id="room-watch-party-status">같이보기 영상이 없습니다.</strong>
+                  <span id="room-watch-party-countdown"></span>
+                  <small id="room-watch-party-details"></small>
+                </div>
+                <div class="room-watch-party-actions">
+                  <a class="button button-quiet room-watch-party-open-link" id="room-watch-party-open-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="공유 영상 원본을 새 탭에서 엽니다" title="공유 영상 원본을 새 탭에서 엽니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg></a>
+                  <button class="button button-primary" id="room-watch-party-join" type="button" aria-label="현재 위치에서 같이보기에 참여합니다" title="현재 위치에서 같이보기에 참여합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg></button>
+                  <button class="button button-quiet" id="room-watch-party-sync" type="button" aria-label="현재 위치로 동기화합니다" title="현재 위치로 동기화합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2L20 9M4 15l2.5 2a7 7 0 0 0 12-2"/></svg></button>
+                  <button class="button button-quiet" id="room-watch-party-replay" type="button" aria-label="개인 영상으로 다시 재생합니다" title="개인 영상으로 다시 재생합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 2.3 5.7L4 14.5"/><path d="M4 5v6h6"/></svg></button>
+                  <button class="button button-quiet" id="room-watch-party-finish" type="button" aria-label="같이보기를 마칩니다" title="같이보기를 마칩니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button>
+                  <button class="button button-danger" id="room-watch-party-cancel" type="button" aria-label="같이보기를 취소합니다" title="같이보기를 취소합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+                </div>
               </div>
               <p class="dialog-error room-watch-party-error" id="room-watch-party-error" role="alert" hidden></p>
-              <div class="room-video-player room-watch-party-player" id="room-watch-party-player"></div>
             </section>
           </div>
         </div>
@@ -504,6 +507,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-room-tool-launcher"></script>
+  <script type="module" src="js/app.js?v=20261012-watch-party-video-controls"></script>
 </body>
 </html>
