@@ -653,9 +653,18 @@
   .soop-live-preview .video-play-button{width:48px;height:35px;font-size:18px}
 }
 
-.clip-share-button{width:36px;height:36px;flex:0 0 36px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:#e9f8ff;color:#159fce;font-size:17px;font-weight:900;line-height:1}
-.clip-share-button:hover,.clip-share-button:focus-visible{background:#d8f3ff;outline:2px solid rgba(21,159,206,.18);outline-offset:1px}
-.chat-composer .clip-share-button{align-self:flex-end}
+.chat-composer{position:relative}
+.attachment-tools{position:static;flex:0 0 36px;width:36px;height:36px}
+.attachment-tools .attach-button{display:grid;place-items:center}
+.attachment-tools-panel{position:absolute;z-index:50;bottom:calc(100% + 10px);left:7px;display:grid;width:min(260px,calc(100vw - 36px));gap:5px;padding:8px;border:1px solid rgba(126,148,185,.2);border-radius:16px;background:rgba(250,252,255,.98);box-shadow:0 12px 34px rgba(34,51,86,.2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.attachment-tools-panel[hidden]{display:none!important}
+.attachment-tool-option{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 10px;border:0;border-radius:11px;background:transparent;color:#33415e;text-align:left}
+.attachment-tool-option:hover,.attachment-tool-option:focus-visible{background:#eef3ff;outline:0}
+.attachment-tool-icon{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border-radius:10px;background:#eef2ff;color:#5e79e6;font-size:17px;font-weight:800}
+.attachment-tool-icon.clip{background:#e9f8ff;color:#159fce;font-size:13px}
+.attachment-tool-option strong,.attachment-tool-option small{display:block}
+.attachment-tool-option strong{font-size:11px}
+.attachment-tool-option small{margin-top:3px;color:#8592a8;font-size:9px}
 .room-clips-dialog{width:min(780px,calc(100vw - 28px));max-width:780px;max-height:min(88dvh,820px);padding:0;overflow:hidden}
 .room-clips-card{display:flex;width:100%;max-height:min(88dvh,820px);flex-direction:column;gap:10px;overflow:hidden;padding:28px 24px 20px}
 .room-clips-header{padding-right:40px}
@@ -682,7 +691,8 @@
 .soop-clip-preview>img{object-fit:cover}
 .soop-clip-preview-fallback{display:grid;width:100%;height:100%;place-items:center;color:#eaf5ff;font-size:13px;font-weight:800;letter-spacing:.1em}
 @media(max-width:680px){
-  .clip-share-button{width:34px;height:34px;flex-basis:34px;border-radius:11px}
+  .attachment-tools{flex-basis:34px;width:34px;height:34px}
+  .attachment-tools-panel{bottom:calc(100% + 8px);left:0}
   .room-clips-dialog{width:calc(100vw - 18px);max-height:min(86dvh,760px)}
   .room-clips-card{max-height:min(86dvh,760px);gap:8px;padding:24px 14px 14px;border-radius:22px}
   .room-clips-header{padding-right:32px}

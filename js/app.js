@@ -424,6 +424,7 @@ function applyChatTooltips(room) {
     '#fan-search': '팬 닉네임 또는 SOOP 아이디로 대화 검색하기',
     '#message-audience': '메시지를 방 전체에 보낼지 팬 한 명에게 보낼지 선택하기',
     '#direct-recipient': '메시지를 받을 팬 선택하기',
+    '#toggle-attachment-tools': '갤러리 이미지나 스트리머 클립 선택하기',
     '#open-image-picker': '스트리머 갤러리에서 이미지를 골라 채팅방에 보내기',
     '#message-input': '채팅 메시지 입력하기',
     '#send-message': '입력한 메시지 보내기',
@@ -2808,6 +2809,13 @@ function openRoomClipsDialog() {
   openDialog('room-clips-dialog'); searchRoomClips();
 }
 
+function setAttachmentToolsOpen(open) {
+  const panel = $('#attachment-tools-panel');
+  const trigger = $('#toggle-attachment-tools');
+  panel.hidden = !open;
+  trigger.setAttribute('aria-expanded', String(open));
+}
+
 function bindRoomClipControls() {
   $('#open-room-clips').addEventListener('click', openRoomClipsDialog);
   $('#close-room-clips').addEventListener('click', () => closeDialog('room-clips-dialog'));
@@ -4045,6 +4053,9 @@ function bindEvents() {
   $('#chat-aside-backdrop').addEventListener('click', () => setAsideDrawerOpen(false));
   document.addEventListener('keydown', (event) => {
     if (document.querySelector('dialog[open]')) return;
+    if (event.key === 'Escape' && !$('#attachment-tools-panel').hidden) {
+      event.preventDefault(); setAttachmentToolsOpen(false); $('#toggle-attachment-tools').focus(); return;
+    }
     const quickMenuOpen = document.body.classList.contains('messenger-quick-menu-open');
     if (quickMenuOpen && event.key === 'Escape') {
       event.preventDefault(); setMobileQuickMenuOpen(false); return;
@@ -4144,6 +4155,15 @@ function bindEvents() {
   $('#export-text').addEventListener('click', () => exportConversation('text'));
   $('#export-image').addEventListener('click', () => exportConversation('image'));
   $('#submit-application').addEventListener('click', submitApplication);
+  $('#toggle-attachment-tools').addEventListener('click', () => setAttachmentToolsOpen($('#attachment-tools-panel').hidden));
+  $('#attachment-tools-panel').addEventListener('click', (event) => {
+    if (event.target.closest('.attachment-tool-option')) setAttachmentToolsOpen(false);
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if ($('#attachment-tools-panel').hidden) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && !target.closest('#attachment-tools')) setAttachmentToolsOpen(false);
+  });
   $('#open-image-picker').addEventListener('click', () => openImagePicker());
   bindRoomClipControls();
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));

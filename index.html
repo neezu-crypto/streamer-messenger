@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261011-browser-chrome-recovery">
+  <link rel="stylesheet" href="styles.css?v=20261011-attachment-tools-panel">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -141,8 +141,13 @@
               <select id="direct-recipient" aria-label="다이렉트 메시지 받을 팬" hidden></select>
             </div>
             <div class="chat-composer" id="chat-composer">
-              <button class="attach-button" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="갤러리 이미지 첨부">＋</button>
-              <button class="clip-share-button" id="open-room-clips" type="button" aria-label="스트리머 클립 찾아 공유" title="이 채팅방 스트리머의 클립을 검색하고 채팅에 공유합니다">▸</button>
+              <div class="attachment-tools" id="attachment-tools">
+                <button class="attach-button" id="toggle-attachment-tools" type="button" aria-label="첨부 도구 선택" aria-expanded="false" aria-controls="attachment-tools-panel" title="갤러리 이미지나 스트리머 클립 선택">＋</button>
+                <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="사진과 클립 첨부" hidden>
+                  <button class="attachment-tool-option" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="스트리머 갤러리에서 이미지를 골라 채팅방에 보내기"><span class="attachment-tool-icon" aria-hidden="true">▧</span><span><strong>갤러리 이미지</strong><small>사진을 골라 채팅에 보내기</small></span></button>
+                  <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 클립 찾아 공유" title="이 채팅방 스트리머의 클립을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 클립</strong><small>클립을 검색해 공유하거나 재생</small></span></button>
+                </div>
+              </div>
               <textarea id="message-input" rows="1" maxlength="1000" placeholder="메시지를 입력하세요" aria-label="메시지 입력"></textarea>
               <button class="send-button" id="send-message" type="button" aria-label="메시지 전송">↑</button>
             </div>
@@ -438,6 +443,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261011-browser-chrome-recovery"></script>
+  <script type="module" src="js/app.js?v=20261011-attachment-tools-panel"></script>
 </body>
 </html>
