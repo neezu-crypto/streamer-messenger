@@ -1802,6 +1802,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
   const track = $('#room-tools-track');
   const slides = availableRoomToolSlides();
   if (!state.room) {
+    updateRoomVideoMode();
     slot.hidden = true;
     launcher.hidden = true;
     homeButton.hidden = true;
@@ -1825,6 +1826,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
   switcher.hidden = isLauncher || slides.length < 2;
   viewport.hidden = isLauncher;
   if (isLauncher) {
+    updateRoomVideoMode();
     switcher.classList.remove('is-scrollable');
     switcher.style.removeProperty('grid-template-columns');
     track.style.transform = '';
@@ -1879,6 +1881,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
 
   if (preferredKey && keys.includes(preferredKey)) state.activeRoomTool = preferredKey;
   if (!keys.includes(state.activeRoomTool)) state.activeRoomTool = keys[0];
+  updateRoomVideoMode();
   const activeIndex = keys.indexOf(state.activeRoomTool);
   updateRoomToolsPipTitle();
   slides.forEach((slide, index) => {
@@ -1919,7 +1922,6 @@ function renderRoomToolSwitcher(preferredKey = '') {
 function selectRoomTool(key) {
   if (!availableRoomToolSlides().some((slide) => slide.dataset.roomTool === key)) return;
   state.activeRoomTool = key;
-  updateRoomVideoMode();
   if (isActiveMobileChat()) setMobileRoomToolsOpen(true);
   renderRoomToolSwitcher();
 }
@@ -1927,7 +1929,6 @@ function selectRoomTool(key) {
 function returnToRoomToolLauncher() {
   if (!state.room) return;
   state.activeRoomTool = '';
-  updateRoomVideoMode();
   renderRoomToolSwitcher();
 }
 
