@@ -2,7 +2,7 @@ import './firebase-init.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
-const MESSAGE_PAGE_SIZE = 100;
+const MESSAGE_PAGE_SIZE = 20;
 const ROOM_TOOLS_PIP_STORAGE_KEY = 'streamerMessenger.roomToolsPip';
 const MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY = 'streamerMessenger.mobileRoomToolsOpen';
 function loadMobileRoomToolsOpenPreference() {
