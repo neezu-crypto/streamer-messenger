@@ -638,3 +638,45 @@
   .soop-live-preview-badge{top:7px;left:7px;padding:4px 7px;font-size:8px}
   .soop-live-preview .video-play-button{width:48px;height:35px;font-size:18px}
 }
+
+.clip-share-button{width:36px;height:36px;flex:0 0 36px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:#e9f8ff;color:#159fce;font-size:17px;font-weight:900;line-height:1}
+.clip-share-button:hover,.clip-share-button:focus-visible{background:#d8f3ff;outline:2px solid rgba(21,159,206,.18);outline-offset:1px}
+.chat-composer .clip-share-button{align-self:flex-end}
+.room-clips-dialog{width:min(780px,calc(100vw - 28px));max-width:780px;max-height:min(88dvh,820px);padding:0;overflow:hidden}
+.room-clips-card{display:flex;width:100%;max-height:min(88dvh,820px);flex-direction:column;gap:10px;overflow:hidden;padding:28px 24px 20px}
+.room-clips-header{padding-right:40px}
+.room-clips-header .eyebrow{margin:0 0 5px;color:#7184a4;font-size:9px;letter-spacing:.14em}
+.room-clips-header h2{margin:0 0 5px;font-size:20px}
+.room-clips-header .dialog-copy{margin:0;color:#7d8aa2;font-size:11px}
+.room-clips-search{flex:0 0 auto;margin:0}
+.room-clips-status{flex:0 0 auto;margin:0;color:#7d8aa2;font-size:10px}
+.room-clips-results{display:grid;flex:1 1 auto;align-content:start;gap:8px;min-height:110px;overflow:auto;padding:1px 4px 3px 1px;overscroll-behavior:contain;scrollbar-width:thin}
+.room-clip-result{display:grid;grid-template-columns:144px minmax(0,1fr) auto;align-items:center;gap:11px;padding:8px;border:1px solid rgba(126,148,185,.18);border-radius:14px;background:rgba(255,255,255,.8)}
+.room-clip-thumb{position:relative;overflow:hidden;aspect-ratio:16/9;border-radius:9px;background:linear-gradient(140deg,#244464,#0b1425)}
+.room-clip-thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.room-clip-duration{position:absolute;right:5px;bottom:5px;padding:3px 5px;border-radius:5px;background:rgba(8,14,25,.82);color:#fff;font-size:9px;font-variant-numeric:tabular-nums}
+.room-clip-copy{display:grid;min-width:0;gap:5px}
+.room-clip-copy strong{overflow:hidden;color:#263451;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.room-clip-copy small{overflow:hidden;color:#8491a7;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.room-clip-actions{display:flex;align-items:center;gap:6px}
+.room-clip-actions .button{min-height:32px;margin:0;padding:0 10px;font-size:9px;white-space:nowrap}
+.room-clip-actions .button:disabled{cursor:not-allowed;opacity:.45}
+.room-clips-load-more{flex:0 0 auto;margin:0!important}
+.room-clips-load-more[hidden]{display:none!important}
+.room-clips-dialog .dialog-close{z-index:1}
+.soop-clip-preview{background:radial-gradient(ellipse at 50% 40%,#1f4770 0,#12233b 55%,#09111e 100%)}
+.soop-clip-preview>img{object-fit:cover}
+.soop-clip-preview-fallback{display:grid;width:100%;height:100%;place-items:center;color:#eaf5ff;font-size:13px;font-weight:800;letter-spacing:.1em}
+@media(max-width:680px){
+  .clip-share-button{width:34px;height:34px;flex-basis:34px;border-radius:11px}
+  .room-clips-dialog{width:calc(100vw - 18px);max-height:min(86dvh,760px)}
+  .room-clips-card{max-height:min(86dvh,760px);gap:8px;padding:24px 14px 14px;border-radius:22px}
+  .room-clips-header{padding-right:32px}
+  .room-clips-header h2{font-size:18px}
+  .room-clips-results{min-height:100px;gap:7px}
+  .room-clip-result{grid-template-columns:96px minmax(0,1fr);gap:7px;padding:7px;border-radius:12px}
+  .room-clip-copy strong{font-size:11px}
+  .room-clip-copy small{font-size:9px}
+  .room-clip-actions{grid-column:1/-1;justify-content:flex-end}
+  .room-clip-actions .button{min-height:30px;flex:1;padding:0 7px;font-size:9px}
+}

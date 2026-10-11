@@ -39,6 +39,9 @@ const LINK_PREVIEW_CACHE_LIMIT = 40;
 const LINK_PREVIEW_HTML_MAX_BYTES = 512 * 1024;
 const LINK_PREVIEW_IMAGE_MAX_BYTES = 384 * 1024;
 const linkPreviewCache = new Map();
+const SOOP_CLIP_CACHE_TTL = 45 * 1000;
+const SOOP_CLIP_CACHE_LIMIT = 80;
+const soopClipSearchCache = new Map();
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
@@ -1428,6 +1431,74 @@ const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => 
   return getLinkPreview(url);
 });
 
+const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request) => {
+  const principal = await getPrincipal(request, { requireTrusted: true });
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const { meta } = await requireRoomMember(principal, roomId);
+  const soopId = String(meta.streamerSoopId || '').trim().toLowerCase();
+  if (!/^[a-z0-9]{2,30}$/.test(soopId)) throw new HttpsError('failed-precondition', '이 채팅방의 클립을 찾을 수 없습니다.');
+
+  const query = safeText(data.query == null ? '' : String(data.query), 80);
+  const page = Number(data.page || 1);
+  if (!Number.isInteger(page) || page < 1 || page > 1000) throw new HttpsError('invalid-argument', '클립 페이지가 올바르지 않습니다.');
+  const cacheKey = `${soopId}\n${query}\n${page}`;
+  const cached = soopClipSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > now()) return cached.value;
+
+  const endpoint = new URL(`https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/vods/clip/all`);
+  endpoint.searchParams.set('orderby', 'reg_date');
+  endpoint.searchParams.set('page', String(page));
+  endpoint.searchParams.set('field', 'title,contents,user_nick,user_id');
+  endpoint.searchParams.set('per_page', '20');
+  if (query) endpoint.searchParams.set('keyword', query);
+
+  let payload;
+  try {
+    const response = await fetch(endpoint, {
+      headers: { Accept: 'application/json', 'User-Agent': 'StreamerMessenger/1.0' },
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!response.ok) throw new Error(`SOOP responded ${response.status}`);
+    payload = await response.json();
+  } catch (error) {
+    logger.warn('SOOP clip search failed', { roomId, soopId, message: String(error && error.message || error).slice(0, 120) });
+    throw new HttpsError('unavailable', 'SOOP 클립을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  }
+
+  const records = Array.isArray(payload && payload.data) ? payload.data : [];
+  const clips = records.map((record) => {
+    const clipId = String(record && record.title_no || '');
+    if (!/^\d{1,20}$/.test(clipId)) return null;
+    const thumbnailValue = String(record && record.ucc && record.ucc.thumb || '');
+    let thumbnailUrl = '';
+    try {
+      const parsed = new URL(thumbnailValue.startsWith('//') ? `https:${thumbnailValue}` : thumbnailValue);
+      if (parsed.protocol === 'https:' && (parsed.hostname === 'sooplive.com' || parsed.hostname.endsWith('.sooplive.com'))) thumbnailUrl = parsed.href;
+    } catch (_) { /* 잘못된 썸네일은 생략 */ }
+    return {
+      id: clipId,
+      title: String(record.title_name || '제목 없는 클립').replace(/\s+/g, ' ').trim().slice(0, 180),
+      uploader: String(record.user_nick || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+      createdAt: String(record.reg_date || '').slice(0, 32),
+      durationMs: Math.max(0, Number(record.ucc && record.ucc.total_file_duration) || 0),
+      thumbnailUrl,
+      url: `https://vod.sooplive.com/player/${clipId}`,
+    };
+  }).filter(Boolean);
+  const metaData = payload && payload.meta || {};
+  const result = {
+    clips,
+    page: Number(metaData.current_page) || page,
+    total: Math.max(0, Number(metaData.total) || 0),
+    hasMore: Number(metaData.current_page || page) < Number(metaData.last_page || page),
+  };
+  soopClipSearchCache.set(cacheKey, { expiresAt: now() + SOOP_CLIP_CACHE_TTL, value: result });
+  for (const [key, entry] of soopClipSearchCache) if (entry.expiresAt <= now()) soopClipSearchCache.delete(key);
+  while (soopClipSearchCache.size > SOOP_CLIP_CACHE_LIMIT) soopClipSearchCache.delete(soopClipSearchCache.keys().next().value);
+  return result;
+});
+
 const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
@@ -1788,7 +1859,7 @@ module.exports = {
   messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate,
-  messengerSendMessage, messengerGetLinkPreview, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
+  messengerSendMessage, messengerGetLinkPreview, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage,

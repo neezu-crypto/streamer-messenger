@@ -22,6 +22,7 @@ module.exports = {
   messengerMiniGameUpdate: messenger.messengerMiniGameUpdate,
   messengerSendMessage: messenger.messengerSendMessage,
   messengerGetLinkPreview: messenger.messengerGetLinkPreview,
+  messengerSearchStreamerClips: messenger.messengerSearchStreamerClips,
   messengerGetGalleryImages: messenger.messengerGetGalleryImages,
   messengerGetGalleryImage: messenger.messengerGetGalleryImage,
   messengerRequestRoomselfUpload: messenger.messengerRequestRoomselfUpload,

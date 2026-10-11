@@ -30,7 +30,14 @@ state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'room-clips-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
+let roomClipSearchTimer = 0;
+let roomClipRequestToken = 0;
+let roomClipPage = 0;
+let roomClipHasMore = false;
+let roomClipLoading = false;
+let roomClipQuery = '';
+let roomClipItems = [];
 const call = (...args) => api().call(...args);
 const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
@@ -2687,6 +2694,110 @@ async function exportConversation(format) {
   } finally { buttons.forEach((button) => { button.disabled = false; }); }
 }
 
+function roomClipDurationLabel(durationMs) {
+  const totalSeconds = Math.max(0, Math.round(Number(durationMs || 0) / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+function roomClipCanonicalUrl(clipId) {
+  return `https://vod.sooplive.com/player/${encodeURIComponent(clipId)}`;
+}
+
+function renderRoomClipItems(items, append = false) {
+  const results = $('#room-clips-results');
+  if (!append) results.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  for (const clip of items) {
+    const card = document.createElement('article'); card.className = 'room-clip-result';
+    const thumb = document.createElement('div'); thumb.className = 'room-clip-thumb';
+    if (clip.thumbnailUrl) {
+      const image = document.createElement('img'); image.src = clip.thumbnailUrl; image.alt = ''; image.loading = 'lazy';
+      image.addEventListener('error', () => image.remove(), { once: true }); thumb.appendChild(image);
+    }
+    const duration = document.createElement('span'); duration.className = 'room-clip-duration'; duration.textContent = roomClipDurationLabel(clip.durationMs); thumb.appendChild(duration);
+    const copy = document.createElement('div'); copy.className = 'room-clip-copy';
+    const title = document.createElement('strong'); title.textContent = clip.title; title.title = clip.title;
+    const details = document.createElement('small'); details.textContent = [clip.uploader, clip.createdAt].filter(Boolean).join(' · ');
+    copy.append(title, details);
+    const actions = document.createElement('div'); actions.className = 'room-clip-actions';
+    const play = document.createElement('button'); play.type = 'button'; play.className = 'button button-quiet'; play.textContent = '도구에서 재생';
+    play.title = `채팅 도구에서 ${clip.title} 재생`; play.setAttribute('aria-label', play.title);
+    play.addEventListener('click', () => {
+      closeDialog('room-clips-dialog');
+      if (!openRoomToolVideo({ kind: 'soop-vod-clip', clipId: clip.id, href: clip.url || roomClipCanonicalUrl(clip.id), clipTitle: clip.title })) {
+        showError({ message: '채팅 도구에서 클립을 재생할 수 없습니다.' });
+      }
+    });
+    const share = document.createElement('button'); share.type = 'button'; share.className = 'button button-primary'; share.textContent = '채팅에 공유';
+    share.disabled = !!(state.room && state.room.locked && !state.isOwner);
+    share.title = share.disabled ? '채팅방이 잠겨 있어 스트리머만 공유할 수 있습니다.' : `${clip.title} 클립 링크를 채팅에 공유합니다.`;
+    share.setAttribute('aria-label', share.title);
+    share.addEventListener('click', async () => {
+      const url = roomClipCanonicalUrl(clip.id);
+      const text = `▶ ${clip.title}\n${url}`;
+      share.disabled = true;
+      const sent = await sendMessage('text', '', '', text);
+      if (sent) closeDialog('room-clips-dialog');
+      else share.disabled = !!(state.room && state.room.locked && !state.isOwner);
+    });
+    actions.append(play, share); card.append(thumb, copy, actions); fragment.appendChild(card);
+  }
+  results.appendChild(fragment);
+}
+
+async function searchRoomClips({ append = false } = {}) {
+  if (!state.room || roomClipLoading) return;
+  const query = append ? roomClipQuery : $('#room-clips-search').value.trim();
+  const page = append ? roomClipPage + 1 : 1;
+  const token = ++roomClipRequestToken;
+  roomClipLoading = true;
+  const status = $('#room-clips-status'); const more = $('#room-clips-load-more');
+  if (!append) {
+    roomClipQuery = query; roomClipPage = 0; roomClipHasMore = false; roomClipItems = [];
+    renderRoomClipItems([]); more.hidden = true; status.textContent = query ? '클립을 검색하고 있어요…' : '최신 클립을 불러오는 중…';
+  } else { more.disabled = true; more.textContent = '불러오는 중…'; }
+  try {
+    const result = await call('messengerSearchStreamerClips', { roomId: state.room.roomId, query, page });
+    if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
+    const clips = Array.isArray(result.clips) ? result.clips : [];
+    roomClipItems = append ? roomClipItems.concat(clips) : clips;
+    roomClipPage = Number(result.page) || page; roomClipHasMore = !!result.hasMore;
+    renderRoomClipItems(clips, append);
+    status.textContent = roomClipItems.length
+      ? (query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 클립 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
+      : (query ? '검색된 클립이 없습니다.' : '등록된 클립이 없습니다.');
+    more.hidden = !roomClipHasMore;
+  } catch (error) {
+    if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
+    status.textContent = error && error.message || '클립을 불러오지 못했습니다. 다시 시도해 주세요.';
+    more.hidden = !append || !roomClipHasMore;
+  } finally {
+    if (token === roomClipRequestToken) {
+      roomClipLoading = false; more.disabled = false; more.textContent = '클립 더 보기';
+    }
+  }
+}
+
+function openRoomClipsDialog() {
+  if (!state.room) return;
+  clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
+  $('#room-clips-search').value = ''; $('#room-clips-results').replaceChildren();
+  $('#room-clips-status').textContent = '최신 클립을 불러오는 중…'; $('#room-clips-load-more').hidden = true;
+  openDialog('room-clips-dialog'); searchRoomClips();
+}
+
+function bindRoomClipControls() {
+  $('#open-room-clips').addEventListener('click', openRoomClipsDialog);
+  $('#close-room-clips').addEventListener('click', () => closeDialog('room-clips-dialog'));
+  $('#room-clips-dialog').addEventListener('click', (event) => { if (event.target === $('#room-clips-dialog')) closeDialog('room-clips-dialog'); });
+  $('#room-clips-dialog').addEventListener('close', () => { roomClipRequestToken += 1; roomClipLoading = false; clearTimeout(roomClipSearchTimer); });
+  $('#room-clips-search').addEventListener('input', () => {
+    clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
+    roomClipSearchTimer = setTimeout(() => searchRoomClips(), 280);
+  });
+  $('#room-clips-load-more').addEventListener('click', () => searchRoomClips({ append: true }));
+}
+
 function youtubeVideoId(href) {
   try {
     const url = new URL(href); const host = url.hostname.toLowerCase().replace(/^www\./, '');
@@ -2709,6 +2820,15 @@ function soopLiveTarget(href) {
   } catch (_) { return null; }
 }
 
+function soopVodClipTarget(href) {
+  try {
+    const url = new URL(href);
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'vod.sooplive.com') return null;
+    const match = url.pathname.match(/^\/player\/(\d{1,20})\/?$/);
+    return match ? { clipId: match[1] } : null;
+  } catch (_) { return null; }
+}
+
 function isDirectVideoUrl(href) {
   try { return new URL(href).protocol === 'https:' && /\.(?:mp4|m4v|webm|ogv|mov)$/i.test(new URL(href).pathname); }
   catch (_) { return false; }
@@ -2725,9 +2845,10 @@ function resetRoomToolVideo() {
   state.roomVideoSourceCard = null;
 }
 
-function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', href = '', sourceCard = null }) {
-  const canPlayInMobileRoomTools = isActiveMobileChat() && ['youtube', 'soop-live'].includes(kind);
-  if ((!isDesktopRoomToolsPip() && !canPlayInMobileRoomTools) || !state.room) return false;
+function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', clipId = '', clipTitle = '', href = '', sourceCard = null }) {
+  const canPlayInMobileRoomTools = isActiveMobileChat() && ['youtube', 'soop-live', 'soop-vod-clip'].includes(kind);
+  const canPlayClipInRoomTools = kind === 'soop-vod-clip' && state.activeView === 'chat' && !!state.room;
+  if ((!isDesktopRoomToolsPip() && !canPlayInMobileRoomTools && !canPlayClipInRoomTools) || !state.room) return false;
   const player = $('#room-video-player');
   const panel = $('#room-video-tool-panel');
   const slide = $('#room-tool-video-slide');
@@ -2759,6 +2880,16 @@ function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', 
     title.textContent = 'SOOP 라이브 방송';
     caption.textContent = `SOOP ${soopId} 라이브를 채팅 도구에서 재생합니다.`;
     link.href = href || `https://play.sooplive.com/${encodeURIComponent(soopId)}/`;
+  } else if (kind === 'soop-vod-clip' && /^\d{1,20}$/.test(clipId)) {
+    media = document.createElement('iframe');
+    media.src = `https://vod.sooplive.com/player/${encodeURIComponent(clipId)}/embed?autoPlay=true&showChat=true&mutePlay=true`;
+    media.title = `${clipTitle || 'SOOP 클립'} 재생`;
+    media.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write; web-share';
+    media.allowFullscreen = true;
+    media.referrerPolicy = 'strict-origin-when-cross-origin';
+    title.textContent = clipTitle || 'SOOP 클립';
+    caption.textContent = '선택한 SOOP 클립을 채팅 도구에서 재생합니다.';
+    link.href = href || roomClipCanonicalUrl(clipId);
   } else if (kind === 'direct' && isDirectVideoUrl(href)) {
     media = document.createElement('video');
     media.src = href;
@@ -2827,6 +2958,37 @@ function soopLivePreview({ soopId, broadcastNo }, href) {
   card.append(fallback, badge, play);
   if (state.room) loadSoopLiveThumbnail(card, href, state.room.roomId);
   return card;
+}
+
+function soopVodClipPreview({ clipId }, href) {
+  const card = document.createElement('div'); card.className = 'message-video-preview soop-clip-preview';
+  const fallback = document.createElement('div'); fallback.className = 'soop-clip-preview-fallback'; fallback.textContent = 'SOOP CLIP';
+  const badge = document.createElement('span'); badge.className = 'soop-live-preview-badge'; badge.textContent = 'SOOP CLIP';
+  const play = document.createElement('button'); play.className = 'video-play-button soop-live-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅 도구에서 SOOP 클립 재생'; play.setAttribute('aria-label', '채팅 도구에서 SOOP 클립 재생');
+  play.addEventListener('click', () => {
+    if (openRoomToolVideo({ kind: 'soop-vod-clip', clipId, href, sourceCard: card })) return;
+    const frame = document.createElement('iframe'); frame.src = `https://vod.sooplive.com/player/${encodeURIComponent(clipId)}/embed?autoPlay=true&showChat=true&mutePlay=true`; frame.title = 'SOOP 클립'; frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write; web-share'; frame.allowFullscreen = true; frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    card.replaceChildren(frame);
+  });
+  card.append(fallback, badge, play);
+  if (state.room) loadSoopClipThumbnail(card, href, state.room.roomId);
+  return card;
+}
+
+function loadSoopClipThumbnail(card, href, roomId) {
+  const key = previewCacheKey(roomId, href);
+  let pending = state.linkPreviewCache.get(key);
+  if (!pending) {
+    pending = call('messengerGetLinkPreview', { roomId, url: href });
+    state.linkPreviewCache.set(key, pending);
+    pending.catch(() => { if (state.linkPreviewCache.get(key) === pending) state.linkPreviewCache.delete(key); });
+    while (state.linkPreviewCache.size > 40) state.linkPreviewCache.delete(state.linkPreviewCache.keys().next().value);
+  }
+  pending.then((preview) => {
+    if (!card.isConnected || !preview.image || !preview.image.contentType || !preview.image.data) return;
+    const image = document.createElement('img'); image.src = `data:${preview.image.contentType};base64,${preview.image.data}`; image.alt = 'SOOP 클립 미리보기'; image.loading = 'lazy';
+    card.querySelector('.soop-clip-preview-fallback')?.remove(); card.insertBefore(image, card.firstChild);
+  }).catch(() => {});
 }
 
 function loadSoopLiveThumbnail(card, href, roomId) {
@@ -2916,11 +3078,13 @@ function renderTextWithLinks(message, bubble) {
     const link = document.createElement('a'); link.className = 'message-inline-link'; link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = href; link.title = '링크를 새 탭에서 열기'; link.setAttribute('aria-label', `링크 열기: ${parsed.hostname}`); bubble.appendChild(link);
     if (trailing) bubble.appendChild(document.createTextNode(trailing));
     const liveTarget = soopLiveTarget(parsed.href);
+    const clipTarget = soopVodClipTarget(parsed.href);
     const videoId = youtubeVideoId(parsed.href);
-    if (!mediaPreviewAdded && liveTarget) { bubble.appendChild(soopLivePreview(liveTarget, parsed.href)); mediaPreviewAdded = true; }
+    if (!mediaPreviewAdded && clipTarget) { bubble.appendChild(soopVodClipPreview(clipTarget, parsed.href)); mediaPreviewAdded = true; }
+    else if (!mediaPreviewAdded && liveTarget) { bubble.appendChild(soopLivePreview(liveTarget, parsed.href)); mediaPreviewAdded = true; }
     else if (!mediaPreviewAdded && videoId) { bubble.appendChild(youtubePreview(videoId)); mediaPreviewAdded = true; }
     else if (!mediaPreviewAdded && isDirectVideoUrl(parsed.href)) { bubble.appendChild(directVideoPreview(parsed.href)); mediaPreviewAdded = true; }
-    else if (!genericPreviewAdded && parsed.protocol === 'https:' && !liveTarget && !videoId && !isDirectVideoUrl(parsed.href)) { previewUrls.push(parsed.href); genericPreviewAdded = true; }
+    else if (!genericPreviewAdded && parsed.protocol === 'https:' && !clipTarget && !liveTarget && !videoId && !isDirectVideoUrl(parsed.href)) { previewUrls.push(parsed.href); genericPreviewAdded = true; }
     cursor = match.index + raw.length;
   }
   bubble.appendChild(document.createTextNode(value.slice(cursor)));
@@ -3435,6 +3599,7 @@ async function discardRoom() {
 function leaveChat() {
   setMobileQuickMenuOpen(false, false);
   setAsideDrawerOpen(false, false);
+  closeDialog('room-clips-dialog');
   clearSubscriptions();
   resetRoomToolVideo();
   state.room = null; state.activeView = 'directory'; state.selectedFanUid = '';
@@ -3951,6 +4116,7 @@ function bindEvents() {
   $('#export-image').addEventListener('click', () => exportConversation('image'));
   $('#submit-application').addEventListener('click', submitApplication);
   $('#open-image-picker').addEventListener('click', () => openImagePicker());
+  bindRoomClipControls();
   $('#close-image-picker').addEventListener('click', () => closeDialog('image-picker-dialog'));
   $('#image-viewer-close').addEventListener('click', () => closeDialog('image-viewer-dialog'));
   $('#image-viewer-dialog').addEventListener('click', (event) => { if (event.target === $('#image-viewer-dialog')) closeDialog('image-viewer-dialog'); });
