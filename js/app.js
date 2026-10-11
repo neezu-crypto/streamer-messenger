@@ -205,6 +205,7 @@ function syncMobileRoomToolsOverlay() {
   const mobileChat = isActiveMobileChat();
   if (!mobileChat) {
     trigger.hidden = true;
+    slot.classList.remove('is-keyboard-video-pinned');
     slot.style.removeProperty('--mobile-room-tools-top');
     slot.style.removeProperty('--mobile-room-tools-width');
     if (isDesktopRoomToolsPip() && !slot.hidden) restoreRoomToolsPipPosition();
@@ -213,7 +214,12 @@ function syncMobileRoomToolsOverlay() {
 
   trigger.hidden = !hasTools;
   const keyboardOpen = document.body.classList.contains('messenger-keyboard-open');
-  const isOpen = hasTools && state.mobileRoomToolsOpen && !keyboardOpen;
+  const videoPlaybackActive = state.activeRoomTool === 'video'
+    && !!state.roomVideoSourceCard
+    && !$('#room-video-tool-panel').hidden;
+  const pinVideoForKeyboard = keyboardOpen && videoPlaybackActive;
+  slot.classList.toggle('is-keyboard-video-pinned', pinVideoForKeyboard);
+  const isOpen = hasTools && state.mobileRoomToolsOpen && (!keyboardOpen || videoPlaybackActive);
   slot.hidden = !isOpen;
   trigger.setAttribute('aria-expanded', String(isOpen));
   const label = isOpen ? '채팅 도구 접기' : '채팅 도구 펼치기';
@@ -227,7 +233,8 @@ function syncMobileRoomToolsOverlay() {
   const header = $('#chat-header');
   const composer = $('.chat-composer-wrap');
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
-  const top = Math.max(62, Math.ceil(header?.getBoundingClientRect().bottom || 120) + 6);
+  const headerBottom = Math.ceil(header?.getBoundingClientRect().bottom || 120);
+  const top = pinVideoForKeyboard ? Math.max(0, headerBottom) : Math.max(62, headerBottom + 6);
   const composerTop = composer?.getBoundingClientRect().top || viewportHeight - 96;
   const switcherHeight = $('#room-tools-switcher').hidden ? 0 : 48;
   const availableHeight = Math.max(108, composerTop - top - switcherHeight - 28);

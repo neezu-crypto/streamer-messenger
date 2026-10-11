@@ -584,7 +584,7 @@
   body.messenger-chat-open .chat-header,body.messenger-chat-open .lock-banner,body.messenger-chat-open .pinned-message-panel,body.messenger-chat-open .chat-composer-wrap{flex:0 0 auto}
   body.messenger-chat-open .chat-body{flex:1 1 0;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:auto}
   body.messenger-chat-open .chat-composer-wrap{padding-bottom:calc(9px + env(safe-area-inset-bottom))}
-  body.messenger-chat-open.messenger-keyboard-open .room-tools-sticky-slot{display:none!important}
+  body.messenger-chat-open.messenger-keyboard-open .room-tools-sticky-slot:not(.is-keyboard-video-pinned){display:none!important}
 }
 
 /* Keep the mobile chat chrome compact and group moved controls by purpose. */
