@@ -1887,18 +1887,22 @@ function bindRoomToolControls() {
   $('#room-video-close').addEventListener('click', closeRoomToolVideo);
 
   let dragOrigin = null;
-  dragHandle.addEventListener('pointerdown', (event) => {
+  slot.addEventListener('pointerdown', (event) => {
     if (!isDesktopRoomToolsPip() || event.button !== 0 || slot.hidden) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const isDragHandle = !!target && !!target.closest('#room-tools-pip-drag-handle');
+    const isFrameSurface = target === slot || target === $('#room-tools-pip-bar');
+    if (!isDragHandle && !isFrameSurface) return;
     const rect = slot.getBoundingClientRect();
     dragOrigin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
     slot.style.setProperty('--room-tools-pip-right', 'auto');
     slot.style.setProperty('--room-tools-pip-left', `${rect.left}px`);
     slot.style.setProperty('--room-tools-pip-top', `${rect.top}px`);
     slot.classList.add('is-dragging');
-    dragHandle.setPointerCapture(event.pointerId);
+    slot.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
-  dragHandle.addEventListener('pointermove', (event) => {
+  slot.addEventListener('pointermove', (event) => {
     if (!dragOrigin || event.pointerId !== dragOrigin.pointerId) return;
     setRoomToolsPipPosition(dragOrigin.left + event.clientX - dragOrigin.x, dragOrigin.top + event.clientY - dragOrigin.y);
   });
@@ -1907,12 +1911,12 @@ function bindRoomToolControls() {
     const pointerId = dragOrigin.pointerId;
     dragOrigin = null;
     slot.classList.remove('is-dragging');
-    if (dragHandle.hasPointerCapture(pointerId)) dragHandle.releasePointerCapture(pointerId);
+    if (slot.hasPointerCapture(pointerId)) slot.releasePointerCapture(pointerId);
     persistRoomToolsPipPosition();
   };
-  dragHandle.addEventListener('pointerup', stopDragging);
-  dragHandle.addEventListener('pointercancel', stopDragging);
-  dragHandle.addEventListener('lostpointercapture', stopDragging);
+  slot.addEventListener('pointerup', stopDragging);
+  slot.addEventListener('pointercancel', stopDragging);
+  slot.addEventListener('lostpointercapture', stopDragging);
 
   let resizeOrigin = null;
   resizeHandle.addEventListener('pointerdown', (event) => {
