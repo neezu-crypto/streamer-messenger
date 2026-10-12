@@ -4464,7 +4464,7 @@ function renderAdminAudit(entries) {
 function formatVisitorHour(hour) {
   const date = new Date(`${hour}:00:00Z`);
   if (!Number.isFinite(date.getTime())) return '--';
-  return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hourCycle: 'h23' }).format(date);
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', hourCycle: 'h23' }).format(date);
 }
 
 function renderAdminVisitorAnalytics(data) {
@@ -4498,7 +4498,7 @@ function renderAdminVisitorAnalytics(data) {
     rail.appendChild(bar);
     const label = document.createElement('small');
     label.className = 'admin-visitor-hour-label';
-    label.textContent = formatVisitorHour(item.hour);
+    label.textContent = `${formatVisitorHour(item.hour)}시`;
     column.append(value, rail, label);
     chart.appendChild(column);
   });
