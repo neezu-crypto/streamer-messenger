@@ -753,7 +753,7 @@
 
 .room-tool-slide[data-room-tool="video"]{position:relative;flex-direction:column}
 .room-tool-slide[data-room-tool="video"] .room-video-tool-panel{position:absolute;inset:0}
-.room-video-tool-panel.is-video-mode-inactive{visibility:hidden;opacity:0;pointer-events:none}
+.room-video-tool-panel.is-video-mode-inactive{display:none!important}
 .room-video-mode-switcher{position:absolute;top:8px;left:8px;z-index:5;display:inline-flex;gap:3px;padding:3px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(9,17,30,.78);box-shadow:0 4px 16px rgba(0,0,0,.18);backdrop-filter:blur(10px)}
 .room-video-mode-switcher[hidden]{display:none!important}
 .room-video-mode-tab{min-height:26px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:transparent;color:#c5d2e6;font-size:9px;font-weight:800;white-space:nowrap}
