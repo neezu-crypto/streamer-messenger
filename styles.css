@@ -1055,3 +1055,77 @@
   .room-tools-sticky-slot .room-market-chart{height:auto;min-height:38px;border-radius:6px;font-size:7px}
   .room-tools-sticky-slot .room-market-trade-note,.room-tools-sticky-slot .room-market-nickname-option{display:none}
 }
+
+/* Mobile chat tools use one compact icon row; terminal watch parties collapse their empty player. */
+@media(max-width:680px){
+  body.messenger-chat-open .room-tools-sticky-slot:not([hidden]){
+    max-height:var(--mobile-room-tools-max-height,calc(100dvh - var(--mobile-room-tools-top,120px) - 8px));
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    padding:5px;
+    border-radius:14px;
+  }
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-bar{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    width:100%;
+    min-height:32px;
+    margin:0 0 3px;
+    padding:0 1px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    scrollbar-width:none;
+    overscroll-behavior-x:contain;
+  }
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-bar::-webkit-scrollbar{display:none}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-drag-handle,
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-collapse{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button{
+    display:grid;
+    width:31px;
+    height:31px;
+    min-width:31px;
+    flex:0 0 31px;
+    place-items:center;
+    padding:0;
+    border:1px solid rgba(126,148,185,.2);
+    border-radius:9px;
+    background:rgba(255,255,255,.82);
+    color:#667895;
+  }
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button[aria-pressed="true"]{border-color:rgba(91,119,225,.34);background:#eaf0ff;color:#526fd7}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-home[aria-pressed="true"],
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-bar .room-tools-quick-button[hidden]{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-video-quick-actions{display:flex;align-items:center;gap:3px;flex:0 0 auto;margin-left:1px;padding-left:4px;border-left:1px solid rgba(126,148,185,.2)}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-video-quick-actions[hidden]{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-video-quick-actions .room-tools-quick-button{width:28px;height:28px;min-width:28px;flex-basis:28px;border-radius:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-video-quick-actions .room-tools-quick-button svg{width:14px;height:14px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-content>.room-tools-home-button,
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-content>.room-tools-switcher,
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-launcher{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-mode-switcher{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state{min-height:72px;padding:8px;gap:4px;border-radius:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-icon{width:26px;height:26px;font-size:12px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state strong{font-size:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state p{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state .button{min-height:27px;margin-top:1px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"],
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"]{gap:5px;padding:7px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-player,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-player{display:none}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-heading,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-heading{gap:5px;padding-bottom:5px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-heading p:not(.eyebrow),
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-heading p:not(.eyebrow),
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-status-card small,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-status-card small{display:none}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-footer,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-footer{align-items:center;flex-direction:row;gap:5px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-status-card,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-status-card{padding:6px 8px}
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-actions,
+  #room-tools-viewport.is-watch-party-active .room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-actions{justify-content:flex-end}
+}

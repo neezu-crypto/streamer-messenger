@@ -285,12 +285,15 @@ function syncMobileRoomToolsOverlay() {
   const headerBottom = Math.ceil(header?.getBoundingClientRect().bottom || 120);
   const top = pinToolsForKeyboard ? 0 : Math.max(62, headerBottom + 6);
   const composerTop = composer?.getBoundingClientRect().top || viewportHeight - 96;
-  const switcherHeight = $('#room-tools-switcher').hidden ? 0 : 48;
-  const launcherNavigationHeight = $('#room-tools-home-button').hidden ? 0 : 34;
-  const availableHeight = Math.max(108, composerTop - top - switcherHeight - launcherNavigationHeight - 28);
+  const isMobile = isActiveMobileChat();
+  const switcherHeight = isMobile || $('#room-tools-switcher').hidden ? 0 : 48;
+  const launcherNavigationHeight = isMobile || $('#room-tools-home-button').hidden ? 0 : 34;
+  const toolbarHeight = isMobile ? 38 : 0;
+  const availableHeight = Math.max(108, composerTop - top - switcherHeight - launcherNavigationHeight - toolbarHeight - 16);
   const width = Math.max(190, Math.min(window.innerWidth - 16, availableHeight * 16 / 9));
   slot.style.setProperty('--mobile-room-tools-top', `${top}px`);
   slot.style.setProperty('--mobile-room-tools-width', `${width}px`);
+  slot.style.setProperty('--mobile-room-tools-max-height', `${Math.max(120, composerTop - top - 8)}px`);
 }
 
 function setMobileRoomToolsOpen(open) {
@@ -1358,6 +1361,7 @@ function updateRoomVideoMode() {
     viewport.classList.toggle('is-watch-party-active', partyModeActive);
     viewport.classList.toggle('is-personal-video-active', personalModeActive);
   }
+  syncRoomToolQuickButtonStates();
 }
 
 function watchPartyCanManage(party = state.watchParty) {
@@ -1383,6 +1387,7 @@ function renderRoomWatchParty() {
   const personal = $('#room-video-tool-panel');
   const create = $('#room-watch-party-create-inline');
   if (!party) {
+    panel.dataset.watchPartyStatus = 'empty';
     statusText.textContent = '같이보기 영상이 없습니다.';
     countdown.textContent = '';
     details.textContent = '영상 링크를 등록해 채팅방 참여자와 함께 재생해 보세요.';
@@ -1395,6 +1400,7 @@ function renderRoomWatchParty() {
   }
 
   const video = party.video;
+  panel.dataset.watchPartyStatus = status;
   const responsible = watchPartyCanManage(party);
   const loaded = state.watchPartyPlayingId === party.partyId;
   const remaining = Number(party.startsAt) - watchPartyNow();
@@ -1825,6 +1831,20 @@ function syncRoomToolsViewportHeight() {
   if (height > 0 && viewport.style.height !== `${height}px`) viewport.style.height = `${height}px`;
 }
 
+function syncRoomToolQuickButtonStates() {
+  const quickHomeButton = $('.room-tools-quick-home');
+  if (quickHomeButton) quickHomeButton.setAttribute('aria-pressed', String(!state.activeRoomTool));
+  document.querySelectorAll('[data-room-tool-quick-launch]').forEach((button) => {
+    const key = button.dataset.roomToolQuickLaunch;
+    const selected = key === 'party'
+      ? state.activeRoomTool === 'video' && state.roomVideoMode === 'party'
+      : key === 'video'
+        ? state.activeRoomTool === 'video' && state.roomVideoMode !== 'party'
+        : key === state.activeRoomTool;
+    button.setAttribute('aria-pressed', String(selected));
+  });
+}
+
 function renderRoomToolSwitcher(preferredKey = '') {
   const slot = $('#room-tools-sticky-slot');
   const launcher = $('#room-tools-launcher');
@@ -1833,10 +1853,7 @@ function renderRoomToolSwitcher(preferredKey = '') {
   const viewport = $('#room-tools-viewport');
   const track = $('#room-tools-track');
   const slides = availableRoomToolSlides();
-  const quickHomeButton = $('.room-tools-quick-home');
-  const quickToolButtons = document.querySelectorAll('[data-room-tool-quick-launch]');
-  if (quickHomeButton) quickHomeButton.setAttribute('aria-pressed', String(!state.activeRoomTool));
-  quickToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.roomToolQuickLaunch === state.activeRoomTool)));
+  syncRoomToolQuickButtonStates();
   if (!state.room) {
     updateRoomVideoMode();
     slot.hidden = true;
