@@ -3,6 +3,7 @@ const dns = require('node:dns').promises;
 const https = require('node:https');
 const net = require('node:net');
 const { promisify } = require('util');
+const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
@@ -15,6 +16,7 @@ const { getPrincipal, getVerifiedStreamer, requireAdmin, SERVICE_ID } = require(
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
+const TEST_ROOM_ID = 'messengertestroom';
 const MESSAGE_MAX = 1000;
 const INTRO_MAX = 500;
 const APPLICATION_INTERVAL = 5 * 60 * 1000;
@@ -197,6 +199,8 @@ async function getLinkPreview(rawUrl) {
 }
 const roomRef = (roomId) => db().ref(`${ROOT}/rooms/${roomId}`);
 const userRoomIndexPath = (uid, roomId) => `${ROOT}/userRoomIndex/${uid}/${roomId}`;
+const testAccountsRef = () => db().ref(`${ROOT}/admin/testAccounts`);
+const testAccountRef = (uid) => testAccountsRef().child(uid);
 const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
 const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
 const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
@@ -232,6 +236,55 @@ async function requireRoomMember(principal, roomId) {
     throw new HttpsError('permission-denied', '채팅방 참여 권한이 없습니다.');
   }
   return { meta, isOwner, member: memberSnap.val() || null };
+}
+
+async function requireRoomPrincipal(request, roomId) {
+  const id = String(roomId || '');
+  if (!/^[a-z0-9]{2,30}$/.test(id)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
+  const principal = await getPrincipal(request);
+  const metaSnap = await roomRef(id).child('meta').get();
+  if (!metaSnap.exists()) throw new HttpsError('not-found', '채팅방을 찾을 수 없습니다.');
+  const meta = metaSnap.val() || {};
+  if (id === TEST_ROOM_ID || meta.roomType === 'test') {
+    if (id !== TEST_ROOM_ID || meta.roomType !== 'test') throw new HttpsError('permission-denied', '테스트방에 접근할 수 없습니다.');
+    if (principal.testAccount) {
+      const account = (await testAccountRef(principal.uid).get()).val() || {};
+      if (account.active !== true) throw new HttpsError('permission-denied', '비활성화된 테스트 계정입니다.');
+    } else if (!principal.admin) {
+      throw new HttpsError('permission-denied', '테스트방은 관리자와 등록된 테스트 계정만 이용할 수 있습니다.');
+    }
+    const member = (await roomRef(id).child(`members/${principal.uid}`).get()).val() || {};
+    if (meta.ownerUid !== principal.uid && member.status !== 'active') {
+      throw new HttpsError('permission-denied', '테스트방 참여 권한이 없습니다.');
+    }
+    return principal;
+  }
+  if (principal.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 테스트방에서만 이용할 수 있습니다.');
+  if (!principal.trusted) throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
+  return principal;
+}
+
+async function addTestRoomMember(uid, profile, role, roomMeta) {
+  const at = now();
+  const memberRef = roomRef(TEST_ROOM_ID).child(`members/${uid}`);
+  const member = {
+    uid,
+    status: 'active',
+    joinedAt: at,
+    profile: {
+      nickname: String(profile && profile.nickname || (role === 'host' ? '테스트 진행자' : '테스트 참여자')).slice(0, 30),
+      soopId: String(profile && profile.soopId || '').slice(0, 30),
+      avatarUrl: String(profile && profile.avatarUrl || '').slice(0, 500),
+    },
+    testAccount: role !== 'admin',
+  };
+  const existing = await memberRef.get();
+  if (!existing.exists() || existing.val().status !== 'active') {
+    await memberRef.set(member);
+    await roomRef(TEST_ROOM_ID).child('meta/memberCount').transaction((count) => (Number(count) || 0) + 1);
+  }
+  await db().ref(userRoomIndexPath(uid, TEST_ROOM_ID)).set({ joinedAt: Number((await memberRef.child('joinedAt').get()).val()) || at });
+  return { member, room: publicRoom(roomMeta, uid === roomMeta.ownerUid) };
 }
 
 async function writeAudit(uid, action, detail) {
@@ -593,6 +646,21 @@ async function ensureGalleryLink(roomId, meta) {
 const messengerGetSession = onCall(async (request) => {
   const p = await getPrincipal(request);
   const profile = p.trusted ? await profileFor(p.uid) : null;
+  let testAccount = null;
+  let testRoom = null;
+  if (p.testAccount) {
+    const account = (await testAccountRef(p.uid).get()).val() || {};
+    if (account.active !== true) throw new HttpsError('permission-denied', '비활성화된 테스트 계정입니다.');
+    testAccount = { label: String(account.label || '테스트 계정').slice(0, 40), role: account.role === 'host' ? 'host' : 'participant' };
+    const [metaSnap, memberSnap] = await Promise.all([
+      roomRef(TEST_ROOM_ID).child('meta').get(),
+      roomRef(TEST_ROOM_ID).child(`members/${p.uid}`).get(),
+    ]);
+    const meta = metaSnap.val() || {};
+    if (metaSnap.exists() && meta.roomType === 'test' && memberSnap.val()?.status === 'active') {
+      testRoom = publicRoom(meta, meta.ownerUid === p.uid);
+    }
+  }
   let ownRoom = null;
   const ownRoomId = principalRoomId(p);
   if (ownRoomId) {
@@ -602,25 +670,143 @@ const messengerGetSession = onCall(async (request) => {
       ownRoom = publicRoom(meta, true);
     }
   }
-  return { uid: p.uid, trusted: p.trusted, isRealAccount: p.real, isAdmin: p.admin, isVerifiedStreamer: !!p.streamer, streamer: p.streamer, profile, ownRoom };
+  return { uid: p.uid, trusted: p.trusted, isRealAccount: p.real, isAdmin: p.admin, isVerifiedStreamer: !!p.streamer, streamer: p.streamer, profile, ownRoom, isTestAccount: p.testAccount, testAccount, testRoom };
+});
+
+const messengerAdminListTestAccounts = onCall(async (request) => {
+  await requireAdmin(request);
+  const [accountsSnap, roomSnap] = await Promise.all([testAccountsRef().get(), roomRef(TEST_ROOM_ID).child('meta').get()]);
+  const accounts = Object.entries(accountsSnap.val() || {}).map(([uid, value]) => ({
+    uid,
+    label: String(value && value.label || '테스트 계정').slice(0, 40),
+    role: value && value.role === 'host' ? 'host' : 'participant',
+    active: !!(value && value.active === true),
+    createdAt: Number(value && value.createdAt) || 0,
+  })).sort((a, b) => a.createdAt - b.createdAt);
+  const meta = roomSnap.val() || {};
+  return { room: roomSnap.exists() && meta.roomType === 'test' ? publicRoom(meta, true) : null, accounts };
+});
+
+const messengerAdminCreateTestAccount = onCall(async (request) => {
+  const admin = await requireAdmin(request);
+  const role = String((request.data || {}).role || 'participant');
+  if (!['host', 'participant'].includes(role)) throw new HttpsError('invalid-argument', '테스트 계정 유형을 확인해 주세요.');
+  const roomMetaRef = roomRef(TEST_ROOM_ID).child('meta');
+  const [existingMetaSnap, existingAccountsSnap] = await Promise.all([roomMetaRef.get(), testAccountsRef().get()]);
+  const existingMeta = existingMetaSnap.val() || {};
+  const existingAccounts = existingAccountsSnap.val() || {};
+  if (existingMetaSnap.exists() && existingMeta.roomType !== 'test') throw new HttpsError('already-exists', '테스트방 ID가 기존 채팅방과 충돌합니다.');
+  const activeHost = Object.entries(existingAccounts).find(([, value]) => value && value.active === true && value.role === 'host');
+  if (role === 'host' && activeHost) throw new HttpsError('already-exists', '테스트 진행자 계정은 이미 있습니다.');
+  if (role === 'participant' && (!existingMetaSnap.exists() || !activeHost || existingMeta.ownerUid !== activeHost[0])) {
+    throw new HttpsError('failed-precondition', '먼저 테스트 진행자 계정을 만들어 주세요.');
+  }
+
+  const nextNumber = Object.values(existingAccounts).filter((value) => value && value.role === role).length + 1;
+  const label = role === 'host' ? '테스트 진행자' : `테스트 참여자 ${nextNumber}`;
+  const auth = getAuth();
+  let userRecord = null;
+  let createdRoom = false;
+  let registered = false;
+  let memberWritten = false;
+  try {
+    userRecord = await auth.createUser({ displayName: label, disabled: false });
+    await auth.setCustomUserClaims(userRecord.uid, { messengerTestAccount: true });
+    const profile = role === 'host' ? await profileFor(admin.uid) : null;
+    if (role === 'host') {
+      const createdAt = now();
+      const streamerSoopId = String(profile && profile.soopId || 'messengertest').trim().toLowerCase();
+      const meta = {
+        roomId: TEST_ROOM_ID,
+        ownerUid: userRecord.uid,
+        streamerId: 'test-room',
+        roomType: 'test',
+        galleryStreamerId: await resolveGalleryStreamerId(streamerSoopId, profile && profile.nickname || ''),
+        streamerNickname: String(profile && profile.nickname || '테스트 스트리머').slice(0, 30),
+        streamerSoopId,
+        streamerAvatarUrl: String(profile && profile.avatarUrl || ''),
+        visibility: 'private',
+        locked: false,
+        memberCount: 0,
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const result = await roomMetaRef.transaction((current) => current ? undefined : meta, undefined, false);
+      if (!result.committed) throw new HttpsError('already-exists', '테스트방을 안전하게 만들지 못했습니다.');
+      createdRoom = true;
+      await addTestRoomMember(userRecord.uid, { nickname: label }, role, result.snapshot.val());
+      memberWritten = true;
+      await addTestRoomMember(admin.uid, profile, 'admin', result.snapshot.val());
+    } else {
+      await addTestRoomMember(userRecord.uid, { nickname: label }, role, existingMeta);
+      memberWritten = true;
+    }
+    await testAccountRef(userRecord.uid).set({ uid: userRecord.uid, label, role, active: true, createdAt: now(), createdByUid: admin.uid });
+    registered = true;
+    return { uid: userRecord.uid, label, role, roomId: TEST_ROOM_ID };
+  } catch (error) {
+    if (userRecord) {
+      if (!registered) await testAccountRef(userRecord.uid).remove().catch(() => {});
+      await db().ref().update({
+        [`${ROOT}/rooms/${TEST_ROOM_ID}/members/${userRecord.uid}`]: null,
+        [userRoomIndexPath(userRecord.uid, TEST_ROOM_ID)]: null,
+        ...(createdRoom ? {
+          [`${ROOT}/rooms/${TEST_ROOM_ID}`]: null,
+          [userRoomIndexPath(admin.uid, TEST_ROOM_ID)]: null,
+        } : {}),
+      }).catch(() => {});
+      if (memberWritten && !createdRoom) {
+        await roomRef(TEST_ROOM_ID).child('meta/memberCount').transaction((count) => Math.max(0, (Number(count) || 0) - 1)).catch(() => {});
+      }
+      await auth.deleteUser(userRecord.uid).catch(() => {});
+    }
+    throw error;
+  }
+});
+
+const messengerAdminJoinTestRoom = onCall(async (request) => {
+  const admin = await requireAdmin(request);
+  const metaSnap = await roomRef(TEST_ROOM_ID).child('meta').get();
+  const meta = metaSnap.val() || {};
+  if (!metaSnap.exists() || meta.roomType !== 'test') throw new HttpsError('not-found', '테스트 진행자 계정을 먼저 만들어 주세요.');
+  await addTestRoomMember(admin.uid, await profileFor(admin.uid), 'admin', meta);
+  const latestMeta = (await roomRef(TEST_ROOM_ID).child('meta').get()).val() || meta;
+  return { room: publicRoom(latestMeta, false) };
+});
+
+const messengerAdminIssueTestAccountToken = onCall(async (request) => {
+  await requireAdmin(request);
+  const uid = String((request.data || {}).uid || '');
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(uid)) throw new HttpsError('invalid-argument', '테스트 계정 정보를 확인해 주세요.');
+  const account = (await testAccountRef(uid).get()).val() || {};
+  if (account.active !== true) throw new HttpsError('not-found', '활성 상태의 테스트 계정을 찾을 수 없습니다.');
+  const user = await getAuth().getUser(uid).catch(() => null);
+  if (!user || user.disabled || !user.customClaims || user.customClaims.messengerTestAccount !== true) {
+    throw new HttpsError('failed-precondition', '테스트 계정 등록 상태가 올바르지 않습니다.');
+  }
+  const customToken = await getAuth().createCustomToken(uid, { messengerTestAccount: true });
+  return { uid, customToken };
 });
 
 const messengerGetRoomState = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = String((request.data || {}).roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
+  const p = await requireRoomPrincipal(request, roomId);
   const [metaSnap, memberSnap, applicationSnap, blockedSnap] = await Promise.all([
     roomRef(roomId).child('meta').get(), roomRef(roomId).child(`members/${p.uid}`).get(),
     roomRef(roomId).child(`applications/${p.uid}`).get(), roomRef(roomId).child(`blocked/${p.uid}`).get(),
   ]);
   if (!metaSnap.exists()) throw new HttpsError('not-found', '채팅방을 찾을 수 없습니다.');
   let meta = metaSnap.val() || {};
-  if (meta.ownerUid === p.uid) meta = await syncOwnerRoomAvatar(roomId, p.uid, (await profileFor(p.uid)).avatarUrl, meta);
+  if (meta.roomType === 'test') await requireRoomMember(p, roomId);
+  if (meta.ownerUid === p.uid && meta.roomType !== 'test') meta = await syncOwnerRoomAvatar(roomId, p.uid, (await profileFor(p.uid)).avatarUrl, meta);
   return { room: publicRoom(meta, meta.ownerUid === p.uid), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
 });
 
 const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
+  const p = await getPrincipal(request);
+  if (!p.trusted && !p.testAccount) throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
+  if (p.testAccount && (await testAccountRef(p.uid).get()).val()?.active !== true) throw new HttpsError('permission-denied', '비활성화된 테스트 계정입니다.');
   await ensureUserRoomIndex(p.uid);
   const indexRef = db().ref(`${ROOT}/userRoomIndex/${p.uid}`);
   const indexSnap = await indexRef.get();
@@ -637,6 +823,8 @@ const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => 
       const meta = metaSnap.val() || {};
       const member = memberSnap.val() || {};
       if (!metaSnap.exists() || member.status !== 'active') return { roomId, stale: true };
+      if (meta.roomType === 'test' && !p.admin && !p.testAccount) return { roomId, stale: true };
+      if (p.testAccount && meta.roomType !== 'test') return { roomId, stale: true };
       return { room: publicRoom(meta), joinedAt: Number(member.joinedAt) || Number(indexed?.joinedAt) || 0 };
     }));
     results.forEach((result) => {
@@ -651,6 +839,7 @@ const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => 
 
 const messengerEnsureRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
+  if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 일반 채팅방을 만들 수 없습니다.');
   const roomId = principalRoomId(p);
   if (!roomId) throw new HttpsError('permission-denied', '인증된 스트리머 또는 관리자만 채팅방을 만들 수 있습니다.');
   return ensureOwnedRoom(p.uid, roomId, p.streamer || null);
@@ -781,9 +970,9 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
 });
 
 const messengerUpdateRoom = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, visibility, password, regeneratePassword, locked, memberPolicy } = request.data || {};
   const data = request.data || {};
+  const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 설정을 변경할 수 있습니다.');
   if (!['public', 'private'].includes(visibility)) throw new HttpsError('invalid-argument', '방 공개 설정이 올바르지 않습니다.');
@@ -823,7 +1012,7 @@ const messengerUpdateRoom = onCall(async (request) => {
   }
   const nextMeta = { ...meta, ...metaPatch };
   updates[`${ROOT}/rooms/${roomId}/meta`] = nextMeta;
-  updates[`${ROOT}/publicRooms/${roomId}`] = publicRoom(nextMeta);
+  if (meta.roomType !== 'test') updates[`${ROOT}/publicRooms/${roomId}`] = publicRoom(nextMeta);
   await db().ref().update(updates);
   await writeAudit(p.uid, 'room.update', roomId);
   return { room: publicRoom(nextMeta, true), generatedPassword: generatedPassword || null };
@@ -831,6 +1020,7 @@ const messengerUpdateRoom = onCall(async (request) => {
 
 const messengerDiscardRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
+  if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정에서는 테스트방을 폐기할 수 없습니다.');
   const roomId = String((request.data || {}).roomId || '');
   const { meta, isOwner } = await requireRoomMember(p, roomId);
   if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 방을 폐기할 수 있습니다.');
@@ -854,6 +1044,7 @@ const messengerDiscardRoom = onCall(async (request) => {
 
 const messengerApplyToRoom = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
+  if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 일반 채팅방에 대화를 신청할 수 없습니다.');
   const roomId = String((request.data || {}).roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
   const [metaSnap, existingSnap, blockedSnap] = await Promise.all([
@@ -878,8 +1069,8 @@ const messengerApplyToRoom = onCall(async (request) => {
 });
 
 const messengerListApplications = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = String((request.data || {}).roomId || '');
+  const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, roomId);
   if (!result.isOwner) throw new HttpsError('permission-denied', '스트리머만 신청 목록을 확인할 수 있습니다.');
   const snap = await roomRef(roomId).child('applications').get();
@@ -888,8 +1079,8 @@ const messengerListApplications = onCall(async (request) => {
 });
 
 const messengerListFans = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = String((request.data || {}).roomId || '');
+  const p = await requireRoomPrincipal(request, roomId);
   const { isOwner } = await requireRoomMember(p, roomId);
   if (!isOwner) throw new HttpsError('permission-denied', '스트리머만 팬 목록을 볼 수 있습니다.');
   const snap = await roomRef(roomId).child('members').get();
@@ -903,8 +1094,8 @@ const messengerListFans = onCall(async (request) => {
 });
 
 const messengerReviewApplication = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, uid, decision } = request.data || {};
+  const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner) throw new HttpsError('permission-denied', '스트리머만 신청을 처리할 수 있습니다.');
   if (!['approved', 'rejected'].includes(decision) || typeof uid !== 'string') throw new HttpsError('invalid-argument', '신청 처리 정보가 올바르지 않습니다.');
@@ -924,17 +1115,20 @@ const messengerReviewApplication = onCall(async (request) => {
     updates[`${ROOT}/rooms/${roomId}/members/${uid}`] = member;
     updates[userRoomIndexPath(uid, roomId)] = { joinedAt: at };
     updates[`${ROOT}/rooms/${roomId}/meta/memberCount`] = (Number(result.meta.memberCount) || 0) + 1;
-    updates[`${ROOT}/publicRooms/${roomId}/memberCount`] = (Number(result.meta.memberCount) || 0) + 1;
+    if (result.meta.roomType !== 'test') updates[`${ROOT}/publicRooms/${roomId}/memberCount`] = (Number(result.meta.memberCount) || 0) + 1;
   } else updates[`${ROOT}/rooms/${roomId}/applications/${uid}/reapplyAt`] = at + APPLICATION_EXPIRE;
   await db().ref().update(updates);
   return { status: decision };
 });
 
 const messengerSetMemberStatus = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, uid, status } = request.data || {};
+  const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner || typeof uid !== 'string' || !['blocked', 'active'].includes(status)) throw new HttpsError('permission-denied', '요청을 처리할 수 없습니다.');
+  if (result.meta.roomType === 'test' && (await db().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) {
+    throw new HttpsError('failed-precondition', '테스트방을 관리하는 관리자 계정은 차단할 수 없습니다.');
+  }
   const memberSnap = await roomRef(roomId).child(`members/${uid}`).get();
   const updates = {};
   updates[`${ROOT}/rooms/${roomId}/members/${uid}/status`] = status;
@@ -943,7 +1137,7 @@ const messengerSetMemberStatus = onCall(async (request) => {
   if (status === 'blocked') {
     updates[`${ROOT}/rooms/${roomId}/blocked/${uid}`] = { at: now(), by: p.uid };
     updates[`${ROOT}/rooms/${roomId}/meta/memberCount`] = Math.max(0, (Number(result.meta.memberCount) || 0) - (memberSnap.val() && memberSnap.val().status === 'active' ? 1 : 0));
-    updates[`${ROOT}/publicRooms/${roomId}/memberCount`] = Math.max(0, (Number(result.meta.memberCount) || 0) - (memberSnap.val() && memberSnap.val().status === 'active' ? 1 : 0));
+    if (result.meta.roomType !== 'test') updates[`${ROOT}/publicRooms/${roomId}/memberCount`] = Math.max(0, (Number(result.meta.memberCount) || 0) - (memberSnap.val() && memberSnap.val().status === 'active' ? 1 : 0));
   } else {
     updates[`${ROOT}/rooms/${roomId}/blocked/${uid}`] = null;
     updates[`${ROOT}/rooms/${roomId}/members/${uid}`] = null;
@@ -964,10 +1158,10 @@ function isRoomMarketStockNameForStreamer(stockName, streamerName) {
 }
 
 const messengerRoomMarketUpdate = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId: rawRoomId, stockId: rawStockId, action } = request.data || {};
   const roomId = String(rawRoomId || '');
   const stockId = String(rawStockId || '');
+  const p = await requireRoomPrincipal(request, roomId);
   if (!['add', 'remove'].includes(action)) throw new HttpsError('invalid-argument', '요청이 올바르지 않습니다.');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
   const { isOwner, meta } = await requireRoomMember(p, roomId);
@@ -1004,10 +1198,10 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
 });
 
 const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const messageId = data.messageId;
+  const p = await requireRoomPrincipal(request, roomId);
   if (!/^[a-z0-9]{2,30}$/.test(roomId) || typeof messageId !== 'string') {
     throw new HttpsError('invalid-argument', '채팅방 또는 메시지 정보가 올바르지 않습니다.');
   }
@@ -1141,10 +1335,10 @@ function ladderResultText(game) {
 }
 
 const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
+  const p = await requireRoomPrincipal(request, roomId);
   if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['start', 'select', 'finish', 'clear', 'sync'].includes(action)) {
     throw new HttpsError('invalid-argument', '채팅방 또는 미니게임 요청 정보가 올바르지 않습니다.');
   }
@@ -1369,10 +1563,10 @@ function parseWatchPartyVideo(value) {
 }
 
 const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) => {
-  const principal = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
+  const principal = await requireRoomPrincipal(request, roomId);
   if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['create', 'cancel', 'finish', 'complete', 'sync'].includes(action)) {
     throw new HttpsError('invalid-argument', '채팅방 또는 같이보기 요청 정보가 올바르지 않습니다.');
   }
@@ -1461,8 +1655,8 @@ async function galleryImageForChat(roomId, imageId) {
 }
 
 const messengerGetGalleryImages = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const roomId = String((request.data || {}).roomId || '');
+  const p = await requireRoomPrincipal(request, roomId);
   const { meta: rawMeta } = await requireRoomMember(p, roomId);
   const meta = await ensureGalleryLink(roomId, rawMeta);
   if (!meta.galleryStreamerId) return { locked: false, linked: false, streamerId: '', images: [] };
@@ -1486,16 +1680,16 @@ const messengerGetGalleryImages = onCall(async (request) => {
 });
 
 const messengerGetGalleryImage = onCall(async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, imageId } = request.data || {};
+  const p = await requireRoomPrincipal(request, roomId);
   await requireRoomMember(p, String(roomId || ''));
   return await galleryImageForChat(String(roomId), String(imageId || ''));
 });
 
 const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, recipientUid, contentType, size } = request.data || {};
   const room = String(roomId || ''); const recipient = String(recipientUid || '');
+  const p = await requireRoomPrincipal(request, room);
   const { meta, isOwner } = await requireRoomMember(p, room);
   if (!isOwner) throw new HttpsError('permission-denied', '스트리머만 방셀 이미지를 보낼 수 있습니다.');
   const member = await roomRef(room).child(`members/${recipient}`).get();
@@ -1518,10 +1712,11 @@ const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, r
 });
 
 const messengerFinalizeRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
+  const p = await getPrincipal(request);
   const imageId = String((request.data || {}).imageId || '');
   if (!/^[a-f0-9]{32}$/.test(imageId)) throw new HttpsError('invalid-argument', '이미지 정보가 올바르지 않습니다.');
   const ref = db().ref(`${ROOT}/privateImages/${imageId}`); const snap = await ref.get(); const record = snap.val() || {};
+  await requireRoomPrincipal(request, record.roomId);
   if (!snap.exists() || record.uploaderUid !== p.uid || record.status !== 'upload_issued' || now() > Number(record.expiresAt)) throw new HttpsError('permission-denied', '이미지 업로드를 확인할 수 없습니다. 다시 시도해 주세요.');
   const head = await roomselfS3().send(new HeadObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
   if (Number(head.ContentLength) !== Number(record.size) || head.ContentType !== record.contentType || Number(head.ContentLength) > ROOMSELF_MAX_BYTES) throw new HttpsError('failed-precondition', '업로드한 이미지 정보를 확인할 수 없습니다.');
@@ -1536,8 +1731,8 @@ const messengerFinalizeRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, 
 });
 
 const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const { roomId, imageId } = request.data || {}; const room = String(roomId || ''); const id = String(imageId || '');
+  const p = await requireRoomPrincipal(request, room);
   const { meta, isOwner, member } = await requireRoomMember(p, room);
   const snap = await db().ref(`${ROOT}/privateImages/${id}`).get(); const record = snap.val() || {};
   const allowed = isOwner && record.ownerUid === p.uid || record.recipientUid === p.uid && Number(member && member.joinedAt || 0) <= Number(record.sentAt || 0);
@@ -1554,18 +1749,18 @@ const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomse
 });
 
 const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => {
-  const principal = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
+  const principal = await requireRoomPrincipal(request, roomId);
   await requireRoomMember(principal, roomId);
   const url = safeText(String(data.url || ''), 2048, true);
   return getLinkPreview(url);
 });
 
 const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request) => {
-  const principal = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
+  const principal = await requireRoomPrincipal(request, roomId);
   const { meta } = await requireRoomMember(principal, roomId);
   const soopId = String(meta.streamerSoopId || '').trim().toLowerCase();
   if (!/^[a-z0-9]{2,30}$/.test(soopId)) throw new HttpsError('failed-precondition', '이 채팅방의 클립을 찾을 수 없습니다.');
@@ -1631,9 +1826,9 @@ const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request
 });
 
 const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
-  const p = await getPrincipal(request, { requireTrusted: true });
   const data = request.data || {};
   const roomId = String(data.roomId || '');
+  const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, roomId);
   if (!result.isOwner && result.meta.locked) throw new HttpsError('failed-precondition', '채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있습니다.');
   const member = result.member || {};
@@ -1708,6 +1903,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
 
 const messengerSubmitReport = onCall(async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
+  if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정에서는 대화 신고를 접수할 수 없습니다.');
   const { roomId, startAt, endAt, reasonCategory, reason } = request.data || {};
   const reasonCategories = new Set(['harassment', 'spam', 'privacy', 'sexual', 'impersonation', 'other']);
   if (!reasonCategories.has(reasonCategory)) throw new HttpsError('invalid-argument', '신고 사유를 선택해 주세요.');
@@ -1932,7 +2128,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
   const t = now(); const cutoff = t - CHAT_RETENTION;
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
   const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
-  for (const roomId of Object.keys(publicRooms)) {
+  for (const roomId of new Set([...Object.keys(publicRooms), TEST_ROOM_ID])) {
     const pinnedSnap = await roomRef(roomId).child('meta/pinnedMessage').get();
     const pinned = pinnedSnap.val();
     if (pinned && Number(pinned.messageCreatedAt) <= cutoff) updates[`${ROOT}/rooms/${roomId}/meta/pinnedMessage`] = null;
@@ -1987,7 +2183,8 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
 });
 
 module.exports = {
-  messengerGetSession, messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
+  messengerGetSession, messengerAdminListTestAccounts, messengerAdminCreateTestAccount, messengerAdminJoinTestRoom, messengerAdminIssueTestAccountToken,
+  messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate, messengerWatchPartyUpdate,
   messengerSendMessage, messengerGetLinkPreview, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,

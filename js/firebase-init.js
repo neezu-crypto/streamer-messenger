@@ -1,7 +1,8 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
+import { getApp, getApps, initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
 import {
   getAuth, GoogleAuthProvider, signInAnonymously, signInWithPopup,
   signInWithCustomToken, linkWithPopup, signOut, onAuthStateChanged,
+  setPersistence, browserLocalPersistence,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
   getDatabase, ref, get, set, push, onValue, query, orderByKey, orderByChild,
@@ -196,3 +197,72 @@ window.messenger = {
   call, waitForSession, refreshSession, loginGoogle, loginKakao, confirmDialog,
   requestStreamerVerification, signOut: () => signOut(auth),
 };
+
+// Test identities use their own named Firebase app/Auth persistence. This
+// leaves the shared default account session used by sibling sites untouched.
+const defaultMessenger = window.messenger;
+let activeTestContext = null;
+function publishSession(targetState) {
+  document.dispatchEvent(new CustomEvent('messenger-session', { detail: { ...targetState } }));
+}
+async function enterTestAccount(uid) {
+  if (!defaultMessenger.state.session?.isAdmin) throw new Error('관리자 계정에서만 테스트 계정을 열 수 있습니다.');
+  const testUid = String(uid || '');
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(testUid)) throw new Error('테스트 계정 정보를 확인해 주세요.');
+  const issued = await defaultMessenger.call('messengerAdminIssueTestAccountToken', { uid: testUid });
+  const appName = `messenger-test-${testUid}`;
+  const testApp = getApps().some((item) => item.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+  const testAuth = getAuth(testApp);
+  await setPersistence(testAuth, browserLocalPersistence);
+  await signInWithCustomToken(testAuth, issued.customToken);
+  const testDb = getDatabase(testApp);
+  const testFunctions = getFunctions(testApp);
+  const testCall = (name, data) => httpsCallable(testFunctions, name)(data || {}).then((result) => result.data);
+  // The room stock panel reads the shared game's personal balance. Create the
+  // normal zero-history test wallet through that service's idempotent callable.
+  try { await testCall('initializeUser'); }
+  catch (error) { console.warn('테스트 계정의 주식시장 초기 자산을 준비하지 못했습니다.', error); }
+  const testState = { user: testAuth.currentUser, session: null, ready: false };
+  testState.session = await testCall('messengerGetSession');
+  testState.ready = true;
+  if (!testState.session.isTestAccount || !testState.session.testRoom) {
+    throw new Error('테스트 계정 또는 테스트방 참여 상태를 확인할 수 없습니다.');
+  }
+  const refreshTestSession = async (user = testAuth.currentUser) => {
+    testState.user = user;
+    testState.session = user ? await testCall('messengerGetSession') : null;
+    testState.ready = true;
+    publishSession(testState);
+    return testState.session;
+  };
+  const testMessenger = {
+    ...defaultMessenger,
+    auth: testAuth,
+    db: testDb,
+    state: testState,
+    ref, get, set, push, onValue, query, orderByKey, orderByChild,
+    limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
+    call: testCall,
+    waitForSession: () => Promise.resolve(testState),
+    refreshSession: refreshTestSession,
+    loginGoogle: async () => { throw new Error('테스트 계정에서는 실제 계정 로그인을 사용할 수 없습니다.'); },
+    loginKakao: async () => { throw new Error('테스트 계정에서는 실제 계정 로그인을 사용할 수 없습니다.'); },
+    requestStreamerVerification: async () => { throw new Error('테스트 계정에서는 스트리머 인증을 사용할 수 없습니다.'); },
+    signOut: exitTestAccount,
+  };
+  activeTestContext = { uid: testUid, app: testApp, auth: testAuth, api: testMessenger };
+  window.messenger = testMessenger;
+  publishSession(testState);
+  return testState.session;
+}
+
+async function exitTestAccount() {
+  if (!activeTestContext) return defaultMessenger.state.session;
+  activeTestContext = null;
+  window.messenger = defaultMessenger;
+  await defaultMessenger.refreshSession(defaultMessenger.auth.currentUser);
+  return defaultMessenger.state.session;
+}
+
+defaultMessenger.enterTestAccount = enterTestAccount;
+defaultMessenger.exitTestAccount = exitTestAccount;

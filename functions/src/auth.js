@@ -9,8 +9,9 @@ function requireAuth(request) {
 }
 
 function isRealAccount(request) {
-  const provider = request.auth && request.auth.token && request.auth.token.firebase && request.auth.token.firebase.sign_in_provider;
-  return provider !== 'anonymous';
+  const token = request.auth && request.auth.token || {};
+  const provider = token.firebase && token.firebase.sign_in_provider;
+  return provider !== 'anonymous' && token.messengerTestAccount !== true;
 }
 
 async function isAdmin(uid) {
@@ -45,13 +46,14 @@ async function getPrincipal(request, options = {}) {
   const email = request.auth.token && request.auth.token.email;
   const admin = await isAdmin(uid);
   const streamer = await getVerifiedStreamer(uid);
+  const testAccount = !!(request.auth.token && request.auth.token.messengerTestAccount === true);
   const real = isRealAccount(request);
   const trusted = real || admin || !!streamer;
   if (options.requireTrusted && !trusted) {
     throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
   }
   if (options.checkBan !== false && !admin) await assertNotBanned(uid);
-  return { uid, email: email || '', admin, streamer, real, trusted };
+  return { uid, email: email || '', admin, streamer, real, trusted, testAccount };
 }
 
 async function requireAdmin(request) {

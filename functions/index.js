@@ -5,6 +5,10 @@ const messenger = require('./src/messenger');
 
 module.exports = {
   messengerGetSession: messenger.messengerGetSession,
+  messengerAdminListTestAccounts: messenger.messengerAdminListTestAccounts,
+  messengerAdminCreateTestAccount: messenger.messengerAdminCreateTestAccount,
+  messengerAdminJoinTestRoom: messenger.messengerAdminJoinTestRoom,
+  messengerAdminIssueTestAccountToken: messenger.messengerAdminIssueTestAccountToken,
   messengerEnsureRoom: messenger.messengerEnsureRoom,
   messengerAutoCreateVerifiedStreamerRoom: messenger.messengerAutoCreateVerifiedStreamerRoom,
   messengerAdminBackfillVerifiedRooms: messenger.messengerAdminBackfillVerifiedRooms,

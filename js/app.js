@@ -38,7 +38,7 @@ state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferen
 let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
-const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
+const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
 let roomClipSearchTimer = 0;
 let roomClipRequestToken = 0;
@@ -667,6 +667,10 @@ function syncHeader() {
   } else profileButton.textContent = session.trusted ? '프로필 설정' : '로그인';
   $('#create-room-button').hidden = !session.isVerifiedStreamer && !session.isAdmin;
   $('#admin-tab-button').hidden = !session.isAdmin;
+  $('#test-mode-banner').hidden = !session.isTestAccount;
+  $('#test-mode-label').textContent = session.isTestAccount
+    ? `${session.testAccount?.label || '테스트 계정'} 사용 중 · 테스트방에서만 이용 가능`
+    : '';
   const hasRoom = (session.isVerifiedStreamer || session.isAdmin) && !!session.ownRoom;
   $('#create-room-desktop-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
   $('#create-room-mobile-label').textContent = hasRoom ? '내 채팅방' : '채팅방 만들기';
@@ -1030,7 +1034,7 @@ async function openLinkedStreamerRoom() {
 }
 
 async function selectRoom(room) {
-  if (!state.session || !state.session.trusted) { openDialog('auth-dialog'); return; }
+  if (!state.session || (!state.session.trusted && !state.session.isTestAccount)) { openDialog('auth-dialog'); return; }
   // requestFullscreen must run directly in the room-selection gesture, before the server check awaits.
   const fullscreenAttempt = beginChatFullscreenRequest();
   setRoomEntryLoading(true);
@@ -4465,8 +4469,87 @@ function renderAdminAudit(entries) {
 
 function switchAdminTab(tab) {
   document.querySelectorAll('[data-admin-tab]').forEach((button) => button.classList.toggle('active', button.dataset.adminTab === tab));
-  ['reports', 'accounts', 'audit'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
+  ['reports', 'accounts', 'audit', 'test'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
   if (tab === 'accounts' && !adminState.bansLoaded && !adminState.bansLoading) loadAdminBanPage(true);
+  if (tab === 'test' && !adminState.testAccountsLoading) loadAdminTestAccounts();
+}
+
+async function loadAdminTestAccounts() {
+  if (!state.session?.isAdmin || adminState.testAccountsLoading) return;
+  adminState.testAccountsLoading = true;
+  $('#admin-test-refresh').disabled = true;
+  $('#admin-test-room-status').textContent = '테스트방과 계정 목록을 불러옵니다.';
+  try {
+    const result = await call('messengerAdminListTestAccounts');
+    adminState.testAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+    adminState.testRoom = result.room || null;
+    adminState.testAccountsLoaded = true;
+    renderAdminTestAccounts();
+  } catch (error) {
+    $('#admin-test-room-status').textContent = error.message || '테스트 환경을 불러오지 못했습니다.';
+  } finally {
+    adminState.testAccountsLoading = false;
+    $('#admin-test-refresh').disabled = false;
+  }
+}
+
+function renderAdminTestAccounts() {
+  const host = $('#admin-test-account-list');
+  const roomStatus = $('#admin-test-room-status');
+  const roomExists = !!adminState.testRoom;
+  const hostAccount = adminState.testAccounts.find((account) => account.active && account.role === 'host');
+  $('#admin-test-create-host').hidden = !!hostAccount;
+  $('#admin-test-create-participant').disabled = !roomExists || !hostAccount;
+  $('#admin-test-open-room').disabled = !roomExists;
+  roomStatus.textContent = roomExists
+    ? `테스트방 준비 완료 · ${adminState.testRoom.memberCount || 0}명 참여 · 관리자와 등록 계정만 입장 가능`
+    : '테스트방이 아직 없습니다. 진행자 계정을 만들면 비공개 테스트방이 함께 생성됩니다.';
+  host.replaceChildren();
+  if (!adminState.testAccounts.length) {
+    const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = '등록된 테스트 계정이 없습니다.'; host.appendChild(empty); return;
+  }
+  adminState.testAccounts.forEach((account) => {
+    const row = document.createElement('article'); row.className = 'admin-test-account-row';
+    const details = document.createElement('div'); details.className = 'admin-test-account-details';
+    const title = document.createElement('strong'); title.textContent = `${account.label} · ${account.role === 'host' ? '진행자' : '참여자'}`;
+    const uid = document.createElement('small'); uid.textContent = `UID ${account.uid}`;
+    const status = document.createElement('small'); status.textContent = account.active ? '활성' : '비활성';
+    details.append(title, uid, status);
+    row.append(details);
+    if (account.active) {
+      const use = document.createElement('button'); use.type = 'button'; use.className = 'button button-quiet'; use.textContent = '이 계정으로 테스트';
+      use.title = `${account.label} 계정으로 전환해 테스트방에 입장합니다. 관리자 로그인은 별도 세션에 유지됩니다.`;
+      use.setAttribute('aria-label', `${account.label} 계정으로 테스트방 입장`);
+      use.addEventListener('click', async () => {
+        use.disabled = true;
+        try { await api().enterTestAccount(account.uid); }
+        catch (error) { showError(error); use.disabled = false; }
+      });
+      row.appendChild(use);
+    }
+    host.appendChild(row);
+  });
+}
+
+async function createAdminTestAccount(role) {
+  if (!state.session?.isAdmin) return;
+  const hostButton = $('#admin-test-create-host'); const participantButton = $('#admin-test-create-participant');
+  hostButton.disabled = true; participantButton.disabled = true;
+  try {
+    const result = await call('messengerAdminCreateTestAccount', { role });
+    showToast(`${result.label} 계정을 만들고 테스트방에 등록했어요.`);
+    adminState.testAccountsLoaded = false;
+    await loadAdminTestAccounts();
+  } catch (error) { showError(error); }
+  finally { hostButton.disabled = false; participantButton.disabled = false; }
+}
+
+async function openAdminTestRoom() {
+  if (!state.session?.isAdmin) return;
+  try {
+    const result = await call('messengerAdminJoinTestRoom');
+    await selectRoom(result.room);
+  } catch (error) { showError(error); }
 }
 
 async function loadAdminBanPage(reset = false) {
@@ -4841,6 +4924,14 @@ function bindEvents() {
   $('#create-room-button').addEventListener('click', openOwnRoom);
   $('#admin-tab-button').addEventListener('click', showAdmin);
   document.querySelectorAll('[data-admin-tab]').forEach((button) => button.addEventListener('click', () => switchAdminTab(button.dataset.adminTab)));
+  $('#admin-test-refresh').addEventListener('click', loadAdminTestAccounts);
+  $('#admin-test-create-host').addEventListener('click', () => createAdminTestAccount('host'));
+  $('#admin-test-create-participant').addEventListener('click', () => createAdminTestAccount('participant'));
+  $('#admin-test-open-room').addEventListener('click', openAdminTestRoom);
+  $('#exit-test-mode').addEventListener('click', async () => {
+    try { await api().exitTestAccount(); }
+    catch (error) { showError(error); }
+  });
   $('#admin-check-ban').addEventListener('click', checkMessengerBan);
   $('#admin-ban-submit').addEventListener('click', () => setMessengerBan(true));
   $('#admin-unban-submit').addEventListener('click', () => setMessengerBan(false));
@@ -4946,6 +5037,7 @@ function handleSession(event) {
   const previousUid = state.session && state.session.uid;
   state.session = event.detail.session || null;
   const nextUid = state.session && state.session.uid;
+  if (previousUid && previousUid !== nextUid && state.room) leaveChat();
   if (previousUid !== nextUid) {
     setAsideDrawerOpen(false, false);
     state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
@@ -4969,6 +5061,9 @@ function handleSession(event) {
     const pendingRoom = state.pendingStreamerRoom;
     state.pendingStreamerRoom = null;
     selectRoom(pendingRoom);
+  }
+  if (state.session?.isTestAccount && state.session.testRoom && previousUid !== nextUid) {
+    selectRoom(state.session.testRoom);
   }
   if (previousSession && !previousSession.isVerifiedStreamer && state.session?.isVerifiedStreamer) {
     const status = $('#verification-status');
