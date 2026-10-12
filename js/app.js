@@ -3342,7 +3342,7 @@ function renderRoomClipItems(items, append = false) {
     party.title = `${clip.title} 영상을 채팅방 참여자와 같이보기로 예약합니다.`;
     party.addEventListener('click', () => {
       closeDialog('room-clips-dialog');
-      openRoomWatchPartyDialog({ url: clip.url || roomClipCanonicalUrl(clip.id), title: clip.title, durationSeconds: Math.floor(Number(clip.durationMs || 0) / 1000) });
+      openRoomWatchPartyDialog({ url: clip.url || roomClipCanonicalUrl(clip.id) });
     });
     const share = document.createElement('button'); share.type = 'button'; share.className = 'button button-primary'; share.textContent = '채팅에 공유';
     share.disabled = !!(state.room && state.room.locked && !state.isOwner);
@@ -3406,9 +3406,7 @@ function openRoomWatchPartyDialog(prefill = {}) {
   if (!state.room) return;
   $('#room-watch-party-form-error').hidden = true;
   $('#room-watch-party-url').value = String(prefill.url || '');
-  $('#room-watch-party-title-input').value = String(prefill.title || '');
   $('#room-watch-party-delay').value = '60';
-  $('#room-watch-party-duration').value = Number(prefill.durationSeconds) > 0 ? String(Math.floor(Number(prefill.durationSeconds))) : '';
   $('#room-watch-party-submit').disabled = false;
   $('#room-watch-party-submit').textContent = '채팅 도구에 예약';
   openDialog('room-watch-party-dialog');
@@ -3420,19 +3418,15 @@ async function submitRoomWatchParty(event) {
   if (!state.room || state.watchPartyMutationPending) return;
   const url = $('#room-watch-party-url').value.trim();
   const delaySeconds = Number($('#room-watch-party-delay').value);
-  const durationInput = $('#room-watch-party-duration').value.trim();
-  const durationSeconds = durationInput ? Number(durationInput) : 0;
-  const title = $('#room-watch-party-title-input').value.trim();
   const error = $('#room-watch-party-form-error');
   error.hidden = true;
-  if (!url || !Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 7200 || delaySeconds % 10 !== 0
-    || (durationInput && (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 43200))) {
-    error.hidden = false; error.textContent = '영상 링크, 시작 대기 시간(10초 단위) 또는 영상 길이를 확인해 주세요.'; return;
+  if (!url || !Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 7200 || delaySeconds % 10 !== 0) {
+    error.hidden = false; error.textContent = '영상 링크와 시작 대기 시간(10초 단위)을 확인해 주세요.'; return;
   }
   const submit = $('#room-watch-party-submit');
   state.watchPartyMutationPending = true; submit.disabled = true; submit.textContent = '예약 중…';
   try {
-    const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, action: 'create', url, title, startDelaySeconds: delaySeconds, durationSeconds });
+    const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, action: 'create', url, startDelaySeconds: delaySeconds });
     closeDialog('room-watch-party-dialog');
     if (result && result.watchParty) {
       state.watchPartyArmedId = '';

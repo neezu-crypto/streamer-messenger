@@ -355,14 +355,9 @@
       <h2 id="room-watch-party-form-title">영상 같이보기 예약</h2>
       <p class="dialog-copy">YouTube 또는 SOOP VOD·클립 링크를 등록하면 채팅 도구에 준비돼요. 예약 시각에 재생을 시작하고, 늦게 온 참여자는 현재 위치로 참여할 수 있어요. 자동 재생이 차단되면 영상 안의 재생 버튼을 눌러 주세요.</p>
       <label class="field-label" for="room-watch-party-url">영상 링크</label>
-      <input class="text-input" id="room-watch-party-url" type="url" maxlength="2048" placeholder="https://vod.sooplive.com/player/... 또는 YouTube 링크" autocomplete="url" required>
-      <label class="field-label" for="room-watch-party-title-input">영상 이름 <span class="optional">선택</span></label>
-      <input class="text-input" id="room-watch-party-title-input" type="text" maxlength="160" placeholder="채팅 도구에 표시할 이름">
+      <input class="text-input" id="room-watch-party-url" type="url" maxlength="2048" placeholder="https://vod.sooplive.com/player/... 또는 YouTube 링크" autocomplete="url" title="같이 재생할 YouTube 또는 SOOP VOD·클립 링크를 입력합니다." required>
       <label class="field-label" for="room-watch-party-delay">몇 초 후 시작할까요?</label>
       <input class="text-input" id="room-watch-party-delay" type="number" min="0" max="7200" step="10" value="60" inputmode="numeric" title="0초부터 7,200초까지 10초 단위로 설정할 수 있어요." required>
-      <label class="field-label" for="room-watch-party-duration">영상 전체 길이(초) <span class="optional">선택</span></label>
-      <input class="text-input" id="room-watch-party-duration" type="number" min="1" max="43200" step="1" inputmode="numeric" placeholder="입력하면 종료 시점도 함께 맞춰요">
-      <p class="dialog-copy room-watch-party-note">영상 길이를 입력하면 링크의 시작 위치부터 남은 시간을 계산해 자동 종료해요. 길이를 모르면 방 소유자나 예약자가 직접 마칠 수 있어요. SOOP 링크에 <code>change_second</code>가 없으면 0초부터 시작합니다.</p>
       <p class="dialog-error" id="room-watch-party-form-error" role="alert" hidden></p>
       <button class="button button-primary full-width" id="room-watch-party-submit" type="submit">채팅 도구에 예약</button>
     </form>
@@ -522,6 +517,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-participant-layout"></script>
+  <script type="module" src="js/app.js?v=20261012-watch-party-form"></script>
 </body>
 </html>

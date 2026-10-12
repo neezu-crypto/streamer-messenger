@@ -803,8 +803,6 @@
 .room-watch-party-dialog .dialog-copy{font-size:11px;line-height:1.65}
 .room-watch-party-dialog .field-label{margin-top:14px}
 .room-watch-party-dialog .text-input{width:100%;box-sizing:border-box}
-.room-watch-party-dialog .room-watch-party-note{margin:9px 0;color:#8592a8;font-size:10px}
-.room-watch-party-dialog .room-watch-party-note code{padding:1px 4px;border-radius:4px;background:#eef2fa;color:#4d6288;font-size:9px}
 @media(max-width:680px){
   .room-video-mode-switcher{top:7px;left:7px;padding:2px}
   .room-video-mode-tab{min-height:23px;padding:0 7px;font-size:8px}
