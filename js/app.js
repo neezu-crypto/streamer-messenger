@@ -2156,7 +2156,9 @@ function renderMiniGame(errorMessage = '') {
     ? '결과 공유가 완료되지 않았어요. 같은 결과 공유를 다시 시도합니다.'
     : '사다리를 종료하고 전체 결과를 채팅방에 공유합니다';
   if (!game) {
-    $('#ladder-board').replaceChildren();
+    const board = $('#ladder-board');
+    board.replaceChildren();
+    delete board.dataset.renderKey;
     $('#mini-game-result').textContent = '스트리머가 참가자를 선택하면 경로와 결과가 표시됩니다.';
     liveError.hidden = true;
     if (gameFinished) state.activeRoomTool = '';
@@ -2175,6 +2177,16 @@ function renderMiniGame(errorMessage = '') {
     return;
   }
   const board = $('#ladder-board');
+  const boardRenderKey = JSON.stringify([
+    game.gameId, players, outcomes, rungs, state.miniGameSelectedLane, canManage
+  ]);
+  if (board.dataset.renderKey === boardRenderKey) {
+    board.querySelectorAll('.ladder-choice').forEach((choice) => {
+      choice.disabled = state.miniGameMutationPending || !!game.finishClaim;
+    });
+    renderRoomToolSwitcher(gameStarted ? 'mini-game' : '');
+    return;
+  }
   board.replaceChildren();
   board.style.removeProperty('width');
   const laneCount = players.length;
@@ -2267,6 +2279,7 @@ function renderMiniGame(errorMessage = '') {
     bottom.appendChild(label);
   });
   board.appendChild(bottom);
+  board.dataset.renderKey = boardRenderKey;
   $('#mini-game-result').textContent = destination >= 0
     ? `${players[state.miniGameSelectedLane]} → ${outcomes[destination]}`
     : '참가자를 선택하면 결과가 표시됩니다.';
