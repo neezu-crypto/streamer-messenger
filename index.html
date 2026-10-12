@@ -245,9 +245,11 @@
         <div class="admin-tool-card admin-visitor-tool">
           <div class="admin-list-heading"><div><h3>메신저 접속자</h3><p>최근 접속 계정 수와 시간대별 최고 동시 접속을 확인합니다.</p></div><button class="button button-quiet" id="admin-visitor-refresh" type="button">새로고침</button></div>
           <div class="admin-visitor-summary" aria-live="polite"><article><span>최근 60분 내 접속</span><strong id="admin-visitor-recent-count">—</strong><small>마지막 접속 기록 기준</small></article><article><span>최근 24시간 최고 동시 접속</span><strong id="admin-visitor-peak-count">—</strong><small id="admin-visitor-peak-time">시간대별 최고값</small></article></div>
-          <div class="admin-visitor-chart-heading"><strong>시간대별 최고 동시 접속</strong><small id="admin-visitor-updated">집계 정보를 불러옵니다.</small></div>
+          <div class="admin-visitor-daily-heading"><div><strong>일별 최고 동시 접속</strong><small>시간별 최고값 중 해당 날짜의 최대치</small></div><label for="admin-visitor-days">최근 <input class="admin-visitor-days-input" id="admin-visitor-days" type="number" min="1" max="30" step="1" value="7">일</label></div>
+          <div class="admin-visitor-chart-scroll"><div class="admin-visitor-chart admin-visitor-daily-chart" id="admin-visitor-daily-chart" role="img" aria-label="선택한 기간의 일별 최고 동시 접속자 수"></div></div>
+          <div class="admin-visitor-chart-heading"><strong>최근 24시간 시간대별 최고 동시 접속</strong><small id="admin-visitor-updated">집계 정보를 불러옵니다.</small></div>
           <div class="admin-visitor-chart-scroll"><div class="admin-visitor-chart" id="admin-visitor-chart" role="img" aria-label="최근 24시간 시간대별 최고 동시 접속자 수"></div></div>
-          <p class="admin-visitor-footnote">시간대별 기록은 5분 간격으로 수집한 최고값이며 UTC 기준으로 저장한 뒤 한국 시간으로 표시합니다. 최근 60분 내 접속은 새로고침 또는 페이지 복귀 시 남긴 기록을 기준으로 합니다.</p>
+          <p class="admin-visitor-footnote">접속 집계는 5분 간격 샘플의 시간별 최고값입니다. 일별 값은 그 날짜의 시간별 최고값 중 최대치이며, 일간 고유 방문자 수와는 다릅니다. 시간 구분은 한국 시간 기준입니다. 최근 60분 내 접속은 새로고침 또는 페이지 복귀 시 남긴 기록을 기준으로 합니다.</p>
         </div>
       </section>
       <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
@@ -526,6 +528,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-visitor-hour-labels"></script>
+  <script type="module" src="js/app.js?v=20261012-daily-visitor-analytics"></script>
 </body>
 </html>

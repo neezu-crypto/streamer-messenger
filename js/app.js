@@ -4467,26 +4467,25 @@ function formatVisitorHour(hour) {
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', hourCycle: 'h23' }).format(date);
 }
 
-function renderAdminVisitorAnalytics(data) {
-  const hourly = Array.isArray(data.hourly) ? data.hourly : [];
-  const peakHour = data.peakHour && Number(data.peakHour.peak) > 0 ? data.peakHour : null;
-  $('#admin-visitor-recent-count').textContent = Number(data.recentCount) || 0;
-  $('#admin-visitor-peak-count').textContent = peakHour ? Number(peakHour.peak) : 0;
-  $('#admin-visitor-peak-time').textContent = peakHour ? `${formatVisitorHour(peakHour.hour)}시 시간대` : '아직 수집된 최고값이 없습니다.';
-  $('#admin-visitor-updated').textContent = `조회 ${new Date(data.sampledAt || Date.now()).toLocaleString('ko-KR')}`;
+function formatVisitorDay(day) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(5, 7)}/${day.slice(8, 10)}` : '--/--';
+}
 
-  const chart = $('#admin-visitor-chart');
+function renderVisitorChart(chart, items, period) {
   chart.replaceChildren();
-  if (!hourly.length) {
-    chart.textContent = '접속 기록을 불러오지 못했습니다.';
+  if (!items.length) {
+    chart.textContent = '접속 기록이 없습니다.';
     return;
   }
-  const maxPeak = Math.max(1, ...hourly.map((item) => Number(item.peak) || 0));
-  hourly.forEach((item) => {
+  chart.style.gridTemplateColumns = `repeat(${items.length}, minmax(0, 1fr))`;
+  chart.style.minWidth = period === 'day' ? `max(100%, ${items.length * 24}px)` : '650px';
+  const maxPeak = Math.max(1, ...items.map((item) => Number(item.peak) || 0));
+  items.forEach((item) => {
     const peak = Math.max(0, Number(item.peak) || 0);
+    const labelText = period === 'day' ? formatVisitorDay(item.day) : `${formatVisitorHour(item.hour)}시`;
     const column = document.createElement('div');
     column.className = 'admin-visitor-hour';
-    column.title = `${formatVisitorHour(item.hour)}시 시간대 · 최고 ${peak}명`;
+    column.title = period === 'day' ? `${item.day} · 최고 ${peak}명` : `${labelText} 시간대 · 최고 ${peak}명`;
     const value = document.createElement('small');
     value.className = 'admin-visitor-hour-value';
     value.textContent = peak ? String(peak) : '·';
@@ -4498,22 +4497,40 @@ function renderAdminVisitorAnalytics(data) {
     rail.appendChild(bar);
     const label = document.createElement('small');
     label.className = 'admin-visitor-hour-label';
-    label.textContent = `${formatVisitorHour(item.hour)}시`;
+    label.textContent = labelText;
     column.append(value, rail, label);
     chart.appendChild(column);
   });
 }
 
+function renderAdminVisitorAnalytics(data) {
+  const hourly = Array.isArray(data.hourly) ? data.hourly : [];
+  const daily = Array.isArray(data.daily) ? data.daily : [];
+  const peakHour = data.peakHour && Number(data.peakHour.peak) > 0 ? data.peakHour : null;
+  $('#admin-visitor-recent-count').textContent = Number(data.recentCount) || 0;
+  $('#admin-visitor-peak-count').textContent = peakHour ? Number(peakHour.peak) : 0;
+  $('#admin-visitor-peak-time').textContent = peakHour ? `${formatVisitorHour(peakHour.hour)}시 시간대` : '아직 수집된 최고값이 없습니다.';
+  $('#admin-visitor-updated').textContent = `조회 ${new Date(data.sampledAt || Date.now()).toLocaleString('ko-KR')}`;
+  $('#admin-visitor-days').value = String(Math.min(30, Math.max(1, Number(data.days) || 7)));
+  renderVisitorChart($('#admin-visitor-daily-chart'), daily, 'day');
+  renderVisitorChart($('#admin-visitor-chart'), hourly, 'hour');
+}
+
 async function loadAdminVisitorAnalytics() {
   if (!state.session?.isAdmin || adminState.visitorsLoading) return;
   adminState.visitorsLoading = true;
+  const daysInput = $('#admin-visitor-days');
+  const requestedDays = Number(daysInput.value);
+  const days = Math.min(30, Math.max(1, Number.isInteger(requestedDays) ? requestedDays : 7));
+  daysInput.value = String(days);
   $('#admin-visitor-refresh').disabled = true;
   $('#admin-visitor-updated').textContent = '접속 통계를 불러옵니다.';
   try {
-    const result = await call('messengerAdminGetVisitorAnalytics');
+    const result = await call('messengerAdminGetVisitorAnalytics', { days });
     renderAdminVisitorAnalytics(result || {});
   } catch (error) {
     $('#admin-visitor-updated').textContent = error.message || '접속 통계를 불러오지 못했습니다.';
+    $('#admin-visitor-daily-chart').textContent = '접속 통계를 불러오지 못했습니다.';
     $('#admin-visitor-chart').textContent = '접속 통계를 불러오지 못했습니다.';
   } finally {
     adminState.visitorsLoading = false;
@@ -4997,6 +5014,7 @@ function bindEvents() {
   $('#admin-ban-refresh').addEventListener('click', () => loadAdminBanPage(true));
   $('#admin-ban-load-more').addEventListener('click', () => loadAdminBanPage(false));
   $('#admin-ban-search').addEventListener('input', renderAdminBans);
+  $('#admin-visitor-days').addEventListener('change', loadAdminVisitorAnalytics);
   $('#report-mark-reviewed').addEventListener('click', () => updateAdminReportStatus('reviewed'));
   $('#report-mark-dismissed').addEventListener('click', () => updateAdminReportStatus('dismissed'));
   $('#report-reopen').addEventListener('click', () => updateAdminReportStatus('pending'));

@@ -2007,11 +2007,21 @@ const messengerAdminGetVisitorAnalytics = onCall(async (request) => {
   const database = db();
   const at = now();
   const windowMs = 60 * 60 * 1000;
+  const dayMs = 24 * windowMs;
+  const timezoneOffsetMs = 9 * windowMs;
+  const requestedDays = Number((request.data || {}).days ?? 7);
+  if (!Number.isInteger(requestedDays) || requestedDays < 1 || requestedDays > 30) {
+    throw new HttpsError('invalid-argument', '조회 기간은 1일부터 30일까지 선택해 주세요.');
+  }
   const hourKeys = Array.from({ length: 24 }, (_, index) => new Date(at - (23 - index) * windowMs).toISOString().slice(0, 13));
+  const kstNow = new Date(at + timezoneOffsetMs);
+  const currentKstMidnight = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()) - timezoneOffsetMs;
+  const firstKstMidnight = currentKstMidnight - (requestedDays - 1) * dayMs;
+  const firstHourKey = new Date(firstKstMidnight).toISOString().slice(0, 13);
+  const dailyKeys = Array.from({ length: requestedDays }, (_, index) => new Date(firstKstMidnight + index * dayMs + timezoneOffsetMs).toISOString().slice(0, 10));
   const [presenceSnap, hourlySnap] = await Promise.all([
     database.ref('presence/streamerMessenger').get(),
-    database.ref('analytics/presenceHourly/streamerMessenger')
-      .orderByKey().startAt(hourKeys[0]).endAt(hourKeys[hourKeys.length - 1]).get(),
+    database.ref('analytics/presenceHourly/streamerMessenger').orderByKey().startAt(firstHourKey).endAt(hourKeys[hourKeys.length - 1]).get(),
   ]);
   const presence = presenceSnap.val() || {};
   const recentCount = Object.values(presence).filter((entry) => entry && typeof entry.lastSeen === 'number' && at - entry.lastSeen <= windowMs).length;
@@ -2022,7 +2032,15 @@ const messengerAdminGetVisitorAnalytics = onCall(async (request) => {
     sampledAt: Number(hourlyData[hour] && hourlyData[hour].sampledAt) || null,
   }));
   const peakHour = hourly.reduce((best, item) => item.peak > (best ? best.peak : 0) ? item : best, null);
-  return { recentCount, sampledAt: at, recentWindowMs: windowMs, hourly, peakHour };
+  const dailyPeaks = Object.fromEntries(dailyKeys.map((day) => [day, 0]));
+  Object.entries(hourlyData).forEach(([hour, entry]) => {
+    const timestamp = Date.parse(`${hour}:00:00Z`);
+    if (!Number.isFinite(timestamp)) return;
+    const kstDay = new Date(timestamp + timezoneOffsetMs).toISOString().slice(0, 10);
+    if (Object.hasOwn(dailyPeaks, kstDay)) dailyPeaks[kstDay] = Math.max(dailyPeaks[kstDay], Number(entry && entry.peak) || 0);
+  });
+  const daily = dailyKeys.map((day) => ({ day, peak: dailyPeaks[day] }));
+  return { recentCount, sampledAt: at, recentWindowMs: windowMs, hourly, peakHour, days: requestedDays, daily };
 });
 
 const messengerAdminGetBanStatus = onCall(async (request) => {
