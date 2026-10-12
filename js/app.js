@@ -1813,6 +1813,10 @@ function renderRoomToolSwitcher(preferredKey = '') {
   const viewport = $('#room-tools-viewport');
   const track = $('#room-tools-track');
   const slides = availableRoomToolSlides();
+  const quickHomeButton = $('.room-tools-quick-home');
+  const quickToolButtons = document.querySelectorAll('[data-room-tool-quick-launch]');
+  if (quickHomeButton) quickHomeButton.setAttribute('aria-pressed', String(!state.activeRoomTool));
+  quickToolButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.roomToolQuickLaunch === state.activeRoomTool)));
   if (!state.room) {
     updateRoomVideoMode();
     slot.hidden = true;
@@ -1992,6 +1996,17 @@ function bindRoomToolControls() {
   const dragHandle = $('#room-tools-pip-drag-handle');
   const resizeHandle = $('#room-tools-pip-resize-handle');
   $('#toggle-room-tools-pip').addEventListener('click', () => setRoomToolsPipCollapsed(!state.roomToolsPipCollapsed));
+  $('#room-tools-pip-bar').addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const homeButton = target.closest('[data-room-tool-quick-home]');
+    if (homeButton) {
+      returnToRoomToolLauncher();
+      return;
+    }
+    const toolButton = target.closest('[data-room-tool-quick-launch]');
+    if (toolButton) launchRoomTool(toolButton.dataset.roomToolQuickLaunch);
+  });
   $('#room-video-close').addEventListener('click', closeRoomToolVideo);
 
   let dragOrigin = null;

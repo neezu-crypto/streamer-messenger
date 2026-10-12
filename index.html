@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-tools-width-resize">
+  <link rel="stylesheet" href="styles.css?v=20261012-room-tools-compact-header">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -37,7 +37,11 @@
 
   <div class="room-tools-sticky-slot" id="room-tools-sticky-slot" hidden>
     <div class="room-tools-pip-bar" id="room-tools-pip-bar">
+      <button class="room-tools-quick-button room-tools-quick-home" type="button" data-room-tool-quick-home aria-label="도구 선택" title="채팅 도구 선택" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg></button>
       <button class="room-tools-pip-drag-handle" id="room-tools-pip-drag-handle" type="button" aria-label="채팅 도구 패널 이동. 제목 또는 흰색 테두리를 끌거나 방향키로 이동합니다" title="제목이나 흰색 테두리를 잡고 끌어 채팅 도구 패널을 이동합니다. 방향키로도 움직일 수 있어요"><span class="room-tools-pip-grip" aria-hidden="true">⠿</span><span id="room-tools-pip-title">채팅 도구</span><span class="room-tools-pip-drag-hint">드래그 이동</span></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="market" aria-label="주식시장" title="주식시장" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19.5h16M5 16l4.2-4.4 3.2 2.7 6.6-7"/><path d="M15.8 7.3H19v3.2"/></svg></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="mini-game" aria-label="미니게임" title="미니게임" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="8.5" cy="8.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="video" aria-label="영상" title="영상" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></button>
       <button class="room-tools-pip-collapse" id="toggle-room-tools-pip" type="button" aria-expanded="true" aria-controls="room-tools-content" aria-label="채팅 도구 패널 접기" title="채팅 도구 패널을 접습니다"><span aria-hidden="true">⌃</span></button>
     </div>
     <div class="room-tools-content" id="room-tools-content">
@@ -498,6 +502,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-room-tools-width-resize"></script>
+  <script type="module" src="js/app.js?v=20261012-room-tools-compact-header"></script>
 </body>
 </html>
