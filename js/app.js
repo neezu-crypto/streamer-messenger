@@ -38,7 +38,7 @@ state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferen
 let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
-const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false };
+const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false, visitorsLoading: false };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
 let roomClipSearchTimer = 0;
 let roomClipRequestToken = 0;
@@ -4461,10 +4461,71 @@ function renderAdminAudit(entries) {
   }
 }
 
+function formatVisitorHour(hour) {
+  const date = new Date(`${hour}:00:00Z`);
+  if (!Number.isFinite(date.getTime())) return '--';
+  return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hourCycle: 'h23' }).format(date);
+}
+
+function renderAdminVisitorAnalytics(data) {
+  const hourly = Array.isArray(data.hourly) ? data.hourly : [];
+  const peakHour = data.peakHour && Number(data.peakHour.peak) > 0 ? data.peakHour : null;
+  $('#admin-visitor-recent-count').textContent = Number(data.recentCount) || 0;
+  $('#admin-visitor-peak-count').textContent = peakHour ? Number(peakHour.peak) : 0;
+  $('#admin-visitor-peak-time').textContent = peakHour ? `${formatVisitorHour(peakHour.hour)}시 시간대` : '아직 수집된 최고값이 없습니다.';
+  $('#admin-visitor-updated').textContent = `조회 ${new Date(data.sampledAt || Date.now()).toLocaleString('ko-KR')}`;
+
+  const chart = $('#admin-visitor-chart');
+  chart.replaceChildren();
+  if (!hourly.length) {
+    chart.textContent = '접속 기록을 불러오지 못했습니다.';
+    return;
+  }
+  const maxPeak = Math.max(1, ...hourly.map((item) => Number(item.peak) || 0));
+  hourly.forEach((item) => {
+    const peak = Math.max(0, Number(item.peak) || 0);
+    const column = document.createElement('div');
+    column.className = 'admin-visitor-hour';
+    column.title = `${formatVisitorHour(item.hour)}시 시간대 · 최고 ${peak}명`;
+    const value = document.createElement('small');
+    value.className = 'admin-visitor-hour-value';
+    value.textContent = peak ? String(peak) : '·';
+    const rail = document.createElement('div');
+    rail.className = 'admin-visitor-hour-rail';
+    const bar = document.createElement('span');
+    bar.className = 'admin-visitor-hour-bar';
+    bar.style.height = `${peak ? Math.max(5, (peak / maxPeak) * 100) : 2}%`;
+    rail.appendChild(bar);
+    const label = document.createElement('small');
+    label.className = 'admin-visitor-hour-label';
+    label.textContent = formatVisitorHour(item.hour);
+    column.append(value, rail, label);
+    chart.appendChild(column);
+  });
+}
+
+async function loadAdminVisitorAnalytics() {
+  if (!state.session?.isAdmin || adminState.visitorsLoading) return;
+  adminState.visitorsLoading = true;
+  $('#admin-visitor-refresh').disabled = true;
+  $('#admin-visitor-updated').textContent = '접속 통계를 불러옵니다.';
+  try {
+    const result = await call('messengerAdminGetVisitorAnalytics');
+    renderAdminVisitorAnalytics(result || {});
+  } catch (error) {
+    $('#admin-visitor-updated').textContent = error.message || '접속 통계를 불러오지 못했습니다.';
+    $('#admin-visitor-chart').textContent = '접속 통계를 불러오지 못했습니다.';
+  } finally {
+    adminState.visitorsLoading = false;
+    $('#admin-visitor-refresh').disabled = false;
+  }
+}
+
 function switchAdminTab(tab) {
   document.querySelectorAll('[data-admin-tab]').forEach((button) => button.classList.toggle('active', button.dataset.adminTab === tab));
-  ['reports', 'accounts', 'audit', 'test'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
+  ['reports', 'accounts', 'visitors', 'audit', 'test'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
   if (tab === 'accounts' && !adminState.bansLoaded && !adminState.bansLoading) loadAdminBanPage(true);
+  if (tab === 'visitors') loadAdminVisitorAnalytics();
   if (tab === 'test' && !adminState.testAccountsLoading) loadAdminTestAccounts();
 }
 
@@ -4932,6 +4993,7 @@ function bindEvents() {
   $('#admin-report-status').addEventListener('change', () => loadAdminReportPage(true));
   $('#admin-report-refresh').addEventListener('click', () => loadAdminReportPage(true));
   $('#admin-report-load-more').addEventListener('click', () => loadAdminReportPage(false));
+  $('#admin-visitor-refresh').addEventListener('click', loadAdminVisitorAnalytics);
   $('#admin-ban-refresh').addEventListener('click', () => loadAdminBanPage(true));
   $('#admin-ban-load-more').addEventListener('click', () => loadAdminBanPage(false));
   $('#admin-ban-search').addEventListener('input', renderAdminBans);

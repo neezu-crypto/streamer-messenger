@@ -2002,6 +2002,29 @@ const messengerAdminGetDashboard = onCall(async (request) => {
   };
 });
 
+const messengerAdminGetVisitorAnalytics = onCall(async (request) => {
+  await requireAdmin(request);
+  const database = db();
+  const at = now();
+  const windowMs = 60 * 60 * 1000;
+  const hourKeys = Array.from({ length: 24 }, (_, index) => new Date(at - (23 - index) * windowMs).toISOString().slice(0, 13));
+  const [presenceSnap, hourlySnap] = await Promise.all([
+    database.ref('presence/streamerMessenger').get(),
+    database.ref('analytics/presenceHourly/streamerMessenger')
+      .orderByKey().startAt(hourKeys[0]).endAt(hourKeys[hourKeys.length - 1]).get(),
+  ]);
+  const presence = presenceSnap.val() || {};
+  const recentCount = Object.values(presence).filter((entry) => entry && typeof entry.lastSeen === 'number' && at - entry.lastSeen <= windowMs).length;
+  const hourlyData = hourlySnap.val() || {};
+  const hourly = hourKeys.map((hour) => ({
+    hour,
+    peak: Math.max(0, Number(hourlyData[hour] && hourlyData[hour].peak) || 0),
+    sampledAt: Number(hourlyData[hour] && hourlyData[hour].sampledAt) || null,
+  }));
+  const peakHour = hourly.reduce((best, item) => item.peak > (best ? best.peak : 0) ? item : best, null);
+  return { recentCount, sampledAt: at, recentWindowMs: windowMs, hourly, peakHour };
+});
+
 const messengerAdminGetBanStatus = onCall(async (request) => {
   const p = await requireAdmin(request);
   const uid = String((request.data || {}).uid || '').trim();
@@ -2190,6 +2213,6 @@ module.exports = {
   messengerSendMessage, messengerGetLinkPreview, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
-  messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage,
+  messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,
   messengerExpireRequests, messengerPurgeExpiredData,
 };

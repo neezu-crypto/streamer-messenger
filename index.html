@@ -227,7 +227,7 @@
     <section class="admin-view glass-card" id="admin-view" hidden>
       <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2>메신저 운영 관리</h2></div><button class="button button-quiet" id="close-admin" type="button">닫기</button></div>
       <div class="admin-summary" aria-live="polite"><article><span>대기 신고 전체</span><strong id="admin-pending-count">—</strong></article><article><span>메신저 전용 정지</span><strong id="admin-ban-count">—</strong></article></div>
-      <nav class="admin-tabs" aria-label="관리 기능"><button class="active" type="button" data-admin-tab="reports" title="메신저 신고를 확인하고 처리합니다">신고 검토</button><button type="button" data-admin-tab="accounts" title="메신저 이용 제한 계정을 관리합니다">계정 제한</button><button type="button" data-admin-tab="audit" title="메신저 관리자 작업 기록을 봅니다">관리 기록</button><button type="button" data-admin-tab="test" title="테스트방과 테스트 계정을 관리합니다">테스트 환경</button></nav>
+      <nav class="admin-tabs" aria-label="관리 기능"><button class="active" type="button" data-admin-tab="reports" title="메신저 신고를 확인하고 처리합니다">신고 검토</button><button type="button" data-admin-tab="accounts" title="메신저 이용 제한 계정을 관리합니다">계정 제한</button><button type="button" data-admin-tab="visitors" title="메신저 접속자 추이를 확인합니다">접속 통계</button><button type="button" data-admin-tab="audit" title="메신저 관리자 작업 기록을 봅니다">관리 기록</button><button type="button" data-admin-tab="test" title="테스트방과 테스트 계정을 관리합니다">테스트 환경</button></nav>
       <section class="admin-pane" id="admin-pane-reports">
         <div class="admin-list-toolbar"><label class="field-label" for="admin-report-status">신고 상태</label><select class="text-input" id="admin-report-status"><option value="pending">대기</option><option value="reviewed">확인 완료</option><option value="dismissed">기각</option><option value="all">전체</option></select><button class="button button-quiet" id="admin-report-refresh" type="button">새로고침</button></div>
         <div id="admin-report-list" class="admin-report-list"><p class="muted">신고 목록을 불러옵니다.</p></div>
@@ -240,6 +240,15 @@
           <div class="admin-ban-actions" id="admin-ban-actions" hidden><label class="field-label" for="admin-ban-reason">정지 사유</label><textarea class="text-input" id="admin-ban-reason" rows="3" maxlength="200" placeholder="사용자에게 안내 가능한 사유를 입력해 주세요"></textarea><button class="button button-danger" id="admin-ban-submit" type="button">메신저 이용 정지</button><button class="button button-quiet" id="admin-unban-submit" type="button" hidden>정지 해제</button></div>
         </div>
         <div class="admin-tool-card admin-ban-directory"><div class="admin-list-heading"><div><h3>메신저 전용 정지 계정</h3><p>정지 건수가 많아도 페이지 단위로 확인할 수 있어요.</p></div><button class="button button-quiet" id="admin-ban-refresh" type="button">새로고침</button></div><label class="field-label" for="admin-ban-search">UID 검색</label><input class="text-input" id="admin-ban-search" maxlength="128" autocomplete="off" placeholder="불러온 목록에서 UID 검색"><div id="admin-ban-list" class="admin-ban-list"><p class="muted">정지 계정 목록을 불러옵니다.</p></div><button class="button button-quiet full-width admin-load-more" id="admin-ban-load-more" type="button" hidden>다음 계정 더 보기</button></div>
+      </section>
+      <section class="admin-pane" id="admin-pane-visitors" hidden>
+        <div class="admin-tool-card admin-visitor-tool">
+          <div class="admin-list-heading"><div><h3>메신저 접속자</h3><p>최근 접속 계정 수와 시간대별 최고 동시 접속을 확인합니다.</p></div><button class="button button-quiet" id="admin-visitor-refresh" type="button">새로고침</button></div>
+          <div class="admin-visitor-summary" aria-live="polite"><article><span>최근 60분 내 접속</span><strong id="admin-visitor-recent-count">—</strong><small>마지막 접속 기록 기준</small></article><article><span>최근 24시간 최고 동시 접속</span><strong id="admin-visitor-peak-count">—</strong><small id="admin-visitor-peak-time">시간대별 최고값</small></article></div>
+          <div class="admin-visitor-chart-heading"><strong>시간대별 최고 동시 접속</strong><small id="admin-visitor-updated">집계 정보를 불러옵니다.</small></div>
+          <div class="admin-visitor-chart-scroll"><div class="admin-visitor-chart" id="admin-visitor-chart" role="img" aria-label="최근 24시간 시간대별 최고 동시 접속자 수"></div></div>
+          <p class="admin-visitor-footnote">시간대별 기록은 5분 간격으로 수집한 최고값이며 UTC 기준으로 저장한 뒤 한국 시간으로 표시합니다. 최근 60분 내 접속은 새로고침 또는 페이지 복귀 시 남긴 기록을 기준으로 합니다.</p>
+        </div>
       </section>
       <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
       <section class="admin-pane" id="admin-pane-test" hidden>
@@ -517,6 +526,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-watch-party-form"></script>
+  <script type="module" src="js/app.js?v=20261012-visitor-analytics"></script>
 </body>
 </html>
