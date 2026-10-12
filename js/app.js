@@ -5,6 +5,9 @@ const $ = (selector) => document.querySelector(selector);
 const MESSAGE_PAGE_SIZE = 20;
 const ROOM_TOOLS_PIP_STORAGE_KEY = 'streamerMessenger.roomToolsPip';
 const MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY = 'streamerMessenger.mobileRoomToolsOpen';
+const ROOM_TOOLS_PIP_BASE_WIDTH = 500;
+const ROOM_TOOLS_PIP_MIN_WIDTH = 340;
+const ROOM_TOOLS_PIP_MAX_WIDTH = 750;
 function loadMobileRoomToolsOpenPreference() {
   try {
     const value = window.localStorage.getItem(MOBILE_ROOM_TOOLS_OPEN_STORAGE_KEY);
@@ -15,17 +18,21 @@ function loadRoomToolsPipPreferences() {
   try {
     const value = JSON.parse(window.localStorage.getItem(ROOM_TOOLS_PIP_STORAGE_KEY) || 'null');
     if (!value || !Number.isFinite(Number(value.left)) || !Number.isFinite(Number(value.top))) return null;
-    const scale = Number(value.scale);
+    const storedWidth = Number(value.width);
+    const legacyScale = Number(value.scale);
+    const width = Number.isFinite(storedWidth)
+      ? storedWidth
+      : ROOM_TOOLS_PIP_BASE_WIDTH * (Number.isFinite(legacyScale) ? legacyScale : 1);
     return {
       left: Number(value.left),
       top: Number(value.top),
-      scale: Number.isFinite(scale) ? Math.min(1.5, Math.max(0.68, scale)) : 1,
+      width: Math.min(ROOM_TOOLS_PIP_MAX_WIDTH, Math.max(ROOM_TOOLS_PIP_MIN_WIDTH, width)),
       collapsed: value.collapsed === true
     };
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipScale: roomToolsPipPreferences ? roomToolsPipPreferences.scale : 1, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
@@ -1690,24 +1697,28 @@ function setRoomToolsPipPosition(left, top) {
   slot.style.setProperty('--room-tools-pip-top', `${Math.min(maxTop, Math.max(min, top))}px`);
 }
 
-function setRoomToolsPipScale(scale) {
+function setRoomToolsPipWidth(width) {
   if (!isDesktopRoomToolsPip()) return;
   const slot = $('#room-tools-sticky-slot');
   if (!slot || slot.hidden || state.roomToolsPipCollapsed) return;
   const rect = slot.getBoundingClientRect();
-  const baseWidth = Math.max(1, rect.width / Math.max(0.01, state.roomToolsPipScale));
-  const baseHeight = Math.max(1, rect.height / Math.max(0.01, state.roomToolsPipScale));
+  const viewportRect = $('#room-tools-viewport')?.getBoundingClientRect();
+  const viewportHeight = viewportRect && viewportRect.height > 0 ? viewportRect.height : rect.width * 9 / 16;
+  const fixedHeight = Math.max(0, rect.height - viewportHeight);
+  const viewportHeightRatio = viewportRect && viewportRect.width > 0
+    ? viewportRect.height / viewportRect.width
+    : 9 / 16;
   const availableWidth = Math.max(1, window.innerWidth - 16);
-  const availableHeight = Math.max(1, window.innerHeight - 104);
-  const maxScale = Math.min(1.5, availableWidth / baseWidth, availableHeight / baseHeight);
-  const minScale = Math.min(0.68, maxScale);
-  const nextScale = Math.min(maxScale, Math.max(minScale, Number(scale) || 1));
+  const availableHeight = Math.max(1, window.innerHeight - Math.max(8, rect.top) - 16);
+  const maxWidthByHeight = Math.max(1, (availableHeight - fixedHeight) / Math.max(0.01, viewportHeightRatio));
+  const maxWidth = Math.max(1, Math.min(ROOM_TOOLS_PIP_MAX_WIDTH, availableWidth, maxWidthByHeight));
+  const minWidth = Math.min(ROOM_TOOLS_PIP_MIN_WIDTH, maxWidth);
+  const nextWidth = Math.round(Math.min(maxWidth, Math.max(minWidth, Number(width) || ROOM_TOOLS_PIP_BASE_WIDTH)));
   slot.style.setProperty('--room-tools-pip-right', 'auto');
   slot.style.setProperty('--room-tools-pip-left', `${rect.left}px`);
   slot.style.setProperty('--room-tools-pip-top', `${rect.top}px`);
-  slot.style.setProperty('--room-tools-pip-scale', String(nextScale));
-  slot.style.removeProperty('max-height');
-  state.roomToolsPipScale = nextScale;
+  slot.style.setProperty('--room-tools-pip-width', `${nextWidth}px`);
+  state.roomToolsPipWidth = nextWidth;
   const nextRect = slot.getBoundingClientRect();
   setRoomToolsPipPosition(nextRect.left, nextRect.top);
 }
@@ -1717,7 +1728,7 @@ function persistRoomToolsPipPosition() {
   const slot = $('#room-tools-sticky-slot');
   if (!slot || slot.hidden) return;
   const rect = slot.getBoundingClientRect();
-  const preferences = { left: Math.round(rect.left), top: Math.round(rect.top), scale: state.roomToolsPipScale, collapsed: state.roomToolsPipCollapsed };
+  const preferences = { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), collapsed: state.roomToolsPipCollapsed };
   roomToolsPipPreferences = preferences;
   try { window.localStorage.setItem(ROOM_TOOLS_PIP_STORAGE_KEY, JSON.stringify(preferences)); } catch (_) { /* Storage may be unavailable in private browsing. */ }
 }
@@ -1727,13 +1738,13 @@ function restoreRoomToolsPipPosition(force = false) {
   const slot = $('#room-tools-sticky-slot');
   if (!slot || slot.hidden) return;
   if (!force && slot.style.getPropertyValue('--room-tools-pip-left')) return;
-  const { left, top, scale } = roomToolsPipPreferences;
-  state.roomToolsPipScale = scale;
+  const { left, top, width } = roomToolsPipPreferences;
+  state.roomToolsPipWidth = width;
   slot.style.setProperty('--room-tools-pip-left', `${left}px`);
   slot.style.setProperty('--room-tools-pip-right', 'auto');
   slot.style.setProperty('--room-tools-pip-top', `${top}px`);
-  slot.style.setProperty('--room-tools-pip-scale', String(scale));
-  setRoomToolsPipScale(scale);
+  slot.style.setProperty('--room-tools-pip-width', `${width}px`);
+  setRoomToolsPipWidth(width);
   const rect = slot.getBoundingClientRect();
   setRoomToolsPipPosition(rect.left, rect.top);
 }
@@ -2022,17 +2033,18 @@ function bindRoomToolControls() {
     slot.style.setProperty('--room-tools-pip-right', 'auto');
     slot.style.setProperty('--room-tools-pip-left', `${rect.left}px`);
     slot.style.setProperty('--room-tools-pip-top', `${rect.top}px`);
-    resizeOrigin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: rect.width, height: rect.height, scale: state.roomToolsPipScale };
+    const viewportRect = viewport.getBoundingClientRect();
+    resizeOrigin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: rect.width, aspect: viewportRect.width / Math.max(1, viewportRect.height) };
     slot.classList.add('is-resizing');
     resizeHandle.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
   resizeHandle.addEventListener('pointermove', (event) => {
     if (!resizeOrigin || event.pointerId !== resizeOrigin.pointerId) return;
-    const widthDelta = (event.clientX - resizeOrigin.x) / Math.max(1, resizeOrigin.width);
-    const heightDelta = (event.clientY - resizeOrigin.y) / Math.max(1, resizeOrigin.height);
-    const multiplier = Math.max(0.68 / resizeOrigin.scale, 1 + (widthDelta + heightDelta) / 2);
-    setRoomToolsPipScale(resizeOrigin.scale * multiplier);
+    const horizontalDelta = event.clientX - resizeOrigin.x;
+    const verticalDelta = (event.clientY - resizeOrigin.y) * resizeOrigin.aspect;
+    const widthDelta = Math.abs(horizontalDelta) >= Math.abs(verticalDelta) ? horizontalDelta : verticalDelta;
+    setRoomToolsPipWidth(resizeOrigin.width + widthDelta);
   });
   const stopResizing = (event) => {
     if (!resizeOrigin || (event && event.pointerId !== resizeOrigin.pointerId)) return;
@@ -2049,8 +2061,8 @@ function bindRoomToolControls() {
     if (!isDesktopRoomToolsPip() || state.roomToolsPipCollapsed) return;
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
-    const amount = event.shiftKey ? 0.1 : 0.04;
-    setRoomToolsPipScale(state.roomToolsPipScale + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? amount : -amount));
+    const amount = event.shiftKey ? 80 : 24;
+    setRoomToolsPipWidth(state.roomToolsPipWidth + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? amount : -amount));
     persistRoomToolsPipPosition();
   });
 
@@ -2074,7 +2086,7 @@ function bindRoomToolControls() {
     } else if (!slot.hidden && !state.roomToolsPipCollapsed) {
       if (roomToolsPipPreferences) restoreRoomToolsPipPosition(true);
       else {
-        setRoomToolsPipScale(state.roomToolsPipScale);
+        setRoomToolsPipWidth(state.roomToolsPipWidth);
         const rect = slot.getBoundingClientRect();
         setRoomToolsPipPosition(rect.left, rect.top);
       }
