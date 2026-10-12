@@ -901,7 +901,7 @@
 .room-market-chart svg{width:100%;height:100%}
 .room-market-chart svg line{stroke:#26364d}
 .room-market-trade-note{margin:0;padding:0;background:transparent;color:#94a3b8;font-size:8px;line-height:1.25}
-.room-market-order-row{display:grid;grid-template-columns:minmax(45px,.45fr) minmax(60px,1fr) minmax(60px,1fr);gap:5px;min-width:0}
+.room-market-order-row{display:grid;grid-template-columns:minmax(72px,.4fr) minmax(0,1fr) minmax(0,1fr);gap:5px;min-width:0}
 .room-market-order-row .text-input{width:100%;min-width:0;height:31px;min-height:31px;padding:0 7px;border-color:#334155;border-radius:8px;background:#1e293b;color:#f8fafc;font-size:10px}
 .room-market-order-row .button{min-width:0;height:31px;min-height:31px;padding:0 8px;border:0;border-radius:8px;color:#fff;font-size:10px;font-weight:800}
 .room-market-sell-button{background:#ef4444}
@@ -946,8 +946,8 @@
   .room-tools-sticky-slot .room-market-personal-position strong{font-size:7px}
   .room-tools-sticky-slot .room-market-chart{height:auto;min-height:42px}
   .room-tools-sticky-slot .room-market-trade-note{font-size:7px}
-  .room-tools-sticky-slot .room-market-order-row{grid-template-columns:42px 1fr 1fr;gap:3px}
-  .room-tools-sticky-slot .room-market-order-row .text-input,.room-tools-sticky-slot .room-market-order-row .button{height:25px;min-height:25px;font-size:8px}
+  .room-tools-sticky-slot .room-market-order-row{grid-template-columns:minmax(72px,.4fr) minmax(0,1fr) minmax(0,1fr);gap:3px}
+  .room-tools-sticky-slot .room-market-order-row .text-input,.room-tools-sticky-slot .room-market-order-row .button{height:29px;min-height:29px;font-size:9px}
   .room-tools-sticky-slot .room-market-nickname-option{font-size:7px}
   .room-tools-sticky-slot .room-market-nickname-option input{width:10px;height:10px}
   .room-tools-sticky-slot .room-market-feed-wrap{padding:4px 5px}
@@ -972,8 +972,8 @@
   body.messenger-chat-open .room-tools-sticky-slot .room-market-personal-position strong{font-size:6px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-chart{height:auto;min-height:38px;border-radius:6px;font-size:7px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-note{font-size:6px}
-  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row{grid-template-columns:36px 1fr 1fr;gap:2px}
-  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .text-input,body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .button{height:22px;min-height:22px;padding:0 3px;font-size:7px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row{grid-template-columns:minmax(58px,.45fr) minmax(0,1fr) minmax(0,1fr);gap:3px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .text-input,body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .button{height:28px;min-height:28px;padding:0 5px;font-size:9px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-nickname-option{gap:3px;font-size:6px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-nickname-option input{width:9px;height:9px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-status:not([hidden]){padding:3px 4px;font-size:6px}
