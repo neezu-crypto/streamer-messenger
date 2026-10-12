@@ -1183,7 +1183,9 @@
   body.messenger-chat-open #room-tools-viewport .mini-game-live-heading h3{font-size:13px}
   body.messenger-chat-open #room-tools-viewport .mini-game-live-heading .button,
   body.messenger-chat-open #room-tools-viewport .mini-game-collapse-button{width:32px;height:32px;min-height:32px;font-size:10px}
+  body.messenger-chat-open #room-tools-viewport .mini-game-live-actions{flex:0 0 auto}
   body.messenger-chat-open #room-tools-viewport .mini-game-live-heading #mini-game-clear{min-height:32px;padding:0 8px;font-size:10px}
+  body.messenger-chat-open #room-tools-viewport .mini-game-live-heading #mini-game-clear{width:auto;flex:0 0 auto}
   body.messenger-chat-open #room-tools-viewport .mini-game-live-panel .mini-game-instructions{font-size:9px}
   body.messenger-chat-open #room-tools-viewport .mini-game-live-panel .ladder-choice,
   body.messenger-chat-open #room-tools-viewport .mini-game-live-panel .ladder-outcome{min-height:28px;padding:4px 3px;font-size:10px}
