@@ -1307,6 +1307,10 @@ function updateRoomVideoMode() {
   const emptyState = $('#room-video-empty-state');
   const hasPersonal = !!personal && personal.dataset.empty !== 'true';
   const hasParty = !!state.watchParty;
+  const videoToolActive = state.activeRoomTool === 'video';
+  const quickActions = $('#room-tools-video-quick-actions');
+  const quickOriginalLink = $('#room-tools-video-open-link');
+  const quickCloseButton = $('#room-tools-video-close');
   if (emptyState) emptyState.hidden = hasPersonal || hasParty || state.activeRoomTool !== 'video';
   const personalInactive = hasParty && state.roomVideoMode !== 'personal';
   const partyInactive = hasPersonal && state.roomVideoMode !== 'party';
@@ -1327,9 +1331,23 @@ function updateRoomVideoMode() {
     const selected = tab.dataset.roomVideoMode === state.roomVideoMode;
     tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
   });
+  if (quickActions) quickActions.hidden = !(videoToolActive && (hasPersonal || hasParty));
+  if (quickActions) quickActions.querySelectorAll('[data-room-tool-video-mode]').forEach((button) => {
+    button.hidden = !(hasPersonal && hasParty);
+    button.setAttribute('aria-pressed', String(button.dataset.roomToolVideoMode === state.roomVideoMode));
+  });
+  const selectedOriginalLink = state.roomVideoMode === 'party' ? $('#room-watch-party-open-link') : $('#room-video-open-link');
+  const originalHref = selectedOriginalLink && selectedOriginalLink.getAttribute('href') || '';
+  const canOpenOriginal = videoToolActive && (state.roomVideoMode === 'party'
+    ? hasParty && !selectedOriginalLink.hidden && originalHref && originalHref !== '#'
+    : hasPersonal && originalHref && originalHref !== '#');
+  if (quickOriginalLink) {
+    quickOriginalLink.href = canOpenOriginal ? originalHref : '#';
+    quickOriginalLink.hidden = !canOpenOriginal;
+  }
+  if (quickCloseButton) quickCloseButton.hidden = !(videoToolActive && hasPersonal && state.roomVideoMode === 'personal');
   const slide = $('#room-tool-video-slide');
   if (slide) slide.hidden = !hasPersonal && !hasParty && state.activeRoomTool !== 'video';
-  const videoToolActive = state.activeRoomTool === 'video';
   const personalModeActive = hasPersonal && !personalInactive && videoToolActive;
   const partyModeActive = hasParty && state.roomVideoMode === 'party' && videoToolActive;
   if (slide) slide.classList.toggle('is-watch-party-active', partyModeActive);
@@ -2002,6 +2020,16 @@ function bindRoomToolControls() {
     const homeButton = target.closest('[data-room-tool-quick-home]');
     if (homeButton) {
       returnToRoomToolLauncher();
+      return;
+    }
+    const videoModeButton = target.closest('[data-room-tool-video-mode]');
+    if (videoModeButton) {
+      state.roomVideoMode = videoModeButton.dataset.roomToolVideoMode;
+      updateRoomVideoMode();
+      return;
+    }
+    if (target.closest('#room-tools-video-close')) {
+      closeRoomToolVideo();
       return;
     }
     const toolButton = target.closest('[data-room-tool-quick-launch]');

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-tools-compact-header">
+  <link rel="stylesheet" href="styles.css?v=20261012-room-tools-video-toolbar">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -42,6 +42,12 @@
       <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="market" aria-label="주식시장" title="주식시장" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19.5h16M5 16l4.2-4.4 3.2 2.7 6.6-7"/><path d="M15.8 7.3H19v3.2"/></svg></button>
       <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="mini-game" aria-label="미니게임" title="미니게임" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="8.5" cy="8.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg></button>
       <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="video" aria-label="영상" title="영상" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></button>
+      <div class="room-tools-video-quick-actions" id="room-tools-video-quick-actions" role="group" aria-label="영상 모드 및 재생 도구" hidden>
+        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="personal" aria-label="개인 영상 보기" title="개인 영상 보기" aria-pressed="true"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></button>
+        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="party" aria-label="같이보기" title="같이보기" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="11" rx="2.5"/><path d="m9 8.5 4 2.5-4 2.5z"/><path d="M8 19h11a2 2 0 0 0 2-2V9"/></svg></button>
+        <a class="room-tools-quick-button room-tools-video-original-button" id="room-tools-video-open-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="현재 영상 원본을 새 탭에서 엽니다" title="현재 영상 원본을 새 탭에서 엽니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg></a>
+        <button class="room-tools-quick-button room-tools-video-close-button" id="room-tools-video-close" type="button" aria-label="개인 영상 재생 닫기" title="개인 영상 재생을 닫습니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
       <button class="room-tools-pip-collapse" id="toggle-room-tools-pip" type="button" aria-expanded="true" aria-controls="room-tools-content" aria-label="채팅 도구 패널 접기" title="채팅 도구 패널을 접습니다"><span aria-hidden="true">⌃</span></button>
     </div>
     <div class="room-tools-content" id="room-tools-content">
@@ -502,6 +508,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-room-tools-compact-header"></script>
+  <script type="module" src="js/app.js?v=20261012-room-tools-video-toolbar"></script>
 </body>
 </html>
