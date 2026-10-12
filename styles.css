@@ -1135,3 +1135,59 @@
 .admin-visitor-tool{display:grid;gap:14px}.admin-visitor-tool .admin-list-heading{margin-bottom:0}.admin-visitor-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.admin-visitor-summary article{display:grid;gap:5px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:rgba(247,249,255,.88)}.admin-visitor-summary span{color:#7786a0;font-size:11px}.admin-visitor-summary strong{color:var(--ink);font-size:23px}.admin-visitor-summary small{color:#8996ac;font-size:9px}.admin-visitor-chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.admin-visitor-chart-heading strong{font-size:12px}.admin-visitor-chart-heading small{color:#8996ac;font-size:9px}.admin-visitor-chart-scroll{overflow-x:auto;padding:10px 0 4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);scrollbar-width:thin}.admin-visitor-chart{display:grid;grid-template-columns:repeat(24,minmax(21px,1fr));gap:5px;min-width:650px;height:142px;align-items:stretch}.admin-visitor-hour{display:grid;grid-template-rows:16px minmax(0,1fr) 17px;justify-items:center;gap:3px;min-width:0}.admin-visitor-hour-value,.admin-visitor-hour-label{color:#8290a7;font-size:9px;font-variant-numeric:tabular-nums}.admin-visitor-hour-rail{display:flex;align-items:flex-end;width:100%;height:100%;overflow:hidden;border-radius:5px;background:#eef2fa}.admin-visitor-hour-bar{display:block;width:100%;min-height:2px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,#87a0ff,#5879ed);transition:height .2s ease}.admin-visitor-footnote{margin:0!important;color:#8996ac!important;font-size:10px!important;line-height:1.6!important}
 @media(max-width:480px){.admin-visitor-summary{gap:7px}.admin-visitor-summary article{padding:11px}.admin-visitor-summary span{font-size:10px}.admin-visitor-summary strong{font-size:20px}.admin-visitor-chart-heading{align-items:flex-start;flex-direction:column;gap:4px}}
 .admin-visitor-daily-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.admin-visitor-daily-heading>div{display:grid;gap:4px}.admin-visitor-daily-heading strong{font-size:12px}.admin-visitor-daily-heading small{color:#8996ac;font-size:9px}.admin-visitor-daily-heading label{display:flex;align-items:center;gap:6px;color:#7786a0;font-size:11px;font-weight:700}.admin-visitor-days-input{width:72px;min-height:34px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.9);color:var(--ink);font-size:12px;text-align:center}.admin-visitor-daily-chart{min-width:0;height:142px}@media(max-width:480px){.admin-visitor-daily-heading{align-items:flex-start}.admin-visitor-daily-heading label{font-size:10px}}
+
+/* Keep compact room tools readable and operable at desktop and phone sizes. */
+@media(min-width:900px){
+  .room-tools-sticky-slot .room-market-stock-card>strong{font-size:10px}
+  .room-tools-sticky-slot .room-market-stock-card .room-market-stock-metrics small,
+  .room-tools-sticky-slot .room-market-stock-card .room-market-stock-change{font-size:9px}
+  .room-tools-sticky-slot .room-market-trade-identity h4{font-size:11px}
+  .room-tools-sticky-slot .room-market-trade-identity>strong{font-size:12px}
+  .room-tools-sticky-slot .room-market-trade-identity>span{font-size:8px}
+  .room-tools-sticky-slot .room-market-personal-position span,
+  .room-tools-sticky-slot .room-market-personal-position strong{font-size:8px}
+  .room-tools-sticky-slot .room-market-chart{font-size:9px}
+  .room-tools-sticky-slot .room-market-trade-note{font-size:8px}
+  .room-tools-sticky-slot .room-market-order-row .text-input,
+  .room-tools-sticky-slot .room-market-order-row .button{height:34px;min-height:34px;font-size:10px}
+  .room-tools-sticky-slot .mini-game-live-heading h3{font-size:14px}
+  .room-tools-sticky-slot .mini-game-live-heading .button,
+  .room-tools-sticky-slot .mini-game-collapse-button{min-height:32px;height:32px;font-size:10px}
+  .room-tools-sticky-slot .mini-game-live-panel .mini-game-instructions{font-size:9px}
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-choice,
+  .room-tools-sticky-slot .mini-game-live-panel .ladder-outcome{min-height:24px;padding:4px 3px;font-size:9px}
+  .room-tools-sticky-slot .mini-game-live-panel .mini-game-result{font-size:10px}
+}
+@media(max-width:680px){
+  .mini-game-live-heading h3{font-size:12px}
+  .mini-game-live-heading .button{min-height:32px;height:32px;font-size:9px}
+  .mini-game-live-panel .mini-game-instructions{font-size:9px}
+  .mini-game-live-panel .ladder-choice,.mini-game-live-panel .ladder-outcome{min-height:24px;padding:4px 3px;font-size:9px}
+  .mini-game-live-panel .mini-game-result{font-size:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-heading h3{font-size:13px}
+  body.messenger-chat-open .room-tools-sticky-slot #add-room-stock{height:32px;font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-card{height:39px;min-height:39px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-card>strong{font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-metrics small,
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-change{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-identity h4{font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-identity>strong{font-size:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-identity>span{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-personal-position span,
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-personal-position strong{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-chart{min-height:40px;font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row{grid-template-columns:minmax(64px,.45fr) minmax(0,1fr) minmax(0,1fr);gap:4px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .text-input,
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-order-row .button{height:34px;min-height:34px;padding:0 6px;font-size:10px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-market-trade-status:not([hidden]){font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading h3{font-size:12px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading .button,
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-collapse-button{width:31px;height:31px;min-height:31px;font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-heading #mini-game-clear{min-height:31px;padding:0 8px;font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-instructions{font-size:8px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-choice,
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .ladder-outcome{min-height:24px;padding:3px 2px;font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-result{font-size:9px}
+  body.messenger-chat-open .room-tools-sticky-slot .mini-game-live-panel .mini-game-error:not([hidden]){font-size:8px}
+}
+.room-market-order-row .button:focus-visible,.ladder-choice:focus-visible,.ladder-outcome:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
