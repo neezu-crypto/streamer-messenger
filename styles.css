@@ -1106,6 +1106,8 @@
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-content>.room-tools-switcher,
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-launcher{display:none!important}
   body.messenger-chat-open .room-tools-sticky-slot .room-video-mode-switcher{display:none!important}
+  body.messenger-chat-open .room-tools-sticky-slot #room-video-tool-panel .room-video-tool-actions,
+  body.messenger-chat-open .room-tools-sticky-slot .room-watch-party-open-link{display:none!important}
   body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state{min-height:72px;padding:8px;gap:4px;border-radius:10px}
   body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-icon{width:26px;height:26px;font-size:12px}
   body.messenger-chat-open .room-tools-sticky-slot .room-video-empty-state strong{font-size:10px}
