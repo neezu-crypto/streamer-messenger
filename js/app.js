@@ -1,4 +1,4 @@
-import './firebase-init.js';
+import './firebase-init.js?v=20261012-test-room';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
