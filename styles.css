@@ -166,6 +166,7 @@
 .donation-verification-note p{margin:0}
 .donation-open-link{display:inline-flex;align-items:center;justify-content:center;width:100%;margin-top:3px;text-decoration:none}
 .app-dialog .donation-open-link{margin-top:3px}
+.donation-open-link[aria-disabled="true"]{pointer-events:none;opacity:.65}
 .donation-notice-button{margin-top:9px}
 .donation-notice-button:disabled{cursor:wait;opacity:.65;transform:none}
 .donation-shortcut-compact{display:none}

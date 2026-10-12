@@ -44,6 +44,8 @@ const linkPreviewCache = new Map();
 const SOOP_CLIP_CACHE_TTL = 45 * 1000;
 const SOOP_CLIP_CACHE_LIMIT = 80;
 const soopClipSearchCache = new Map();
+const SOOP_LIVE_STATUS_CACHE_TTL = 15 * 1000;
+const soopLiveStatusCache = new Map();
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
@@ -1757,6 +1759,73 @@ const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => 
   return getLinkPreview(url);
 });
 
+const messengerGetStreamerLiveStatus = onCall({ maxInstances: 10 }, async (request) => {
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const principal = await requireRoomPrincipal(request, roomId);
+  const { meta } = await requireRoomMember(principal, roomId);
+  const soopId = String(meta.streamerSoopId || '').trim().toLowerCase();
+  if (!/^[a-z0-9]{2,30}$/.test(soopId)) throw new HttpsError('failed-precondition', '이 채팅방의 SOOP 아이디를 확인할 수 없습니다.');
+
+  const cached = soopLiveStatusCache.get(soopId);
+  if (cached && cached.expiresAt > now()) return cached.value;
+
+  let response;
+  try {
+    response = await fetch(`https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/station`, {
+      headers: {
+        accept: 'application/json',
+        origin: 'https://www.sooplive.com',
+        referer: `https://www.sooplive.com/station/${encodeURIComponent(soopId)}`,
+        'user-agent': 'Mozilla/5.0',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    logger.warn('SOOP live status request failed', { roomId, soopId, message: String(error && error.message || error).slice(0, 120) });
+    throw new HttpsError('unavailable', 'SOOP 방송 상태를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
+  }
+  if (!response.ok) {
+    logger.warn('SOOP station API returned an error', { roomId, soopId, status: response.status });
+    throw new HttpsError('unavailable', 'SOOP 방송 상태를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (_) {
+    throw new HttpsError('unavailable', 'SOOP 방송 상태 응답을 읽지 못했습니다. 방송국 후원 링크를 열어 주세요.');
+  }
+  const stationId = payload && payload.station && payload.station.user_id;
+  if (typeof stationId !== 'string' || stationId.toLowerCase() !== soopId) {
+    throw new HttpsError('unavailable', 'SOOP 방송 상태 응답을 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
+  }
+
+  const checkedAt = now();
+  const broad = payload.broad && typeof payload.broad === 'object' ? payload.broad : null;
+  let value = { isLive: false, checkedAt };
+  if (broad) {
+    const broadcastId = String(broad.broad_no || '').trim();
+    if (!/^\d{1,20}$/.test(broadcastId) || broadcastId === '0') {
+      throw new HttpsError('unavailable', 'SOOP 라이브 방송 정보를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
+    }
+    value = {
+      isLive: true,
+      broadcastId,
+      title: String(broad.broad_title || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+      streamUrl: `https://play.sooplive.com/${encodeURIComponent(soopId)}/${encodeURIComponent(broadcastId)}`,
+      checkedAt,
+    };
+  }
+
+  soopLiveStatusCache.set(soopId, { value, expiresAt: checkedAt + SOOP_LIVE_STATUS_CACHE_TTL });
+  if (soopLiveStatusCache.size > 100) {
+    for (const [key, entry] of soopLiveStatusCache) if (entry.expiresAt <= checkedAt) soopLiveStatusCache.delete(key);
+    if (soopLiveStatusCache.size > 100) soopLiveStatusCache.delete(soopLiveStatusCache.keys().next().value);
+  }
+  return value;
+});
+
 const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
@@ -2228,7 +2297,7 @@ module.exports = {
   messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate, messengerWatchPartyUpdate,
-  messengerSendMessage, messengerGetLinkPreview, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
+  messengerSendMessage, messengerGetLinkPreview, messengerGetStreamerLiveStatus, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,

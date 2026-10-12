@@ -52,6 +52,7 @@ const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
 let toastTimer = 0;
 let imageViewerToken = 0;
+let donationStatusRequestId = 0;
 let asideSwipeStart = null;
 let asideSwipeSuppressClickUntil = 0;
 let mobileChatViewportFrame = 0;
@@ -607,17 +608,55 @@ function soopSupportUrl(soopId) {
   return /^[a-z0-9]{2,30}$/.test(id) ? `https://m.sooplive.co.kr/item/a/starballoongift?szBjId=${encodeURIComponent(id)}` : '';
 }
 
-function openDonationDialog() {
+async function openDonationDialog() {
   if (!state.room) return;
-  const url = soopSupportUrl(state.room.streamerSoopId);
-  if (!url) { showError({ message: 'SOOP 후원 링크를 만들 수 없습니다.' }); return; }
-  const nickname = state.room.streamerNickname || '스트리머';
+  const room = state.room;
+  const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
+  const stationSupportUrl = soopSupportUrl(soopId);
+  if (!stationSupportUrl) { showError({ message: 'SOOP 후원 링크를 만들 수 없습니다.' }); return; }
+  const requestId = ++donationStatusRequestId;
+  const nickname = room.streamerNickname || '스트리머';
   $('#donation-title').textContent = `${nickname}에게 후원하기`;
-  $('#donation-copy').textContent = 'SOOP 후원창은 새 탭으로 열려요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.';
+  $('#donation-copy').textContent = 'SOOP 방송 상태를 확인하고 있어요. 잠시만 기다려 주세요.';
   const openLink = $('#donation-open-link');
-  openLink.href = url;
-  openLink.setAttribute('aria-label', `${nickname}의 SOOP 후원창을 새 탭으로 열기`);
+  openLink.removeAttribute('href');
+  openLink.setAttribute('aria-disabled', 'true');
+  openLink.tabIndex = -1;
+  openLink.textContent = '방송 상태 확인 중…';
+  openLink.setAttribute('aria-label', `${nickname}의 SOOP 방송 상태 확인 중`);
   openDialog('donation-dialog');
+
+  let liveStatus = null;
+  let statusUnavailable = false;
+  try {
+    liveStatus = await call('messengerGetStreamerLiveStatus', { roomId: room.roomId });
+  } catch (error) {
+    console.warn('SOOP 방송 상태를 확인하지 못해 방송국 후원 링크를 사용합니다.', error);
+    statusUnavailable = true;
+  }
+  if (requestId !== donationStatusRequestId || !$('#donation-dialog').open || state.room?.roomId !== room.roomId) return;
+
+  const broadcastId = String(liveStatus && liveStatus.broadcastId || '').trim();
+  const isLive = liveStatus?.isLive === true && /^\d{1,20}$/.test(broadcastId) && broadcastId !== '0';
+  const url = isLive
+    ? `https://play.sooplive.com/${encodeURIComponent(soopId)}/${encodeURIComponent(broadcastId)}`
+    : stationSupportUrl;
+  openLink.href = url;
+  openLink.removeAttribute('aria-disabled');
+  openLink.tabIndex = 0;
+  if (isLive) {
+    openLink.textContent = 'SOOP 라이브 방송 열기 ↗';
+    openLink.setAttribute('aria-label', `${nickname}의 SOOP 라이브 방송에서 별풍선 후원하기`);
+    openLink.title = 'SOOP 라이브 방송의 별풍선 버튼에서 후원할 수 있어요';
+    $('#donation-copy').textContent = '현재 라이브 중이에요. 라이브 방송으로 이동한 뒤 SOOP 화면의 별풍선 버튼을 눌러 후원해 주세요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.';
+  } else {
+    openLink.textContent = 'SOOP 방송국 후원창 열기 ↗';
+    openLink.setAttribute('aria-label', `${nickname}의 SOOP 방송국 후원창을 새 탭으로 열기`);
+    openLink.title = 'SOOP 방송국 후원창을 새 탭으로 열기';
+    $('#donation-copy').textContent = statusUnavailable
+      ? '라이브 상태를 확인하지 못해 방송국 후원창으로 연결해요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.'
+      : '현재 라이브 중이 아니에요. SOOP 방송국 후원창으로 연결해요. 후원 후 돌아와 완료 알림을 보내면 스트리머에게 채팅으로 전달돼요.';
+  }
 }
 
 async function sendDonationNotice() {
