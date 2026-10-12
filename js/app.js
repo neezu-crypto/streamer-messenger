@@ -29,6 +29,7 @@ const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLo
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
+let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
@@ -2178,7 +2179,8 @@ function renderMiniGame(errorMessage = '') {
   }
   const board = $('#ladder-board');
   const boardRenderKey = JSON.stringify([
-    game.gameId, players, outcomes, rungs, state.miniGameSelectedLane, canManage
+    game.gameId, players, outcomes, rungs, state.miniGameSelectedLane,
+    game.selectedAt || 0, game.selectedBy || '', canManage
   ]);
   if (board.dataset.renderKey === boardRenderKey) {
     board.querySelectorAll('.ladder-choice').forEach((choice) => {
@@ -2258,7 +2260,10 @@ function renderMiniGame(errorMessage = '') {
     points.push([xForLane(lane), bottomY]);
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     path.setAttribute('points', points.map((point) => point.join(',')).join(' '));
-    path.setAttribute('class', 'ladder-selected-path');
+    const animationKey = `${game.gameId}:${state.miniGameSelectedLane}:${game.selectedAt || 0}:${game.selectedBy || ''}`;
+    const alreadyAnimated = lastMiniGamePathAnimationKey === animationKey;
+    path.setAttribute('class', `ladder-selected-path${alreadyAnimated ? ' is-already-drawn' : ''}`);
+    if (!alreadyAnimated) lastMiniGamePathAnimationKey = animationKey;
     svg.appendChild(path);
     const pathLength = points.slice(1).reduce((length, point, index) => {
       const previous = points[index];
