@@ -1877,6 +1877,8 @@ function renderRoomToolSwitcher(preferredKey = '') {
   if (isDesktopRoomToolsPip()) {
     setRoomToolsPipCollapsed(state.roomToolsPipCollapsed, { persist: false });
   }
+  const keys = slides.map((slide) => slide.dataset.roomTool);
+  if (preferredKey && keys.includes(preferredKey)) state.activeRoomTool = preferredKey;
   const isLauncher = !state.activeRoomTool;
   launcher.hidden = !isLauncher;
   homeButton.hidden = isLauncher;
@@ -1906,7 +1908,6 @@ function renderRoomToolSwitcher(preferredKey = '') {
   switcher.style.gridTemplateColumns = desktopCompactTabs
     ? `repeat(${slides.length}, minmax(0, 1fr))`
     : '';
-  const keys = slides.map((slide) => slide.dataset.roomTool);
   const keySignature = keys.join('|');
   if (state.roomToolTabKeys !== keySignature) {
     const tabs = slides.map((slide) => {
@@ -1936,7 +1937,6 @@ function renderRoomToolSwitcher(preferredKey = '') {
     state.roomToolTabKeys = keySignature;
   }
 
-  if (preferredKey && keys.includes(preferredKey)) state.activeRoomTool = preferredKey;
   if (!keys.includes(state.activeRoomTool)) state.activeRoomTool = keys[0];
   updateRoomVideoMode();
   const activeIndex = keys.indexOf(state.activeRoomTool);
