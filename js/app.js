@@ -32,7 +32,7 @@ function loadRoomToolsPipPreferences() {
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
@@ -1132,6 +1132,8 @@ async function openChat(room, isOwner) {
   state.olderMessagesExhausted = false; state.olderPrivateMessagesExhausted = false; state.olderBroadcastMessagesExhausted = false;
   state.loadingOlderMessages = false; state.optimisticMessages = [];
   state.notificationsPrimed = false; state.timelineLoaded = { owner: false, private: false, broadcast: false };
+  state.newMessagePreview = null;
+  renderNewMessagePreview();
   if (isOwner) await loadStreamerLists();
   subscribeTimeline();
   subscribeRoomMarket();
@@ -2911,11 +2913,52 @@ function trackNotifications(messages) {
     return;
   }
   if (!state.notificationsPrimed) return;
-  if (!state.seenMessageIds.size) { messages.forEach((m) => state.seenMessageIds.add(m.id)); return; }
+  const unseenMessages = [];
   for (const message of messages) {
-    if (!state.seenMessageIds.has(message.id)) showNewMessageNotification(message);
+    if (!state.seenMessageIds.has(message.id)) {
+      showNewMessageNotification(message);
+      if (message.senderUid !== state.session.uid
+        && (!state.isOwner || !state.selectedFanUid || !message.recipientUid || message.recipientUid === state.selectedFanUid || message.senderUid === state.selectedFanUid)) {
+        unseenMessages.push(message);
+      }
+    }
     state.seenMessageIds.add(message.id);
   }
+  const timeline = $('#timeline');
+  if (unseenMessages.length && timeline && timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight >= 56) {
+    unseenMessages.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+    const newestMessage = unseenMessages[unseenMessages.length - 1];
+    state.newMessagePreview = {
+      count: (state.newMessagePreview?.count || 0) + unseenMessages.length,
+      message: newestMessage,
+    };
+    renderNewMessagePreview();
+  }
+}
+
+function renderNewMessagePreview() {
+  const button = $('#new-message-preview');
+  if (!button) return;
+  const preview = state.newMessagePreview;
+  button.hidden = !preview;
+  if (!preview) return;
+  const count = Math.max(1, Number(preview.count) || 1);
+  const message = preview.message || {};
+  const sender = message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '새 메시지');
+  let text = message.kind === 'image' ? '사진을 보냈어요' : String(message.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) text = message.kind === 'roomself' ? '비공개 이미지를 보냈어요' : '새 메시지가 도착했어요';
+  if (text.length > 90) text = `${text.slice(0, 89)}…`;
+  $('#new-message-preview-count').textContent = count > 1 ? `새 메시지 ${count}개` : '새 메시지';
+  $('#new-message-preview-sender').textContent = sender;
+  $('#new-message-preview-text').textContent = text;
+  button.setAttribute('aria-label', `${count > 1 ? `새 메시지 ${count}개. ` : '새 메시지. '}${sender}: ${text}. 누르면 최신 대화로 이동합니다.`);
+  scheduleMobileChatViewportSync();
+}
+
+function clearNewMessagePreview() {
+  if (!state.newMessagePreview) return;
+  state.newMessagePreview = null;
+  renderNewMessagePreview();
 }
 
 async function getImageUrl(imageId, original = false) {
@@ -4300,6 +4343,7 @@ function leaveChat() {
   state.messages = []; state.liveMessages = []; state.olderMessages = [];
   state.privateMessages = []; state.broadcastMessages = [];
   state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
+  clearNewMessagePreview();
   state.optimisticMessages = []; state.galleryImages.clear(); state.imageUrls.clear();
   $('#page-shell').classList.remove('chat-open');
   document.body.classList.remove('messenger-chat-open');
@@ -4763,8 +4807,14 @@ function bindEvents() {
     renderFans();
     $('#fan-search').focus();
   });
+  $('#new-message-preview').addEventListener('click', () => {
+    const timeline = $('#timeline');
+    clearNewMessagePreview();
+    if (timeline) timeline.scrollTo({ top: timeline.scrollHeight, behavior: 'smooth' });
+  });
   $('#timeline').addEventListener('scroll', () => {
     const timeline = $('#timeline');
+    if (state.newMessagePreview && timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight < 56) clearNewMessagePreview();
     if (isActiveMobileChat() && !document.body.classList.contains('messenger-keyboard-open')) {
       mobileChatFollowLatestOnKeyboard = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 64;
     }

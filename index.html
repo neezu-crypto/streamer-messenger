@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-tools-video-toolbar">
+  <link rel="stylesheet" href="styles.css?v=20261012-new-message-preview">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -194,6 +194,11 @@
           <section class="pinned-message-panel" id="pinned-message-panel" aria-label="채팅방 상단 고정 메시지" aria-live="polite" hidden></section>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
           <div class="chat-composer-wrap">
+            <button class="new-message-preview" id="new-message-preview" type="button" aria-live="polite" title="새 메시지를 보고 최신 대화로 이동합니다" hidden>
+              <span class="new-message-preview-badge" id="new-message-preview-count">새 메시지</span>
+              <span class="new-message-preview-copy"><strong id="new-message-preview-sender"></strong><span id="new-message-preview-text"></span></span>
+              <span class="new-message-preview-arrow" aria-hidden="true">↓</span>
+            </button>
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
             <div class="streamer-compose-options" id="streamer-compose-options" hidden>
               <select id="message-audience" aria-label="메시지 수신 범위"><option value="broadcast">방 전체</option><option value="direct">팬에게만</option></select>
@@ -508,6 +513,6 @@
 
   <script type="module" src="js/firebase-init.js?v=20261006-live-verification"></script>
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261012-room-tools-video-toolbar"></script>
+  <script type="module" src="js/app.js?v=20261012-new-message-preview"></script>
 </body>
 </html>

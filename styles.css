@@ -1027,6 +1027,15 @@
 .room-tools-sticky-slot .room-market-trade-view{grid-column:1;grid-row:2;grid-template-rows:auto minmax(54px,1fr) auto auto;min-height:0;overflow:hidden;align-content:stretch}
 .room-tools-sticky-slot .room-market-chart{height:auto;min-height:54px}
 .room-tools-sticky-slot .room-market-panel.is-collapsed .room-market-content{display:none}
+.new-message-preview{width:100%;min-width:0;display:flex;align-items:center;gap:9px;margin:0 0 8px;padding:8px 10px;border:1px solid rgba(91,119,225,.2);border-radius:13px;background:linear-gradient(100deg,rgba(237,243,255,.98),rgba(255,255,255,.97));color:var(--ink);text-align:left;box-shadow:0 5px 15px rgba(54,76,119,.08);cursor:pointer}
+.new-message-preview[hidden]{display:none!important}
+.new-message-preview-badge{flex:0 0 auto;padding:5px 8px;border-radius:999px;background:#e3ebff;color:#526fd7;font-size:10px;font-weight:800;white-space:nowrap}
+.new-message-preview-copy{min-width:0;flex:1;display:flex;align-items:baseline;gap:7px;overflow:hidden;font-size:11px}
+.new-message-preview-copy strong{max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.new-message-preview-copy span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6f7f9a}
+.new-message-preview-arrow{flex:0 0 auto;color:#5976e3;font-size:17px;font-weight:800;line-height:1}
+.new-message-preview:hover,.new-message-preview:focus-visible{border-color:rgba(91,119,225,.48);outline:0;box-shadow:0 6px 18px rgba(54,76,119,.13)}
+@media(max-width:680px){body.messenger-chat-open .new-message-preview{gap:6px;margin-bottom:6px;padding:7px 8px;border-radius:11px}body.messenger-chat-open .new-message-preview-badge{padding:4px 7px;font-size:9px}body.messenger-chat-open .new-message-preview-copy{gap:5px;font-size:10px}body.messenger-chat-open .new-message-preview-copy strong{max-width:30%;font-size:9px}}
 @media(max-width:680px){
   .room-tools-sticky-slot .room-market-content:has(#room-market-trade-view:not([hidden])){grid-template-rows:auto minmax(0,1fr);gap:3px}
   body.messenger-chat-open .room-tools-sticky-slot .room-market-stock-list{grid-template-columns:minmax(0,1fr)}
