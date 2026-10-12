@@ -3567,7 +3567,7 @@ function clearRoomWatchPartyLocal() {
 }
 
 function openRoomToolVideo({ kind, videoId = '', soopId = '', broadcastNo = '', clipId = '', clipTitle = '', baseSecond = 0, href = '', sourceCard = null }) {
-  const canPlayInMobileRoomTools = isActiveMobileChat() && ['youtube', 'soop-live', 'soop-vod-clip'].includes(kind);
+  const canPlayInMobileRoomTools = isActiveMobileChat() && ['youtube', 'soop-live', 'soop-vod-clip', 'direct'].includes(kind);
   const canPlayClipInRoomTools = kind === 'soop-vod-clip' && state.activeView === 'chat' && !!state.room;
   if ((!isDesktopRoomToolsPip() && !canPlayInMobileRoomTools && !canPlayClipInRoomTools) || !state.room) return false;
   const player = $('#room-video-player');
@@ -3750,9 +3750,8 @@ function directVideoPreview(href) {
   const card = document.createElement('div'); card.className = 'message-video-preview direct-video-preview';
   const video = document.createElement('video'); video.src = href; video.controls = true; video.playsInline = true; video.preload = 'none'; video.title = '채팅방에서 영상 재생';
   video.addEventListener('play', () => {
-    if (!isDesktopRoomToolsPip() || video.dataset.roomToolPlayer === 'true') return;
-    video.pause();
-    openRoomToolVideo({ kind: 'direct', href, sourceCard: card });
+    if (video.dataset.roomToolPlayer === 'true') return;
+    if (openRoomToolVideo({ kind: 'direct', href, sourceCard: card })) video.pause();
   });
   const play = document.createElement('button'); play.className = 'video-play-button direct-video-play-button'; play.type = 'button'; play.textContent = '▶'; play.title = '채팅 도구에서 영상 재생'; play.setAttribute('aria-label', '채팅 도구에서 영상 재생');
   play.addEventListener('click', () => {
