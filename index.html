@@ -128,6 +128,7 @@
                   <button class="button button-quiet" id="room-watch-party-sync" type="button" aria-label="현재 위치로 동기화합니다" title="현재 위치로 동기화합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2L20 9M4 15l2.5 2a7 7 0 0 0 12-2"/></svg></button>
                   <button class="button button-quiet" id="room-watch-party-replay" type="button" aria-label="개인 영상으로 다시 재생합니다" title="개인 영상으로 다시 재생합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 2.3 5.7L4 14.5"/><path d="M4 5v6h6"/></svg></button>
                   <button class="button button-quiet" id="room-watch-party-finish" type="button" aria-label="같이보기를 마칩니다" title="같이보기를 마칩니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button>
+                  <button class="button button-primary" id="room-watch-party-approve" type="button" aria-label="같이보기 신청을 승인합니다" title="신청을 승인하면 설정한 대기 시간 후 영상이 시작됩니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button>
                   <button class="button button-danger" id="room-watch-party-cancel" type="button" aria-label="같이보기를 취소합니다" title="같이보기를 취소합니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
                 </div>
               </div>
@@ -364,7 +365,7 @@
       <button class="dialog-close" id="close-room-watch-party" type="button" aria-label="닫기" title="같이보기 예약 닫기">×</button>
       <p class="eyebrow">WATCH TOGETHER</p>
       <h2 id="room-watch-party-form-title">영상 같이보기 예약</h2>
-      <p class="dialog-copy">YouTube 또는 SOOP VOD·클립 링크를 등록하면 채팅 도구에 준비돼요. 예약 시각에 재생을 시작하고, 늦게 온 참여자는 현재 위치로 참여할 수 있어요. 자동 재생이 차단되면 영상 안의 재생 버튼을 눌러 주세요.</p>
+      <p class="dialog-copy">YouTube 또는 SOOP VOD·클립 링크를 등록하면 채팅 도구에 준비돼요. 참여자가 예약한 영상은 스트리머 승인 후 설정한 대기 시간이 지나면 재생되고, 스트리머가 예약한 영상은 바로 대기 시간을 시작해요. 늦게 온 참여자는 현재 위치로 참여할 수 있어요. 자동 재생이 차단되면 영상 안의 재생 버튼을 눌러 주세요.</p>
       <label class="field-label" for="room-watch-party-url">영상 링크</label>
       <input class="text-input" id="room-watch-party-url" type="url" maxlength="2048" placeholder="https://vod.sooplive.com/player/... 또는 YouTube 링크" autocomplete="url" title="같이 재생할 YouTube 또는 SOOP VOD·클립 링크를 입력합니다." required>
       <label class="field-label" for="room-watch-party-delay">몇 초 후 시작할까요?</label>

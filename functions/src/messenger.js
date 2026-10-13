@@ -1569,10 +1569,11 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
   const principal = await requireRoomPrincipal(request, roomId);
-  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['create', 'cancel', 'finish', 'complete', 'sync'].includes(action)) {
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || !['create', 'approve', 'cancel', 'finish', 'complete', 'sync'].includes(action)) {
     throw new HttpsError('invalid-argument', '채팅방 또는 같이보기 요청 정보가 올바르지 않습니다.');
   }
   const { meta, isOwner, member } = await requireRoomMember(principal, roomId);
+  const canManageRoom = isOwner || (principal.admin && meta.roomType === 'admin');
   const partyRef = roomRef(roomId).child('meta/watchParty');
   if (action === 'sync') return { watchParty: (await partyRef.get()).val() || null };
 
@@ -1590,16 +1591,19 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
     }
     const title = safeText(String(data.title || (video.provider === 'youtube' ? 'YouTube 영상' : 'SOOP VOD · 클립')), 160, true);
     const createdAt = now();
-    const startsAt = createdAt + Math.max(2500, delaySeconds * 1000);
-    const endsAt = durationSeconds ? startsAt + (durationSeconds - video.baseSecond) * 1000 : 0;
+    const approvalStatus = canManageRoom ? 'approved' : 'pending';
+    const startsAt = canManageRoom ? createdAt + Math.max(2500, delaySeconds * 1000) : 0;
+    const endsAt = canManageRoom && durationSeconds ? startsAt + (durationSeconds - video.baseSecond) * 1000 : 0;
     const candidate = {
-      partyId: crypto.randomBytes(12).toString('hex'), status: 'scheduled',
+      partyId: crypto.randomBytes(12).toString('hex'), status: canManageRoom ? 'scheduled' : 'pending',
+      approvalStatus,
       createdByUid: principal.uid,
-      createdByName: String(isOwner ? meta.streamerNickname || '스트리머' : member && member.profile && member.profile.nickname || principal.profile && principal.profile.nickname || '참여자').slice(0, 30),
-      video: { ...video, title, durationSeconds }, startsAt, endsAt, createdAt, updatedAt: createdAt,
+      createdByName: String(canManageRoom ? meta.streamerNickname || (meta.roomType === 'admin' ? '관리자' : '스트리머') : member && member.profile && member.profile.nickname || principal.profile && principal.profile.nickname || '참여자').slice(0, 30),
+      video: { ...video, title, durationSeconds }, startsAt, endsAt, requestedDelaySeconds: delaySeconds,
+      ...(canManageRoom ? { approvedAt: createdAt } : {}), createdAt, updatedAt: createdAt,
     };
     const result = await partyRef.transaction((current) => {
-      const active = current && ['scheduled', 'active'].includes(current.status)
+      const active = current && ['pending', 'scheduled', 'active'].includes(current.status)
         && !(Number(current.endsAt) > 0 && Number(current.endsAt) <= createdAt);
       if (active) return;
       return candidate;
@@ -1611,14 +1615,39 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
   const partyId = String(data.partyId || '');
   if (!/^[a-f0-9]{24}$/.test(partyId)) throw new HttpsError('invalid-argument', '같이보기 식별자를 확인해 주세요.');
   const before = (await partyRef.get()).val();
-  if (!before || before.partyId !== partyId || !['scheduled', 'active'].includes(before.status)) {
+  if (!before || before.partyId !== partyId || !['pending', 'scheduled', 'active'].includes(before.status)) {
     return { watchParty: before || null, stale: true };
   }
-  const mayManage = isOwner || before.createdByUid === principal.uid;
+  const approvalStatus = before.approvalStatus || 'approved';
+  if (action === 'approve') {
+    if (!canManageRoom) throw new HttpsError('permission-denied', '스트리머 또는 관리자 방 관리자만 같이보기 신청을 승인할 수 있습니다.');
+    if (approvalStatus !== 'pending' || before.status !== 'pending') {
+      return { watchParty: before, stale: true };
+    }
+    const at = now();
+    const delaySeconds = Number(before.requestedDelaySeconds);
+    const durationSeconds = Number(before.video && before.video.durationSeconds) || 0;
+    if (!Number.isInteger(delaySeconds) || delaySeconds < 0 || delaySeconds > 7200 || delaySeconds % 10 !== 0) {
+      throw new HttpsError('failed-precondition', '신청된 시작 대기 시간이 올바르지 않아 승인할 수 없습니다.');
+    }
+    const startsAt = at + Math.max(2500, delaySeconds * 1000);
+    const endsAt = durationSeconds ? startsAt + (durationSeconds - Number(before.video.baseSecond || 0)) * 1000 : 0;
+    const changed = await partyRef.transaction((current) => {
+      const latest = current || before;
+      if (!latest || latest.partyId !== partyId || latest.status !== 'pending'
+        || (latest.approvalStatus || 'approved') !== 'pending') return;
+      return { ...latest, status: 'scheduled', approvalStatus: 'approved', approvedAt: at, startsAt, endsAt, updatedAt: at };
+    });
+    return { watchParty: changed.snapshot.val() || before, stale: !changed.committed };
+  }
+  const mayManage = canManageRoom || before.createdByUid === principal.uid;
   if (action === 'cancel' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 취소할 수 있습니다.');
   if (action === 'finish' && !mayManage) throw new HttpsError('permission-denied', '방 소유자 또는 예약한 사용자만 같이보기를 마칠 수 있습니다.');
+  if (approvalStatus === 'pending' && ['finish', 'complete'].includes(action)) {
+    throw new HttpsError('failed-precondition', '스트리머가 신청을 승인한 뒤에 이용할 수 있습니다.');
+  }
   const at = now();
-  if (action === 'cancel' && at >= Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작되기 전에만 같이보기를 취소할 수 있습니다.');
+  if (action === 'cancel' && approvalStatus !== 'pending' && at >= Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작되기 전에만 같이보기를 취소할 수 있습니다.');
   if (action === 'finish' && at < Number(before.startsAt)) throw new HttpsError('failed-precondition', '재생이 시작된 뒤에 같이보기를 마칠 수 있습니다.');
   if (action === 'complete' && (!Number(before.endsAt) || at < Number(before.endsAt) - 5000)) {
     throw new HttpsError('failed-precondition', '등록된 영상 길이만큼 재생한 뒤 종료할 수 있습니다.');
@@ -1628,8 +1657,8 @@ const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) =
     // A transaction can start with an empty local cache even after the preceding get().
     // Use that verified read as its candidate; RTDB retries with the server value if it changed.
     const latest = current || before;
-    if (!latest || latest.partyId !== partyId || !['scheduled', 'active'].includes(latest.status)) return;
-    if (action === 'cancel' && at >= Number(latest.startsAt)) return;
+    if (!latest || latest.partyId !== partyId || !['pending', 'scheduled', 'active'].includes(latest.status)) return;
+    if (action === 'cancel' && (latest.approvalStatus || 'approved') !== 'pending' && at >= Number(latest.startsAt)) return;
     if (action === 'finish' && at < Number(latest.startsAt)) return;
     if (action === 'complete' && (!Number(latest.endsAt) || at < Number(latest.endsAt) - 5000)) return;
     return { ...latest, status: nextStatus, updatedAt: at, ...(nextStatus === 'ended' ? { endedAt: at } : { cancelledAt: at, cancelledByUid: principal.uid }) };

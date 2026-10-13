@@ -1288,13 +1288,15 @@ function normalizeWatchParty(value) {
     || !['youtube', 'soop-vod'].includes(value.video.provider) || !Number.isFinite(Number(value.startsAt))) return null;
   if (value.video.provider === 'youtube' && !/^[A-Za-z0-9_-]{11}$/.test(String(value.video.videoId || ''))) return null;
   if (value.video.provider === 'soop-vod' && !/^\d{1,20}$/.test(String(value.video.videoId || ''))) return null;
-  if (!['scheduled', 'active', 'ended', 'cancelled'].includes(value.status)) return null;
+  if (!['pending', 'scheduled', 'active', 'ended', 'cancelled'].includes(value.status)
+    || !['pending', 'approved', undefined].includes(value.approvalStatus)) return null;
   return value;
 }
 
 function getWatchPartyStatus(party = state.watchParty) {
   if (!party) return 'none';
   if (party.status === 'cancelled' || party.status === 'ended') return party.status;
+  if (party.status === 'pending' || party.approvalStatus === 'pending') return 'pending';
   if (Number(party.endsAt) > 0 && watchPartyNow() >= Number(party.endsAt)) return 'ended';
   return watchPartyNow() >= Number(party.startsAt) ? 'active' : 'scheduled';
 }
@@ -1315,6 +1317,10 @@ function applyWatchPartyState(value) {
   const party = normalizeWatchParty(value);
   state.watchParty = party;
   clearWatchPartyTimers();
+  if (previousParty && party && previousParty.partyId !== party.partyId) {
+    $('#room-watch-party-player').replaceChildren();
+    state.watchPartyPlayingId = '';
+  }
   if (!previousParty || !party || previousParty.partyId !== party.partyId || previousParty.status !== party.status) {
     $('#room-watch-party-error').hidden = true;
   }
@@ -1326,6 +1332,10 @@ function applyWatchPartyState(value) {
   }
 
   const status = getWatchPartyStatus(party);
+  if (status === 'pending' && watchPartyHostCanManage()
+    && (!previousParty || previousParty.partyId !== party.partyId || getWatchPartyStatus(previousParty) !== 'pending')) {
+    showToast(`${party.createdByName || '참여자'}님이 같이보기 승인을 요청했어요.`);
+  }
   if (status === 'scheduled') {
     state.watchPartyArmedId = party.partyId;
     const wait = Math.max(0, Number(party.startsAt) - watchPartyNow());
@@ -1408,7 +1418,11 @@ function updateRoomVideoMode() {
 }
 
 function watchPartyCanManage(party = state.watchParty) {
-  return !!party && (state.isOwner || !!(state.session && state.session.uid === party.createdByUid));
+  return !!party && (watchPartyHostCanManage() || !!(state.session && state.session.uid === party.createdByUid));
+}
+
+function watchPartyHostCanManage() {
+  return state.isOwner || !!(state.session && state.session.isAdmin && state.room && state.room.roomType === 'admin');
 }
 
 function renderRoomWatchParty() {
@@ -1424,6 +1438,7 @@ function renderRoomWatchParty() {
   const finish = $('#room-watch-party-finish');
   const replay = $('#room-watch-party-replay');
   const cancel = $('#room-watch-party-cancel');
+  const approve = $('#room-watch-party-approve');
   const open = $('#room-watch-party-open-link');
   const error = $('#room-watch-party-error');
   const player = $('#room-watch-party-player');
@@ -1434,7 +1449,7 @@ function renderRoomWatchParty() {
     statusText.textContent = '같이보기 영상이 없습니다.';
     countdown.textContent = '';
     details.textContent = '영상 링크를 등록해 채팅방 참여자와 함께 재생해 보세요.';
-    [join, sync, finish, replay, cancel, open].forEach((button) => { button.hidden = true; });
+    [join, sync, finish, replay, approve, cancel, open].forEach((button) => { button.hidden = true; });
     create.hidden = false;
     error.hidden = true;
     player.replaceChildren();
@@ -1450,11 +1465,17 @@ function renderRoomWatchParty() {
   const title = String(video.title || (video.provider === 'youtube' ? 'YouTube 영상' : 'SOOP 영상'));
   $('#room-watch-party-title').textContent = '영상 같이보기';
   open.href = String(video.url || '#');
-  open.hidden = ['ended', 'cancelled'].includes(status);
+  open.hidden = ['pending', 'ended', 'cancelled'].includes(status);
   create.hidden = !['ended', 'cancelled'].includes(status);
-  details.textContent = `${title} · 예약: ${new Date(Number(party.startsAt)).toLocaleString('ko-KR')} · 등록: ${party.createdByName || '참여자'}`;
+  const requestedDelay = Number(party.requestedDelaySeconds);
+  details.textContent = status === 'pending'
+    ? `${title} · 대기 ${Number.isInteger(requestedDelay) ? requestedDelay : 60}초 · 신청: ${party.createdByName || '참여자'}`
+    : `${title} · 예약: ${new Date(Number(party.startsAt)).toLocaleString('ko-KR')} · 등록: ${party.createdByName || '참여자'}`;
 
-  if (status === 'scheduled') {
+  if (status === 'pending') {
+    statusText.textContent = '스트리머 승인 대기 중';
+    countdown.textContent = '승인되면 설정한 대기 시간이 시작돼요.';
+  } else if (status === 'scheduled') {
     statusText.textContent = '같이보기 예약 완료';
     countdown.textContent = `재생까지 ${watchPartyTimeLabel(remaining)}`;
   } else if (status === 'active') {
@@ -1473,15 +1494,20 @@ function renderRoomWatchParty() {
   sync.hidden = !active || !loaded;
   replay.hidden = status !== 'ended';
   finish.hidden = !active || !responsible;
-  cancel.hidden = status !== 'scheduled' || !responsible;
-  const cancelLabel = status === 'scheduled' ? '같이보기 예약 취소' : '같이보기 취소';
+  approve.hidden = status !== 'pending' || !watchPartyHostCanManage();
+  cancel.hidden = !['scheduled', 'pending'].includes(status) || !responsible;
+  const isRequester = !!(state.session && state.session.uid === party.createdByUid);
+  const cancelLabel = status === 'pending'
+    ? (watchPartyHostCanManage() && !isRequester ? '같이보기 신청 거절' : '같이보기 신청 취소')
+    : status === 'scheduled' ? '같이보기 예약 취소' : '같이보기 취소';
   cancel.setAttribute('aria-label', cancelLabel);
   cancel.title = cancelLabel;
+  approve.title = approve.getAttribute('title');
   join.title = join.getAttribute('aria-label');
   sync.title = sync.getAttribute('aria-label');
   finish.title = finish.getAttribute('aria-label');
   replay.title = replay.getAttribute('aria-label');
-  [join, sync, finish, cancel].forEach((button) => { button.disabled = state.watchPartyMutationPending; });
+  [join, sync, finish, approve, cancel].forEach((button) => { button.disabled = state.watchPartyMutationPending; });
   if (['ended', 'cancelled'].includes(status)) {
     player.replaceChildren();
     state.watchPartyPlayingId = '';
@@ -1553,11 +1579,14 @@ async function updateRoomWatchParty(action) {
     if (result && result.watchParty) {
       const updatedParty = normalizeWatchParty(result.watchParty);
       applyWatchPartyState(updatedParty);
-      if (result.stale && updatedParty && updatedParty.partyId === party.partyId && ['scheduled', 'active'].includes(updatedParty.status)) {
+      if (result.stale && updatedParty && updatedParty.partyId === party.partyId && ['pending', 'scheduled', 'active'].includes(updatedParty.status)) {
         const error = $('#room-watch-party-error');
         error.hidden = false;
-        error.textContent = '같이보기 상태가 변경되어 종료 요청을 적용하지 못했습니다. 상태를 새로 확인한 뒤 다시 시도해 주세요.';
+        error.textContent = action === 'approve'
+          ? '같이보기 신청 상태가 변경되어 승인을 적용하지 못했습니다. 최신 상태를 확인해 주세요.'
+          : '같이보기 상태가 변경되어 요청을 적용하지 못했습니다. 상태를 새로 확인한 뒤 다시 시도해 주세요.';
       }
+      if (action === 'approve' && !result.stale) showToast('같이보기 신청을 승인했어요. 설정한 대기 시간 후 재생됩니다.');
     } else {
       throw new Error('서버에서 같이보기 종료 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
@@ -1585,7 +1614,7 @@ async function syncRoomWatchPartyPlayer() {
     $('#room-watch-party-error').textContent = error && error.message || '현재 영상 위치를 불러오지 못했습니다.';
   } finally {
     state.watchPartyMutationPending = false;
-    ['room-watch-party-join', 'room-watch-party-sync', 'room-watch-party-finish', 'room-watch-party-cancel'].forEach((id) => { $(`#${id}`).disabled = false; });
+    ['room-watch-party-join', 'room-watch-party-sync', 'room-watch-party-finish', 'room-watch-party-approve', 'room-watch-party-cancel'].forEach((id) => { $(`#${id}`).disabled = false; });
   }
 }
 
@@ -3447,7 +3476,7 @@ function openRoomWatchPartyDialog(prefill = {}) {
   $('#room-watch-party-url').value = String(prefill.url || '');
   $('#room-watch-party-delay').value = '60';
   $('#room-watch-party-submit').disabled = false;
-  $('#room-watch-party-submit').textContent = '채팅 도구에 예약';
+  $('#room-watch-party-submit').textContent = watchPartyHostCanManage() ? '채팅 도구에 예약' : '스트리머에게 승인 요청';
   openDialog('room-watch-party-dialog');
   if (!prefill.url) $('#room-watch-party-url').focus();
 }
@@ -3463,7 +3492,7 @@ async function submitRoomWatchParty(event) {
     error.hidden = false; error.textContent = '영상 링크와 시작 대기 시간(10초 단위)을 확인해 주세요.'; return;
   }
   const submit = $('#room-watch-party-submit');
-  state.watchPartyMutationPending = true; submit.disabled = true; submit.textContent = '예약 중…';
+  state.watchPartyMutationPending = true; submit.disabled = true; submit.textContent = watchPartyHostCanManage() ? '예약 중…' : '요청 중…';
   try {
     const result = await call('messengerWatchPartyUpdate', { roomId: state.room.roomId, action: 'create', url, startDelaySeconds: delaySeconds });
     closeDialog('room-watch-party-dialog');
@@ -3476,12 +3505,12 @@ async function submitRoomWatchParty(event) {
       renderRoomToolSwitcher('video');
       if (isActiveMobileChat()) setMobileRoomToolsOpen(true);
       if (getWatchPartyStatus(result.watchParty) === 'active') startRoomWatchParty(true);
-      showToast('같이보기 영상을 채팅 도구에 예약했어요.');
+      showToast(watchPartyHostCanManage() ? '같이보기 영상을 채팅 도구에 예약했어요.' : '스트리머에게 같이보기 승인 요청을 보냈어요.');
     }
   } catch (caught) {
     error.hidden = false; error.textContent = caught && caught.message || '같이보기를 예약하지 못했습니다.';
   } finally {
-    state.watchPartyMutationPending = false; submit.disabled = false; submit.textContent = '채팅 도구에 예약';
+    state.watchPartyMutationPending = false; submit.disabled = false; submit.textContent = watchPartyHostCanManage() ? '채팅 도구에 예약' : '스트리머에게 승인 요청';
     renderRoomWatchParty();
   }
 }
@@ -3494,6 +3523,7 @@ function bindRoomWatchPartyControls() {
   $('#room-watch-party-form').addEventListener('submit', submitRoomWatchParty);
   $('#room-watch-party-join').addEventListener('click', syncRoomWatchPartyPlayer);
   $('#room-watch-party-sync').addEventListener('click', syncRoomWatchPartyPlayer);
+  $('#room-watch-party-approve').addEventListener('click', () => updateRoomWatchParty('approve'));
   $('#room-watch-party-replay').addEventListener('click', () => {
     const party = state.watchParty;
     if (!party) return;
@@ -3503,7 +3533,12 @@ function bindRoomWatchPartyControls() {
     if (!openRoomToolVideo({ ...target, href: party.video.url })) showError({ message: '개인 영상으로 재생할 수 없습니다.' });
   });
   $('#room-watch-party-cancel').addEventListener('click', async () => {
-    if (!await api().confirmDialog('시작 전인 같이보기를 취소할까요? 채팅방 참여자의 예약 영상이 모두 종료됩니다.')) return;
+    const pending = getWatchPartyStatus() === 'pending';
+    const isOwnerDeclining = pending && watchPartyHostCanManage() && !(state.session && state.session.uid === state.watchParty.createdByUid);
+    const prompt = pending
+      ? (isOwnerDeclining ? '이 같이보기 신청을 거절할까요?' : '같이보기 승인 신청을 취소할까요?')
+      : '시작 전인 같이보기를 취소할까요? 채팅방 참여자의 예약 영상이 모두 종료됩니다.';
+    if (!await api().confirmDialog(prompt)) return;
     await updateRoomWatchParty('cancel');
   });
   $('#room-watch-party-finish').addEventListener('click', async () => {
