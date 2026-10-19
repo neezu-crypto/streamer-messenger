@@ -994,6 +994,9 @@ function subscribeOwnerApplications(room) {
 }
 
 async function loadRooms() {
+  // A fanpage deep link already contains the streamer SOOP ID, which is also
+  // the room ID. Resolve that room immediately while the directory loads.
+  const linkedRoomPromise = openLinkedStreamerRoomFast();
   const { db, ref, get } = api();
   try {
     const snapshot = await get(ref(db, 'streamerMessenger/publicRooms'));
@@ -1012,7 +1015,7 @@ async function loadRooms() {
         console.error('기존 인증 스트리머 방을 채우지 못했습니다.', error);
       }
     }
-    await openLinkedStreamerRoom();
+    if (!(await linkedRoomPromise)) await openLinkedStreamerRoom();
   } catch (error) {
     console.error('채팅방 목록을 불러오지 못했습니다.', error);
     $('#room-list').innerHTML = '<div class="loading-card">채팅방 목록을 불러오지 못했어요. 새로고침해 주세요.</div>';
@@ -1072,13 +1075,35 @@ async function openLinkedStreamerRoom() {
   await selectRoom(room);
 }
 
-async function selectRoom(room) {
+async function openLinkedStreamerRoomFast() {
+  if (state.streamerLinkHandled || !state.session || !state.session.trusted) return false;
+  const streamerSoopId = String(new URLSearchParams(window.location.search).get('streamer') || '').trim().toLowerCase();
+  if (!/^[a-z0-9]{2,30}$/.test(streamerSoopId)) return false;
+
+  state.streamerLinkHandled = true;
+  try {
+    const result = await call('messengerGetRoomState', { roomId: streamerSoopId });
+    if (!result || !result.room || result.room.roomId !== streamerSoopId) {
+      state.streamerLinkHandled = false;
+      return false;
+    }
+    await selectRoom(result.room, result);
+    return true;
+  } catch (error) {
+    // Fall back to the regular directory lookup once it has loaded. This also
+    // preserves the existing missing-room and sign-in behavior.
+    state.streamerLinkHandled = false;
+    return false;
+  }
+}
+
+async function selectRoom(room, resolvedRoomState = null) {
   if (!state.session || (!state.session.trusted && !state.session.isTestAccount)) { openDialog('auth-dialog'); return; }
   // requestFullscreen must run directly in the room-selection gesture, before the server check awaits.
   const fullscreenAttempt = beginChatFullscreenRequest();
   setRoomEntryLoading(true);
   try {
-    const result = await call('messengerGetRoomState', { roomId: room.roomId });
+    const result = resolvedRoomState || await call('messengerGetRoomState', { roomId: room.roomId });
     if (result.blocked) {
       await settleChatFullscreenRequest(fullscreenAttempt, false);
       showError({ message: '이 채팅방에서 차단되어 다시 신청할 수 없습니다.' });
