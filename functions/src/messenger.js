@@ -929,12 +929,12 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
   const statusRef = db().ref(`${ROOT}/admin/verifiedRoomBackfill`);
   const lock = await statusRef.transaction((current) => {
     const value = current || {};
-    if (Number(value.version) >= 1 || (value.status === 'running' && now() - Number(value.startedAt || 0) < 10 * 60 * 1000)) return;
-    return { status: 'running', startedAt: now(), startedBy: admin.uid };
+    if (value.status === 'running' && now() - Number(value.startedAt || 0) < 10 * 60 * 1000) return;
+    return { version: 2, status: 'running', startedAt: now(), startedBy: admin.uid };
   }, undefined, false);
   if (!lock.committed) {
     const current = lock.snapshot.val() || {};
-    return { complete: Number(current.version) >= 1, inProgress: current.status === 'running', created: 0, existing: 0, skipped: 0 };
+    return { complete: current.status === 'complete', inProgress: current.status === 'running', created: 0, existing: 0, skipped: 0 };
   }
 
   try {
@@ -952,6 +952,19 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
         const streamer = await getVerifiedStreamer(uid);
         const roomId = String(streamer && streamer.soopId || '').trim().toLowerCase();
         if (!streamer || !/^[a-z0-9]{2,30}$/.test(roomId)) { summary.skipped += 1; return; }
+        const [metaSnap, listingSnap] = await Promise.all([
+          roomRef(roomId).child('meta').get(),
+          db().ref(`${ROOT}/publicRooms/${roomId}`).get(),
+        ]);
+        const currentMeta = metaSnap.val() || {};
+        if (metaSnap.exists() && (currentMeta.ownerUid !== uid || (currentMeta.roomType || 'streamer') !== 'streamer')) {
+          summary.skipped += 1;
+          return;
+        }
+        if (metaSnap.exists() && listingSnap.exists()) {
+          summary.existing += 1;
+          return;
+        }
         try {
           const result = await ensureOwnedRoom(uid, roomId, streamer);
           if (result.created) summary.created += 1;
@@ -963,10 +976,10 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
       }));
     }
 
-    await statusRef.set({ version: 1, status: 'complete', startedAt: Number(lock.snapshot.val().startedAt) || now(), completedAt: now(), completedBy: admin.uid, ...summary });
+    await statusRef.set({ version: 2, status: 'complete', startedAt: Number(lock.snapshot.val().startedAt) || now(), completedAt: now(), completedBy: admin.uid, verifiedUidCount: accounts.length, ...summary });
     return { complete: true, ...summary };
   } catch (error) {
-    await statusRef.set({ version: 0, status: 'failed', failedAt: now(), failedBy: admin.uid, errorCode: String(error && error.code || 'unknown').slice(0, 80) });
+    await statusRef.set({ version: 2, status: 'failed', failedAt: now(), failedBy: admin.uid, errorCode: String(error && error.code || 'unknown').slice(0, 80) });
     throw error;
   }
 });

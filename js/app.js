@@ -789,7 +789,7 @@ async function openMyRoomsDialog() {
 function renderRooms() {
   const list = $('#room-list'); list.replaceChildren();
   const queryText = $('#room-search').value.trim().toLocaleLowerCase();
-  const entries = state.rooms.filter((room) => {
+  const entries = state.rooms.filter((room) => (room.roomType || 'streamer') === 'streamer').filter((room) => {
     const text = `${room.streamerNickname || ''} ${room.streamerSoopId || ''}`.toLocaleLowerCase();
     return !queryText || text.includes(queryText);
   });
