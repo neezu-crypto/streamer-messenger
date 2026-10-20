@@ -44,8 +44,7 @@ async function assertNotBanned(uid) {
 async function getPrincipal(request, options = {}) {
   const uid = requireAuth(request);
   const email = request.auth.token && request.auth.token.email;
-  const admin = await isAdmin(uid);
-  const streamer = await getVerifiedStreamer(uid);
+  const [admin, streamer] = await Promise.all([isAdmin(uid), getVerifiedStreamer(uid)]);
   const testAccount = !!(request.auth.token && request.auth.token.messengerTestAccount === true);
   const real = isRealAccount(request);
   const trusted = real || admin || !!streamer;

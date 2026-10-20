@@ -247,6 +247,46 @@ async function requireRoomMember(principal, roomId) {
   return { meta, isOwner, member: memberSnap.val() || null };
 }
 
+async function requireRoomSendAccess(request, roomId) {
+  const id = String(roomId || '');
+  if (!/^[a-z0-9]{2,30}$/.test(id)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
+  const uid = request.auth && request.auth.uid;
+  if (!uid) return getPrincipal(request);
+  const memberRef = roomRef(id).child(`members/${uid}`);
+  const accountPromise = request.auth.token && request.auth.token.messengerTestAccount === true
+    ? testAccountRef(uid).get()
+    : Promise.resolve(null);
+  const [principal, metaSnap, memberSnap, accountSnap] = await Promise.all([
+    getPrincipal(request),
+    roomRef(id).child('meta').get(),
+    memberRef.get(),
+    accountPromise,
+  ]);
+  if (!metaSnap.exists()) throw new HttpsError('not-found', '채팅방을 찾을 수 없습니다.');
+  const meta = metaSnap.val() || {};
+  const isOwner = meta.ownerUid === principal.uid;
+  const member = memberSnap.val() || null;
+  if (id === TEST_ROOM_ID || meta.roomType === 'test') {
+    if (id !== TEST_ROOM_ID || meta.roomType !== 'test') throw new HttpsError('permission-denied', '테스트방에 접근할 수 없습니다.');
+    if (principal.testAccount) {
+      const account = accountSnap && accountSnap.val() || {};
+      if (account.active !== true) throw new HttpsError('permission-denied', '비활성화된 테스트 계정입니다.');
+    } else if (!principal.admin) {
+      throw new HttpsError('permission-denied', '테스트방은 관리자와 등록된 테스트 계정만 이용할 수 있습니다.');
+    }
+    if (!isOwner && (!member || member.status !== 'active')) {
+      throw new HttpsError('permission-denied', '테스트방 참여 권한이 없습니다.');
+    }
+    return { principal, roomAccess: { meta, isOwner, member } };
+  }
+  if (principal.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 테스트방에서만 이용할 수 없습니다.');
+  if (!principal.trusted) throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
+  if (!isOwner && (!member || member.status !== 'active')) {
+    throw new HttpsError('permission-denied', '채팅방 참여 권한이 없습니다.');
+  }
+  return { principal, roomAccess: { meta, isOwner, member } };
+}
+
 async function requireRoomPrincipal(request, roomId) {
   const id = String(roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(id)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
@@ -268,7 +308,7 @@ async function requireRoomPrincipal(request, roomId) {
     }
     return principal;
   }
-  if (principal.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 테스트방에서만 이용할 수 있습니다.');
+  if (principal.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 테스트방에서만 이용할 수 없습니다.');
   if (!principal.trusted) throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
   return principal;
 }
@@ -541,6 +581,7 @@ async function checkRepeatedMessage(uid, roomId, text, repeatTextDelaySeconds, r
 }
 
 async function applyMessageRate(uid, roomId, text, meta, isOwner = false) {
+  let staleRateBucketCleanup = Promise.resolve();
   if (!isOwner) {
     const moderationRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/moderation`);
     const moderation = (await moderationRef.get()).val() || {};
@@ -556,10 +597,11 @@ async function applyMessageRate(uid, roomId, text, meta, isOwner = false) {
     const countRef = db().ref(`${ROOT}/rateLimits/messages/${uid}/minute/${slot}`);
     const count = await countRef.transaction((value) => (Number(value) || 0) < MESSAGE_LIMIT_PER_MINUTE ? (Number(value) || 0) + 1 : undefined);
     if (!count.committed) await recordMessageViolation(uid, '1분 메시지 제한에 도달했습니다. 잠시 후 다시 시도해 주세요.');
-    await db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
+    staleRateBucketCleanup = db().ref(`${ROOT}/rateLimits/messages/${uid}/minute`).child(String(slot - 2)).remove().catch(() => {});
   }
   // Owners can send rapid updates; room-configured repeated text/link limits still apply.
   await checkRepeatedMessage(uid, roomId, text, Number(meta.repeatTextDelaySeconds) || 0, Number(meta.repeatLinkDelaySeconds) || 0);
+  return { staleRateBucketCleanup };
 }
 
 function activeStickerOwnership(value) {
@@ -1962,8 +2004,9 @@ const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request
 const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
-  const p = await requireRoomPrincipal(request, roomId);
-  const result = await requireRoomMember(p, roomId);
+  const access = await requireRoomSendAccess(request, roomId);
+  const p = access.principal;
+  const result = access.roomAccess;
   if (!result.isOwner && result.meta.locked) throw new HttpsError('failed-precondition', '채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있습니다.');
   const member = result.member || {};
   const isOwner = result.isOwner;
@@ -1984,7 +2027,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const text = ['image', 'roomself', 'emote'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
   if (!['text', 'image', 'roomself', 'emote'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
   if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
-  await applyMessageRate(p.uid, roomId, emoteSticker ? `[스티커:${emoteSticker.id}]` : text, result.meta, isOwner);
+  const { staleRateBucketCleanup } = await applyMessageRate(p.uid, roomId, emoteSticker ? `[스티커:${emoteSticker.id}]` : text, result.meta, isOwner);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
@@ -2039,7 +2082,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
     const fanUid = isOwner ? recipientUid : p.uid;
     updates[`${ROOT}/chat/${roomId}/private/${fanUid}/${messageId}`] = message;
   }
-  await db().ref().update(updates);
+  await Promise.all([db().ref().update(updates), staleRateBucketCleanup]);
   return { message };
 });
 
