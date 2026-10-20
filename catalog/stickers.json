@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "category": {
+    "id": "stickers",
+    "label": "스티커"
+  },
+  "products": [
+    {
+      "id": "series-sticker-pack-01",
+      "categoryId": "stickers",
+      "title": "오늘도 한 판!",
+      "subtitle": "다이스 친구의 게임 리액션",
+      "description": "로그인 유저와 인증 스트리머가 게임 시리즈에서 무료로 사용할 수 있는 주사위 감정표현 여덟 가지예요.",
+      "status": "preview",
+      "freeForAuthenticated": true,
+      "price": null,
+      "currency": null,
+      "cover": "assets/sticker-pack-01.png",
+      "preview": {
+        "columns": 4,
+        "rows": 2,
+        "asset": "assets/sticker-pack-01.png",
+        "stickers": [
+          { "id": "start-cheer", "label": "시작해!", "alt": "두 팔을 들고 신나게 응원하는 주사위 캐릭터" },
+          { "id": "laugh-out-loud", "label": "ㅋㅋㅋ", "alt": "눈을 감고 크게 웃는 주사위 캐릭터" },
+          { "id": "surprised", "label": "헉!", "alt": "두 손을 볼에 대고 놀란 주사위 캐릭터" },
+          { "id": "sleepy", "label": "잠깐 쉬자", "alt": "헤드셋을 쓴 채 하품하는 주사위 캐릭터" },
+          { "id": "happy-tears", "label": "감동이야", "alt": "기뻐서 눈물을 흘리는 주사위 캐릭터" },
+          { "id": "heart-hands", "label": "좋아해!", "alt": "두 손으로 하트를 만드는 주사위 캐릭터" },
+          { "id": "facepalm", "label": "아차…", "alt": "손으로 얼굴을 가리고 웃는 주사위 캐릭터" },
+          { "id": "thumbs-up", "label": "굿!", "alt": "엄지를 들어 보이며 윙크하는 주사위 캐릭터" }
+        ]
+      }
+    }
+  ]
+}

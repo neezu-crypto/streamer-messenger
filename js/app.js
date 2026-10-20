@@ -1,4 +1,5 @@
 import './firebase-init.js?v=20261012-test-room';
+import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
@@ -39,7 +40,7 @@ let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
 const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false, visitorsLoading: false };
-const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
+const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'emote-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
 let roomClipSearchTimer = 0;
 let roomClipRequestToken = 0;
 let roomClipPage = 0;
@@ -62,6 +63,17 @@ let mobileChatFollowLatestOnKeyboard = false;
 let mobileQuickMenuCloseTimer = 0;
 let mobileQuickMenuTransitionToken = 0;
 const mobileQuickActionOrigins = new Map();
+let emotePickerRequestId = 0;
+state.emoteCatalog = [];
+state.ownedEmoteIds = new Set();
+state.emoteCatalogPromise = loadMessengerStickerCatalog().then((catalog) => {
+  state.emoteCatalog = catalog;
+  if (state.room) renderTimeline({ preservePosition: true });
+  return catalog;
+}).catch((error) => {
+  console.warn('메신저 스티커 카탈로그를 불러오지 못했습니다.', error);
+  return [];
+});
 
 function syncMobileChatViewport() {
   const mobile = window.matchMedia('(max-width: 680px)').matches;
@@ -439,6 +451,7 @@ function applyChatTooltips(room) {
     '#message-audience': '메시지를 방 전체에 보낼지 팬 한 명에게 보낼지 선택하기',
     '#direct-recipient': '메시지를 받을 팬 선택하기',
     '#toggle-attachment-tools': '갤러리 이미지나 스트리머 클립 선택하기',
+    '#open-emote-picker': '감정표현 스티커를 채팅 메시지로 전송하기 · 단축키 E 또는 ㄷ',
     '#open-image-picker': '스트리머 갤러리에서 이미지를 골라 채팅방에 보내기',
     '#message-input': '채팅 메시지 입력하기',
     '#send-message': '입력한 메시지 보내기',
@@ -1223,8 +1236,72 @@ function renderRoomState(room) {
   $('#message-input').disabled = room.locked && !state.isOwner;
   $('#send-message').disabled = room.locked && !state.isOwner;
   $('#open-image-picker').disabled = room.locked && !state.isOwner;
+  $('#open-emote-picker').disabled = room.locked && !state.isOwner;
   $('#composer-hint').textContent = room.locked && !state.isOwner ? '채팅방이 잠겨 있어 메시지를 보낼 수 없어요.' : '메시지는 최대 7일 보관돼요.';
   $('#streamer-compose-options').hidden = !state.isOwner;
+}
+
+function renderEmotePicker(stickers) {
+  const grid = $('#emote-picker-grid');
+  grid.replaceChildren();
+  if (!stickers.length) {
+    $('#emote-picker-status').textContent = '현재 사용할 수 있는 스티커가 없어요. 무료 주사위 스티커는 로그인하거나 스트리머 인증 후 사용할 수 있어요.';
+    return;
+  }
+  $('#emote-picker-status').textContent = `${stickers.length}개 스티커를 사용할 수 있어요. 선택하면 채팅 메시지로 전송됩니다.`;
+  for (const sticker of stickers) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'emote-picker-item';
+    tile.title = `${sticker.label} 스티커를 채팅 메시지로 보냅니다`;
+    tile.setAttribute('aria-label', `${sticker.label} 스티커를 채팅 메시지로 보내기`);
+    const art = document.createElement('span');
+    art.className = 'emote-picker-art';
+    art.setAttribute('role', 'img');
+    art.setAttribute('aria-label', sticker.alt || sticker.label);
+    applyStickerArt(art, sticker);
+    const label = document.createElement('span');
+    label.className = 'emote-picker-label';
+    label.textContent = sticker.label;
+    tile.append(art, label);
+    tile.addEventListener('click', async () => {
+      if (tile.disabled) return;
+      grid.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+      closeDialog('emote-picker-dialog');
+      await sendMessage('emote', '', '', null, null, sticker.id);
+    });
+    grid.appendChild(tile);
+  }
+}
+
+async function openEmotePicker() {
+  if (!state.room || !state.session) return;
+  if (!state.session.trusted && !state.session.isVerifiedStreamer && !state.session.isTestAccount) {
+    openDialog('auth-dialog');
+    return;
+  }
+  const button = $('#open-emote-picker');
+  if (button.disabled) return;
+  const requestId = ++emotePickerRequestId;
+  const uid = state.session.uid;
+  const grid = $('#emote-picker-grid');
+  grid.replaceChildren();
+  $('#emote-picker-status').textContent = '사용 가능한 스티커를 불러오는 중이에요.';
+  openDialog('emote-picker-dialog');
+  try {
+    let catalog = state.emoteCatalog;
+    if (!catalog.length) {
+      catalog = await loadMessengerStickerCatalog();
+      state.emoteCatalog = catalog;
+    }
+    const owned = await call('gameSeriesShopGetOwnedEmotes');
+    if (requestId !== emotePickerRequestId || state.session?.uid !== uid) return;
+    state.ownedEmoteIds = new Set((Array.isArray(owned.stickers) ? owned.stickers : []).map((sticker) => String(sticker.id || '')));
+    renderEmotePicker(catalog.filter((sticker) => state.ownedEmoteIds.has(sticker.id)));
+  } catch (error) {
+    if (requestId !== emotePickerRequestId) return;
+    $('#emote-picker-status').textContent = error.message || '사용 가능한 스티커를 불러오지 못했어요.';
+  }
 }
 
 function clearSubscriptions() {
@@ -3059,7 +3136,9 @@ function renderNewMessagePreview() {
   const count = Math.max(1, Number(preview.count) || 1);
   const message = preview.message || {};
   const sender = message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '새 메시지');
-  let text = message.kind === 'image' ? '사진을 보냈어요' : String(message.text || '').replace(/\s+/g, ' ').trim();
+  let text = message.kind === 'image' ? '사진을 보냈어요'
+    : message.kind === 'emote' ? `${state.emoteCatalog.find((sticker) => sticker.id === message.stickerId)?.label || '감정표현'} 스티커를 보냈어요`
+      : String(message.text || '').replace(/\s+/g, ' ').trim();
   if (!text) text = message.kind === 'roomself' ? '비공개 이미지를 보냈어요' : '새 메시지가 도착했어요';
   if (text.length > 90) text = `${text.slice(0, 89)}…`;
   $('#new-message-preview-count').textContent = count > 1 ? `새 메시지 ${count}개` : '새 메시지';
@@ -3323,7 +3402,7 @@ function messageExportText(messages, unavailableImages) {
   const lines = [`${state.room.streamerNickname || '스트리머'} 메신저 대화`, `${start} – ${end}`, ...(unavailableImages ? [`접근할 수 없는 갤러리 이미지 ${unavailableImages}개 제외`] : []), ''];
   for (const message of messages) {
     const time = new Date(Number(message.createdAt || 0)).toLocaleString('ko-KR');
-    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : (message.text || '');
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : message.kind === 'emote' ? `[${state.emoteCatalog.find((sticker) => sticker.id === message.stickerId)?.label || '감정표현'} 스티커]` : (message.text || '');
     lines.push(`[${time}] ${message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '팬')}: ${body}`);
   }
   return lines.join('\n');
@@ -3347,7 +3426,7 @@ function conversationCanvas(messages, unavailableImages = 0) {
   const ctx = document.createElement('canvas').getContext('2d');
   ctx.font = '24px "Noto Sans KR", sans-serif';
   const layouts = messages.map((message) => {
-    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : (message.text || '');
+    const body = message.kind === 'image' ? '[갤러리 이미지 첨부]' : message.kind === 'roomself' ? '[비공개 방셀 이미지]' : message.kind === 'emote' ? `[${state.emoteCatalog.find((sticker) => sticker.id === message.stickerId)?.label || '감정표현'} 스티커]` : (message.text || '');
     const lines = wrapCanvasText(ctx, body, contentWidth - 48);
     return { message, lines, height: 76 + lines.length * 36 };
   });
@@ -3959,6 +4038,21 @@ function renderMessage(message) {
       getRoomselfImageUrl(message).then((url) => { if (url) img.src = url; else { const unavailable = document.createElement('span'); unavailable.textContent = '비공개 이미지를 불러오지 못했어요.'; bubble.replaceChildren(unavailable); } });
       bubble.appendChild(button);
     }
+  } else if (message.kind === 'emote') {
+    const sticker = state.emoteCatalog.find((item) => item.id === message.stickerId);
+    bubble.classList.add('emote-message-bubble');
+    if (sticker) {
+      const art = document.createElement('span');
+      art.className = 'message-emote-art';
+      art.setAttribute('role', 'img');
+      art.setAttribute('aria-label', sticker.alt || sticker.label);
+      art.title = sticker.label;
+      applyStickerArt(art, sticker);
+      bubble.appendChild(art);
+    } else {
+      bubble.classList.add('emote-message-unavailable');
+      bubble.textContent = '감정표현 스티커';
+    }
   } else renderTextWithLinks(message, bubble);
   stack.appendChild(bubble);
   const meta = document.createElement('div'); meta.className = 'message-meta';
@@ -4113,7 +4207,7 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
-async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null) {
+async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null, stickerId = '') {
   if (!state.room || !state.session) return false;
   const preserveDraft = messageText !== null;
   const text = String(preserveDraft ? messageText : $('#message-input').value).trim();
@@ -4135,7 +4229,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
     senderRole: isOwner ? 'streamer' : 'fan', senderName: senderProfile.nickname || (isOwner ? '스트리머' : '팬'),
     senderAvatarUrl: senderProfile.avatarUrl || '', createdAt: Date.now(), recipientUid: recipientUid || null,
     ...(recipientUid && recipientFan && recipientFan.profile && recipientFan.profile.nickname ? { recipientName: recipientFan.profile.nickname } : {}),
-    kind, ...(kind === 'image' ? { galleryImageId: imageId } : kind === 'roomself' ? { roomselfImageId: imageId } : { text }),
+    kind, ...(kind === 'image' ? { galleryImageId: imageId } : kind === 'roomself' ? { roomselfImageId: imageId } : kind === 'emote' ? { stickerId } : { text }),
     scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
     ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),
   };
@@ -4145,7 +4239,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
   if (kind === 'text' && !preserveDraft) $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
-    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text, galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
+    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text: kind === 'text' ? text : '', stickerId: kind === 'emote' ? stickerId : '', galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
     if (state.room && state.room.roomId === room.roomId) {
       const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
@@ -4824,7 +4918,7 @@ async function showReportEvidence(reportId) {
   for (const message of result.evidence || []) {
     const row = document.createElement('article'); row.className = 'report-evidence-item';
     const label = document.createElement('small'); label.textContent = `${message.senderName || '사용자'} · ${new Date(message.createdAt || 0).toLocaleString('ko-KR')}`;
-    const body = document.createElement('p'); body.textContent = message.kind === 'image' ? `갤러리 이미지 첨부 (${message.galleryImageId})` : message.kind === 'roomself' ? '비공개 방셀 이미지' : (message.text || '');
+    const body = document.createElement('p'); body.textContent = message.kind === 'image' ? `갤러리 이미지 첨부 (${message.galleryImageId})` : message.kind === 'roomself' ? '비공개 방셀 이미지' : message.kind === 'emote' ? `${state.emoteCatalog.find((sticker) => sticker.id === message.stickerId)?.label || '감정표현'} 스티커` : (message.text || '');
     row.append(label, body);
     if (message.kind === 'image') {
       if (message.reportImageUrl) { const image = document.createElement('img'); image.src = message.reportImageUrl; image.alt = '신고 증거 이미지'; image.loading = 'lazy'; image.className = 'report-evidence-image'; row.appendChild(image); }
@@ -5012,6 +5106,9 @@ function bindEvents() {
     setMobileRoomToolsOpen(!state.mobileRoomToolsOpen);
   });
   $('#toggle-chat-fullscreen').addEventListener('click', enterChatFullscreenFromButton);
+  $('#open-emote-picker').addEventListener('click', openEmotePicker);
+  $('#close-emote-picker').addEventListener('click', () => closeDialog('emote-picker-dialog'));
+  $('#emote-picker-dialog').addEventListener('click', (event) => { if (event.target === $('#emote-picker-dialog')) closeDialog('emote-picker-dialog'); });
   $('#toggle-streamer-aside').addEventListener('click', () => {
     if (Date.now() < asideSwipeSuppressClickUntil) return;
     const isOpen = $('.chat-layout').classList.contains('is-aside-open');
@@ -5022,6 +5119,18 @@ function bindEvents() {
   $('#chat-aside-backdrop').addEventListener('click', () => setAsideDrawerOpen(false));
   document.addEventListener('keydown', (event) => {
     if (document.querySelector('dialog[open]')) return;
+    if (state.activeView === 'chat' && state.room && !event.repeat && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+      const textEntry = path.some((node) => node instanceof Element
+        && (node.matches('input, textarea, select, [role="textbox"], [contenteditable]:not([contenteditable="false"]), [data-lexical-editor="true"]') || node.isContentEditable));
+      const shortcut = String(event.key || '').toLowerCase();
+      if (!textEntry && (event.code === 'KeyE' || shortcut === 'e' || shortcut === 'ㄷ')) {
+        event.preventDefault();
+        event.stopPropagation();
+        openEmotePicker();
+        return;
+      }
+    }
     if (event.key === 'Escape' && !$('#attachment-tools-panel').hidden) {
       event.preventDefault(); setAttachmentToolsOpen(false); $('#toggle-attachment-tools').focus(); return;
     }
@@ -5211,6 +5320,7 @@ function handleSession(event) {
   const nextUid = state.session && state.session.uid;
   if (previousUid && previousUid !== nextUid && state.room) leaveChat();
   if (previousUid !== nextUid) {
+    state.ownedEmoteIds = new Set();
     setAsideDrawerOpen(false, false);
     state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
     state.applications = []; state.knownApplicationUids = new Set();

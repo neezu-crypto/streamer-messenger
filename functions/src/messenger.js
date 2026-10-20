@@ -13,6 +13,7 @@ const { defineSecret } = require('firebase-functions/params');
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getPrincipal, getVerifiedStreamer, requireAdmin, SERVICE_ID } = require('./auth');
+const stickerCatalog = require('../catalog/stickers.json');
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
@@ -46,6 +47,12 @@ const SOOP_CLIP_CACHE_LIMIT = 80;
 const soopClipSearchCache = new Map();
 const SOOP_LIVE_STATUS_CACHE_TTL = 15 * 1000;
 const soopLiveStatusCache = new Map();
+const messengerStickerIndex = new Map();
+for (const product of stickerCatalog.products || []) {
+  for (const sticker of product.preview && Array.isArray(product.preview.stickers) ? product.preview.stickers : []) {
+    messengerStickerIndex.set(sticker.id, { id: sticker.id, productId: product.id, freeForAuthenticated: product.freeForAuthenticated === true });
+  }
+}
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
@@ -553,6 +560,22 @@ async function applyMessageRate(uid, roomId, text, meta, isOwner = false) {
   }
   // Owners can send rapid updates; room-configured repeated text/link limits still apply.
   await checkRepeatedMessage(uid, roomId, text, Number(meta.repeatTextDelaySeconds) || 0, Number(meta.repeatLinkDelaySeconds) || 0);
+}
+
+function activeStickerOwnership(value) {
+  return value === true || (!!value && typeof value === 'object' && value.active !== false);
+}
+
+async function assertEmoteAvailable(request, uid, sticker) {
+  const provider = request.auth && request.auth.token && request.auth.token.firebase
+    ? request.auth.token.firebase.sign_in_provider : null;
+  let eligible = !!provider && provider !== 'anonymous';
+  if (!eligible) eligible = (await db().ref(`users/${uid}/streamerVerified`).get()).val() === true;
+  if (sticker.freeForAuthenticated && eligible) return;
+  const ownership = await db().ref(`gameSeriesShop/ownership/${uid}/${sticker.productId}`).get();
+  if (!activeStickerOwnership(ownership.val())) {
+    throw new HttpsError('permission-denied', '로그인 유저 또는 인증 스트리머만 무료로 사용할 수 있는 스티커입니다.');
+  }
 }
 
 async function streamerAvatar(uid) {
@@ -1945,6 +1968,12 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const member = result.member || {};
   const isOwner = result.isOwner;
   const kind = String(data.kind || 'text');
+  let emoteSticker = null;
+  if (kind === 'emote') {
+    emoteSticker = messengerStickerIndex.get(String(data.stickerId || '')) || null;
+    if (!emoteSticker) throw new HttpsError('invalid-argument', '알 수 없는 스티커입니다.');
+    await assertEmoteAvailable(request, p.uid, emoteSticker);
+  }
   const recipientUid = isOwner && data.recipientUid ? String(data.recipientUid) : '';
   let recipientName = '';
   if (isOwner && recipientUid) {
@@ -1952,10 +1981,10 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
     if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
     recipientName = String(recipient.val().profile && recipient.val().profile.nickname || '팬').slice(0, 30);
   }
-  const text = ['image', 'roomself'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
-  if (!['text', 'image', 'roomself'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
+  const text = ['image', 'roomself', 'emote'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
+  if (!['text', 'image', 'roomself', 'emote'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
   if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
-  await applyMessageRate(p.uid, roomId, text, result.meta, isOwner);
+  await applyMessageRate(p.uid, roomId, emoteSticker ? `[스티커:${emoteSticker.id}]` : text, result.meta, isOwner);
   const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
@@ -1975,6 +2004,8 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
     if (!imageSnap.exists() || image.roomId !== roomId || image.ownerUid !== p.uid || image.recipientUid !== recipientUid || image.status !== 'uploaded' || now() > Number(image.expiresAt)) throw new HttpsError('failed-precondition', '방셀 업로드가 만료되었거나 올바르지 않습니다. 다시 선택해 주세요.');
     message = { ...common, kind: 'roomself', roomselfImageId: id };
     message._roomselfImageRef = id;
+  } else if (kind === 'emote') {
+    message = { ...common, kind: 'emote', stickerId: emoteSticker.id };
   } else {
     message = { ...common, kind: 'text', text };
   }

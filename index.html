@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261012-room-tool-mobile-qa">
+  <link rel="stylesheet" href="styles.css?v=20261020-chat-emotes">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -208,6 +208,7 @@
               <select id="direct-recipient" aria-label="다이렉트 메시지 받을 팬" hidden></select>
             </div>
             <div class="chat-composer" id="chat-composer">
+              <button class="emote-trigger" id="open-emote-picker" type="button" aria-label="감정표현 열기" aria-haspopup="dialog" aria-controls="emote-picker-dialog" title="사용 가능한 스티커를 채팅 메시지로 보냅니다 · 단축키 E · ㄷ"><span aria-hidden="true">✦</span><span>감정표현</span></button>
               <div class="attachment-tools" id="attachment-tools">
                 <button class="attach-button" id="toggle-attachment-tools" type="button" aria-label="첨부 및 영상 도구 선택" aria-expanded="false" aria-controls="attachment-tools-panel" title="갤러리 이미지, 스트리머 클립, 영상 같이보기 선택">＋</button>
                 <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="첨부 및 영상 도구" hidden>
@@ -256,7 +257,7 @@
       <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
       <section class="admin-pane" id="admin-pane-test" hidden>
         <div class="admin-tool-card admin-test-tool">
-          <div class="admin-list-heading"><div><h3>테스트 전용 채팅방</h3><p>테스트방은 공개 목록에서 숨기고 관리자와 등록된 테스트 계정만 입장할 수 있어요. 테스트 계정은 이 방에서만 채팅 기능을 사용할 수 있습니다. 동시 참여는 서로 다른 계정을 각 탭에서 열어 확인하세요.</p></div><button class="button button-quiet" id="admin-test-refresh" type="button" title="테스트방과 계정 목록을 새로 불러옵니다">새로고침</button></div>
+          <div class="admin-list-heading"><div><h3>테스트 전용 채팅방</h3><p>테스트방은 공개 목록에서 숨기고 관리자와 등록된 테스트 계정만 입장할 수 있어요. 테스트 계정은 이 방에서만 채팅 기능을 사용할 수 있습니다. 두 계정을 서로 다른 탭에서 열면 감정표현을 포함한 메시지를 양방향으로 확인할 수 있어요.</p></div><button class="button button-quiet" id="admin-test-refresh" type="button" title="테스트방과 계정 목록을 새로 불러옵니다">새로고침</button></div>
           <p class="admin-test-room-status" id="admin-test-room-status" role="status" aria-live="polite">테스트방 상태를 불러옵니다.</p>
           <div class="admin-test-actions"><button class="button button-primary" id="admin-test-create-host" type="button" title="테스트방과 진행자 역할의 테스트 계정을 만듭니다">테스트 진행자 만들기</button><button class="button button-quiet" id="admin-test-create-participant" type="button" title="테스트방에 바로 입장하는 테스트 참여자 계정을 추가합니다" disabled>참여자 계정 추가</button><button class="button button-quiet" id="admin-test-open-room" type="button" title="현재 관리자 계정으로 테스트방에 입장합니다" disabled>관리자로 테스트방 입장</button></div>
           <div class="admin-test-account-list" id="admin-test-account-list"><p class="muted">아직 테스트 계정이 없습니다.</p></div>
@@ -264,6 +265,16 @@
       </section>
     </section>
   </main>
+
+  <dialog class="app-dialog emote-picker-dialog" id="emote-picker-dialog">
+    <section class="dialog-card emote-picker-card" aria-labelledby="emote-picker-title">
+      <button class="dialog-close" id="close-emote-picker" type="button" aria-label="감정표현 창 닫기" title="감정표현 창 닫기">×</button>
+      <p class="eyebrow">CHAT EMOTES</p><h2 id="emote-picker-title">감정표현</h2>
+      <p class="dialog-copy">스티커를 선택하면 현재 대화방에 메시지로 전송돼요.</p>
+      <p class="emote-picker-status" id="emote-picker-status" role="status" aria-live="polite">사용 가능한 스티커를 불러오는 중이에요.</p>
+      <div class="emote-picker-grid" id="emote-picker-grid" aria-label="사용 가능한 감정표현"></div>
+    </section>
+  </dialog>
 
   <footer class="site-footer"><a href="privacy.html">개인정보 처리방침</a><span>·</span><a href="terms.html">이용 안내</a><span class="footer-note">메시지는 최대 7일 보관 후 삭제됩니다.</span></footer>
 
@@ -529,6 +540,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261020-fast-streamer-entry"></script>
+  <script type="module" src="js/app.js?v=20261020-chat-emotes"></script>
 </body>
 </html>
