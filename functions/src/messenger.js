@@ -2011,30 +2011,34 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   const member = result.member || {};
   const isOwner = result.isOwner;
   const kind = String(data.kind || 'text');
+  if (!['text', 'image', 'roomself', 'emote'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
   let emoteSticker = null;
   if (kind === 'emote') {
     emoteSticker = messengerStickerIndex.get(String(data.stickerId || '')) || null;
     if (!emoteSticker) throw new HttpsError('invalid-argument', '알 수 없는 스티커입니다.');
-    await assertEmoteAvailable(request, p.uid, emoteSticker);
   }
   const recipientUid = isOwner && data.recipientUid ? String(data.recipientUid) : '';
-  let recipientName = '';
-  if (isOwner && recipientUid) {
-    const recipient = await roomRef(roomId).child(`members/${recipientUid}`).get();
-    if (!recipient.exists() || recipient.val().status !== 'active') throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
-    recipientName = String(recipient.val().profile && recipient.val().profile.nickname || '팬').slice(0, 30);
-  }
-  const text = ['image', 'roomself', 'emote'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
-  if (!['text', 'image', 'roomself', 'emote'].includes(kind)) throw new HttpsError('invalid-argument', '메시지 유형이 올바르지 않습니다.');
-  if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
-  const { staleRateBucketCleanup } = await applyMessageRate(p.uid, roomId, emoteSticker ? `[스티커:${emoteSticker.id}]` : text, result.meta, isOwner);
-  const createdAt = now();
   const requestedMessageId = String(data.clientMessageId || '');
   if (requestedMessageId && !/^[A-Za-z0-9_-]{20}$/.test(requestedMessageId)) throw new HttpsError('invalid-argument', '메시지 식별자가 올바르지 않습니다.');
-  const messageId = requestedMessageId || db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`).push().key;
-  if (requestedMessageId && (await db().ref(`${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`).get()).exists()) {
+  const messagePath = `${ROOT}/chat/${roomId}/streamerTimeline`;
+  const [, recipient] = await Promise.all([
+    emoteSticker ? assertEmoteAvailable(request, p.uid, emoteSticker) : Promise.resolve(),
+    isOwner && recipientUid ? roomRef(roomId).child(`members/${recipientUid}`).get() : Promise.resolve(null),
+  ]);
+  if (isOwner && recipientUid && (!recipient || !recipient.exists() || recipient.val().status !== 'active')) {
+    throw new HttpsError('failed-precondition', '참여 중인 팬에게만 다이렉트 메시지를 보낼 수 있습니다.');
+  }
+  const recipientName = recipient && recipient.val() && recipient.val().profile
+    ? String(recipient.val().profile.nickname || '팬').slice(0, 30)
+    : (recipientUid ? '팬' : '');
+  const text = ['image', 'roomself', 'emote'].includes(kind) ? '' : safeText(data.text, MESSAGE_MAX, true);
+  if (kind === 'roomself' && (!isOwner || !recipientUid)) throw new HttpsError('permission-denied', '스트리머가 지정한 팬에게만 방셀을 보낼 수 있습니다.');
+  const { staleRateBucketCleanup } = await applyMessageRate(p.uid, roomId, emoteSticker ? `[스티커:${emoteSticker.id}]` : text, result.meta, isOwner);
+  if (requestedMessageId && (await db().ref(`${messagePath}/${requestedMessageId}`).get()).exists()) {
     throw new HttpsError('already-exists', '메시지가 이미 전송되었습니다. 대화 내용을 새로고침해 주세요.');
   }
+  const createdAt = now();
+  const messageId = requestedMessageId || db().ref(messagePath).push().key;
   const common = { id: messageId, roomId, senderUid: p.uid, senderRole: isOwner ? 'streamer' : 'fan', createdAt, recipientUid: recipientUid || null, ...(recipientUid ? { recipientName } : {}) };
   let message;
   if (kind === 'image') {
