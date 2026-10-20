@@ -64,10 +64,15 @@ let mobileQuickMenuCloseTimer = 0;
 let mobileQuickMenuTransitionToken = 0;
 const mobileQuickActionOrigins = new Map();
 let emotePickerRequestId = 0;
+const OWNED_EMOTE_CACHE_TTL_MS = 30_000;
+let ownedEmoteCacheUid = '';
+let ownedEmoteLoadedAt = 0;
+let ownedEmoteRequest = null;
 state.emoteCatalog = [];
 state.ownedEmoteIds = new Set();
 state.emoteCatalogPromise = loadMessengerStickerCatalog().then((catalog) => {
   state.emoteCatalog = catalog;
+  preloadStickerArtwork(catalog);
   if (state.room) renderTimeline({ preservePosition: true });
   return catalog;
 }).catch((error) => {
@@ -1155,6 +1160,9 @@ async function selectRoom(room, resolvedRoomState = null) {
 
 async function openChat(room, isOwner) {
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  if (state.session?.uid && (state.session.trusted || state.session.isVerifiedStreamer || state.session.isTestAccount)) {
+    loadOwnedEmoteIds(state.session.uid).catch((error) => console.warn('보유 스티커를 미리 불러오지 못했습니다.', error));
+  }
   state.chatFullscreenRecovery = false;
   clearRoomWatchPartyLocal();
   resetRoomToolVideo();
@@ -1274,6 +1282,54 @@ function renderEmotePicker(stickers) {
   }
 }
 
+function preloadStickerArtwork(catalog) {
+  const assets = new Set(catalog.map((sticker) => sticker.asset).filter(Boolean));
+  for (const asset of assets) {
+    const alreadyPreloaded = Array.from(document.head.querySelectorAll('link[rel="preload"][as="image"]'))
+      .some((link) => link.href === asset);
+    if (alreadyPreloaded) continue;
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = asset;
+    link.fetchPriority = 'low';
+    document.head.appendChild(link);
+  }
+}
+
+function resetOwnedEmoteCache() {
+  state.ownedEmoteIds = new Set();
+  ownedEmoteCacheUid = '';
+  ownedEmoteLoadedAt = 0;
+  ownedEmoteRequest = null;
+}
+
+function loadOwnedEmoteIds(uid) {
+  const now = Date.now();
+  if (ownedEmoteCacheUid === uid && ownedEmoteLoadedAt && now - ownedEmoteLoadedAt < OWNED_EMOTE_CACHE_TTL_MS) {
+    return Promise.resolve(state.ownedEmoteIds);
+  }
+  if (ownedEmoteRequest?.uid === uid) return ownedEmoteRequest.promise;
+
+  ownedEmoteCacheUid = uid;
+  const promise = call('gameSeriesShopGetOwnedEmotes').then((owned) => {
+    const ids = new Set((Array.isArray(owned.stickers) ? owned.stickers : []).map((sticker) => String(sticker.id || '')));
+    if (state.session?.uid === uid) {
+      state.ownedEmoteIds = ids;
+      ownedEmoteCacheUid = uid;
+      ownedEmoteLoadedAt = Date.now();
+    }
+    return ids;
+  }).catch((error) => {
+    if (ownedEmoteCacheUid === uid) ownedEmoteLoadedAt = 0;
+    throw error;
+  }).finally(() => {
+    if (ownedEmoteRequest?.promise === promise) ownedEmoteRequest = null;
+  });
+  ownedEmoteRequest = { uid, promise };
+  return promise;
+}
+
 async function openEmotePicker() {
   if (!state.room || !state.session) return;
   if (!state.session.trusted && !state.session.isVerifiedStreamer && !state.session.isTestAccount) {
@@ -1289,15 +1345,11 @@ async function openEmotePicker() {
   $('#emote-picker-status').textContent = '사용 가능한 스티커를 불러오는 중이에요.';
   openDialog('emote-picker-dialog');
   try {
-    let catalog = state.emoteCatalog;
-    if (!catalog.length) {
-      catalog = await loadMessengerStickerCatalog();
-      state.emoteCatalog = catalog;
-    }
-    const owned = await call('gameSeriesShopGetOwnedEmotes');
+    const catalogPromise = state.emoteCatalog.length ? Promise.resolve(state.emoteCatalog) : loadMessengerStickerCatalog();
+    const [catalog, ownedIds] = await Promise.all([catalogPromise, loadOwnedEmoteIds(uid)]);
     if (requestId !== emotePickerRequestId || state.session?.uid !== uid) return;
-    state.ownedEmoteIds = new Set((Array.isArray(owned.stickers) ? owned.stickers : []).map((sticker) => String(sticker.id || '')));
-    renderEmotePicker(catalog.filter((sticker) => state.ownedEmoteIds.has(sticker.id)));
+    state.emoteCatalog = catalog;
+    renderEmotePicker(catalog.filter((sticker) => ownedIds.has(sticker.id)));
   } catch (error) {
     if (requestId !== emotePickerRequestId) return;
     $('#emote-picker-status').textContent = error.message || '사용 가능한 스티커를 불러오지 못했어요.';
@@ -5320,7 +5372,7 @@ function handleSession(event) {
   const nextUid = state.session && state.session.uid;
   if (previousUid && previousUid !== nextUid && state.room) leaveChat();
   if (previousUid !== nextUid) {
-    state.ownedEmoteIds = new Set();
+    resetOwnedEmoteCache();
     setAsideDrawerOpen(false, false);
     state.myRooms = []; state.myRoomsUid = ''; state.myRoomsLoaded = false; state.myRoomsPromise = null;
     state.applications = []; state.knownApplicationUids = new Set();
