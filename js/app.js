@@ -33,7 +33,7 @@ function loadRoomToolsPipPreferences() {
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, archivedMessageMore: { owner: null, private: null, broadcast: null }, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, chatAppFullscreenFallback: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, archivedMessageMore: { owner: null, private: null, broadcast: null }, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 let archivedInitialLoadRoomId = '';
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
@@ -90,6 +90,7 @@ function syncMobileChatViewport() {
   const body = document.body;
   root.classList.toggle('mobile-chat-locked', chatOpen && !browserChromeRecovery);
   body.classList.toggle('messenger-chat-browser-recovery', browserChromeRecovery);
+  body.classList.toggle('messenger-chat-app-fullscreen', chatOpen && state.chatAppFullscreenFallback && !browserChromeRecovery);
   if (!chatOpen) {
     if (!hasActiveChat) state.chatFullscreenRecovery = false;
     body.classList.remove('messenger-keyboard-open');
@@ -330,12 +331,13 @@ function renderChatFullscreenButton() {
   const button = $('#toggle-chat-fullscreen');
   if (!button) return;
   const chatOpen = state.activeView === 'chat' && !!state.room;
-  button.hidden = !(
-    chatOpen
-    && isMobileChatLayout()
-    && !document.fullscreenElement
-    && canRequestPageFullscreen()
-  );
+  const isFullscreen = !!document.fullscreenElement || state.chatAppFullscreenFallback;
+  const label = isFullscreen ? '전체 화면 종료' : '메신저 전체 화면으로 보기';
+  button.hidden = !(chatOpen && isMobileChatLayout());
+  button.setAttribute('aria-label', label);
+  button.dataset.tooltip = label;
+  const icon = button.querySelector('[aria-hidden="true"]');
+  if (icon) icon.textContent = isFullscreen ? '⤢' : '⛶';
 }
 
 function beginChatFullscreenRequest() {
@@ -373,6 +375,8 @@ function exitChatFullscreen() {
   const shouldExit = state.chatFullscreenOwned;
   state.chatFullscreenOwned = false;
   state.chatFullscreenRecovery = false;
+  state.chatAppFullscreenFallback = false;
+  document.body.classList.remove('messenger-chat-app-fullscreen');
   if (shouldExit && document.fullscreenElement && typeof document.exitFullscreen === 'function') {
     try {
       const result = document.exitFullscreen();
@@ -384,13 +388,41 @@ function exitChatFullscreen() {
 
 async function enterChatFullscreenFromButton() {
   if (state.activeView !== 'chat' || !state.room) return;
+  if (document.fullscreenElement) {
+    const ownedFullscreen = state.chatFullscreenOwned;
+    state.chatFullscreenRecovery = true;
+    state.chatAppFullscreenFallback = false;
+    state.chatFullscreenOwned = false;
+    try { await document.exitFullscreen(); }
+    catch (_) {
+      state.chatFullscreenRecovery = false;
+      state.chatFullscreenOwned = ownedFullscreen;
+      showToast('전체 화면을 종료하지 못했습니다. 브라우저의 뒤로 가기 또는 전체 화면 종료 기능을 이용해 주세요.');
+    }
+    renderChatFullscreenButton();
+    syncMobileChatViewport();
+    return;
+  }
+  if (state.chatAppFullscreenFallback) {
+    state.chatAppFullscreenFallback = false;
+    state.chatFullscreenRecovery = false;
+    renderChatFullscreenButton();
+    syncMobileChatViewport();
+    return;
+  }
   const attempt = beginChatFullscreenRequest();
   const entered = await settleChatFullscreenRequest(attempt, true);
   if (entered) {
     state.chatFullscreenRecovery = false;
+    state.chatAppFullscreenFallback = false;
     syncMobileChatViewport();
+  } else {
+    state.chatAppFullscreenFallback = true;
+    state.chatFullscreenRecovery = false;
+    syncMobileChatViewport();
+    showToast('브라우저 전체 화면을 사용할 수 없어 메신저 화면을 넓혔어요. 상단 버튼으로 돌아갈 수 있어요.');
   }
-  if (!entered) showToast('이 브라우저에서 전체 화면 전환을 허용하지 않았어요.');
+  renderChatFullscreenButton();
 }
 
 function notifyChatFullscreenFallback(enteredFullscreen) {

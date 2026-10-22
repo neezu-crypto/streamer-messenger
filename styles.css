@@ -772,6 +772,11 @@
   body.messenger-chat-open .chat-header>.mobile-room-tools-trigger{width:31px;min-width:31px;max-width:31px;flex-basis:31px}
 }
 
+@media(max-width:680px){
+  body.messenger-chat-open.messenger-chat-app-fullscreen:not(.messenger-chat-browser-recovery)>.topbar{display:none!important}
+  body.messenger-chat-open.messenger-chat-app-fullscreen:not(.messenger-chat-browser-recovery) .chat-header{padding-top:max(4px,env(safe-area-inset-top))}
+}
+
 .room-tool-slide[data-room-tool="video"]{position:relative;flex-direction:column}
 .room-tool-slide[data-room-tool="video"] .room-video-tool-panel{position:absolute;inset:0}
 .room-video-tool-panel.is-video-mode-inactive{display:none!important}
