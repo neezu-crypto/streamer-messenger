@@ -11,7 +11,7 @@ const { onValueWritten } = require('firebase-functions/v2/database');
 const logger = require('firebase-functions/logger');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getPrincipal, getVerifiedStreamer, requireAdmin, SERVICE_ID } = require('./auth');
 const stickerCatalog = require('../catalog/stickers.json');
@@ -217,7 +217,7 @@ const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_
 const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
 const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
 const archiveDateShard = (time) => new Date(Number(time) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10).replaceAll('-', '');
-const archiveRoomToken = (roomId) => crypto.createHash('sha256').update(String(roomId)).digest('hex').slice(0, 24);
+const archiveRoomToken = (roomId, generation) => crypto.createHash('sha256').update(`${roomId}\0${generation}`).digest('hex').slice(0, 24);
 const archivePrivateScope = (uid) => `private_${crypto.createHash('sha256').update(String(uid)).digest('hex').slice(0, 24)}`;
 const archiveMessageScopeUid = (message) => message && message.senderRole === 'fan' ? String(message.senderUid || '') : String(message && message.recipientUid || '');
 const compareMessagePosition = (a, b) => Number(a && a.createdAt || 0) - Number(b && b.createdAt || 0) || (String(a && a.id || '') < String(b && b.id || '') ? -1 : String(a && a.id || '') > String(b && b.id || '') ? 1 : 0);
@@ -230,8 +230,99 @@ function roomselfBytesMatchType(bytes, contentType) {
   return false;
 }
 
-function messageArchiveIndexPath(roomId, scopeKey) {
-  return `${ROOT}/messageArchiveIndex/${roomId}/${scopeKey}`;
+function messageArchiveIndexPath(roomId, generation, scopeKey) {
+  return `${ROOT}/messageArchiveIndex/${roomId}/${generation}/${scopeKey}`;
+}
+
+function archivedRoomselfImagesPath(roomId, generation) {
+  return `${ROOT}/archivedRoomselfImages/${roomId}/${generation}`;
+}
+
+async function ensureMessageArchiveGeneration(roomId) {
+  const generationRef = roomRef(roomId).child('meta/archiveGeneration');
+  const result = await generationRef.transaction((current) => /^[a-f0-9]{32}$/.test(String(current || '')) ? current : crypto.randomBytes(16).toString('hex'));
+  return String(result.snapshot.val() || '');
+}
+
+async function deleteR2Prefix(s3, prefix) {
+  let continuationToken = undefined;
+  do {
+    const page = await s3.send(new ListObjectsV2Command({ Bucket: ROOMSELF_BUCKET, Prefix: prefix, ContinuationToken: continuationToken }));
+    const keys = (page.Contents || []).map((item) => item && item.Key).filter(Boolean);
+    for (let offset = 0; offset < keys.length; offset += 1000) {
+      const result = await s3.send(new DeleteObjectsCommand({ Bucket: ROOMSELF_BUCKET, Delete: { Objects: keys.slice(offset, offset + 1000).map((Key) => ({ Key })), Quiet: true } }));
+      if (result.Errors && result.Errors.length) throw new Error(`R2 보관 파일 ${result.Errors.length}개를 정리하지 못했습니다.`);
+    }
+    continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (continuationToken);
+}
+
+async function listLiveRoomselfImageIds(roomId) {
+  const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
+  const imageIds = new Set();
+  let cursor = null;
+  while (true) {
+    let query = timelineRef.orderByChild('createdAt');
+    if (cursor) query = query.startAfter(cursor.createdAt, cursor.key);
+    const page = await query.limitToFirst(400).get();
+    if (!page.exists()) break;
+    let last = null;
+    page.forEach((child) => {
+      const message = child.val() || {};
+      last = { createdAt: Number(message.createdAt) || 0, key: child.key };
+      if (message.kind === 'roomself' && message.roomselfImageId) imageIds.add(String(message.roomselfImageId));
+    });
+    cursor = last;
+    if (page.numChildren() < 400 || !cursor) break;
+  }
+  return imageIds;
+}
+
+async function cleanMessageArchiveQueue(s3) {
+  const queueSnap = await db().ref(`${ROOT}/messageArchiveCleanup`).get();
+  const jobs = queueSnap.val() || {};
+  for (const [jobId, job] of Object.entries(jobs)) {
+    const roomId = String(job && job.roomId || '');
+    const generation = String(job && job.generation || '');
+    if (!/^[a-z0-9]{2,30}$/.test(roomId) || !/^[a-f0-9]{32}$/.test(generation)) continue;
+    const prefix = `message-archives/${archiveRoomToken(roomId, generation)}/`;
+    await deleteR2Prefix(s3, prefix);
+    const imageIndexPath = archivedRoomselfImagesPath(roomId, generation);
+    const imageIndexRef = db().ref(imageIndexPath);
+    while (true) {
+      const imagePage = await imageIndexRef.orderByKey().limitToFirst(100).get();
+      if (!imagePage.exists()) break;
+      const imageIds = [];
+      imagePage.forEach((child) => { if (child.key) imageIds.push(child.key); });
+      for (const imageId of imageIds) {
+        const [imageSnap, refsSnap] = await Promise.all([
+          db().ref(`${ROOT}/privateImages/${imageId}`).get(),
+          db().ref(`${ROOT}/privateImageRefs/${imageId}`).get(),
+        ]);
+        const image = imageSnap.val() || {};
+        const refs = refsSnap.val() || {};
+        if (image.roomId === roomId) {
+          const retained = Object.values(refs).some((until) => Number(until) >= now());
+          if (retained) {
+            await db().ref(`${ROOT}/privateImages/${imageId}/archived`).remove();
+          } else {
+            if (image.key && image.key.startsWith('roomself/')) await s3.send(new DeleteObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: image.key }));
+            const imageDay = roomselfDateShard(image.createdAt);
+            await db().ref().update({
+              [`${ROOT}/privateImages/${imageId}`]: null,
+              [`${ROOT}/privateImageRefs/${imageId}`]: null,
+              [`${ROOT}/privateImageDays/${imageDay}/${imageId}`]: null,
+            });
+          }
+        }
+        await imageIndexRef.child(imageId).remove();
+      }
+    }
+    await db().ref().update({ [`${ROOT}/messageArchiveIndex/${roomId}/${generation}`]: null });
+    const currentGenerationRef = roomRef(roomId).child('meta/archiveGeneration');
+    if ((await currentGenerationRef.get()).val() === generation) await currentGenerationRef.remove();
+    await db().ref(`${ROOT}/messageArchiveCleanup/${jobId}`).remove();
+  }
 }
 
 function previousArchiveDateShard(day) {
@@ -241,7 +332,7 @@ function previousArchiveDateShard(day) {
   return date.toISOString().slice(0, 10).replaceAll('-', '');
 }
 
-async function archiveExpiredMessagePage(roomId, entries, s3) {
+async function archiveExpiredMessagePage(roomId, generation, entries, s3) {
   const byDay = new Map();
   for (const entry of entries) {
     const message = { ...(entry.message || {}), id: String(entry.id || entry.message && entry.message.id || '') };
@@ -255,7 +346,7 @@ async function archiveExpiredMessagePage(roomId, entries, s3) {
   for (const [day, messages] of byDay) {
     messages.sort(compareMessagePosition);
     const chunkId = crypto.createHash('sha256').update(`${roomId}\0${messages.map((message) => message.id).join('\0')}`).digest('hex').slice(0, 40);
-    const key = `message-archives/${archiveRoomToken(roomId)}/${day}/${chunkId}.json.gz`;
+    const key = `message-archives/${archiveRoomToken(roomId, generation)}/${day}/${chunkId}.json.gz`;
     const payload = Buffer.from(JSON.stringify({ version: 1, roomId, messages }));
     await s3.send(new PutObjectCommand({
       Bucket: ROOMSELF_BUCKET,
@@ -268,7 +359,7 @@ async function archiveExpiredMessagePage(roomId, entries, s3) {
     const addScopeIndex = (scopeKey, scopeMessages) => {
       if (!scopeMessages.length) return;
       const ordered = scopeMessages.slice().sort(compareMessagePosition);
-      indexUpdates[`${messageArchiveIndexPath(roomId, scopeKey)}/${day}/${chunkId}`] = {
+      indexUpdates[`${messageArchiveIndexPath(roomId, generation, scopeKey)}/${day}/${chunkId}`] = {
         key,
         count: ordered.length,
         minCreatedAt: Number(ordered[0].createdAt) || 0,
@@ -302,7 +393,7 @@ async function readMessageArchiveObject(s3, key, roomId) {
   return payload.messages;
 }
 
-async function loadArchivedMessagePage(roomId, scopeKey, uid, rawCursor, s3, objectCache, pageSize = ARCHIVED_MESSAGE_PAGE_SIZE) {
+async function loadArchivedMessagePage(roomId, generation, scopeKey, uid, rawCursor, s3, objectCache, pageSize = ARCHIVED_MESSAGE_PAGE_SIZE) {
   const limit = Math.max(1, Math.min(ARCHIVED_MESSAGE_PAGE_SIZE, Number(pageSize) || ARCHIVED_MESSAGE_PAGE_SIZE));
   let cursor = null;
   if (rawCursor !== null && rawCursor !== undefined) {
@@ -318,7 +409,7 @@ async function loadArchivedMessagePage(roomId, scopeKey, uid, rawCursor, s3, obj
 
   let upperDay = archiveDateShard(cursor.createdAt);
   const selectedById = new Map();
-  const indexRef = db().ref(messageArchiveIndexPath(roomId, scopeKey));
+  const indexRef = db().ref(messageArchiveIndexPath(roomId, generation, scopeKey));
   while (upperDay) {
     const daySnap = await indexRef.orderByKey().endAt(upperDay).limitToLast(1).get();
     if (!daySnap.exists()) break;
@@ -1232,18 +1323,29 @@ const messengerUpdateRoom = onCall(async (request) => {
   return { room: publicRoom(nextMeta, true), generatedPassword: generatedPassword || null };
 });
 
-const messengerDiscardRoom = onCall(async (request) => {
+const messengerDiscardRoom = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정에서는 테스트방을 폐기할 수 없습니다.');
   const roomId = String((request.data || {}).roomId || '');
   const { meta, isOwner } = await requireRoomMember(p, roomId);
   if (!isOwner) throw new HttpsError('permission-denied', '채팅방 소유자만 방을 폐기할 수 있습니다.');
-  const [reports, membersSnap] = await Promise.all([
+  const generation = await ensureMessageArchiveGeneration(roomId);
+  const [reports, membersSnap, liveRoomselfImageIds] = await Promise.all([
     db().ref(`${ROOT}/reports`).orderByChild('roomId').equalTo(roomId).get(),
     roomRef(roomId).child('members').get(),
+    listLiveRoomselfImageIds(roomId),
   ]);
+  const liveImageIds = [...liveRoomselfImageIds];
+  for (let offset = 0; offset < liveImageIds.length; offset += 400) {
+    const imageUpdates = {};
+    for (const imageId of liveImageIds.slice(offset, offset + 400)) imageUpdates[`${archivedRoomselfImagesPath(roomId, generation)}/${imageId}`] = true;
+    await db().ref().update(imageUpdates);
+  }
   const updates = { [`${ROOT}/rooms/${roomId}`]: null, [`${ROOT}/publicRooms/${roomId}`]: null, [`${ROOT}/chat/${roomId}`]: null, [`${ROOT}/roomMarkets/${roomId}`]: null };
   membersSnap.forEach((child) => { if (child.key) updates[userRoomIndexPath(child.key, roomId)] = null; });
+  const cleanupId = `${roomId}_${generation}`;
+  updates[`${ROOT}/messageArchiveIndex/${roomId}/${generation}`] = null;
+  updates[`${ROOT}/messageArchiveCleanup/${cleanupId}`] = { roomId, generation, requestedAt: now() };
   reports.forEach((child) => {
     const report = child.val() || {};
     if (Number(report.retainUntil) < now()) {
@@ -1252,6 +1354,8 @@ const messengerDiscardRoom = onCall(async (request) => {
     }
   });
   await db().ref().update(updates);
+  try { await cleanMessageArchiveQueue(roomselfS3()); }
+  catch (error) { logger.warn('채팅방 보관 파일 정리가 다음 정리 작업으로 미뤄졌습니다.', { roomId, error: String(error && error.message || error) }); }
   await writeAudit(p.uid, 'room.discard', roomId);
   return { discarded: true, streamerNickname: meta.streamerNickname };
 });
@@ -1995,7 +2099,7 @@ const messengerLoadArchivedMessages = onCall({ secrets: [roomselfAccessKeyId, ro
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const principal = await requireRoomPrincipal(request, roomId);
-  const { isOwner } = await requireRoomMember(principal, roomId);
+  const { isOwner, meta } = await requireRoomMember(principal, roomId);
   const cursors = data.cursors && typeof data.cursors === 'object' ? data.cursors : {};
   const limits = data.limits && typeof data.limits === 'object' ? data.limits : {};
   const streams = isOwner
@@ -2007,8 +2111,11 @@ const messengerLoadArchivedMessages = onCall({ secrets: [roomselfAccessKeyId, ro
   const s3 = roomselfS3();
   const objectCache = new Map();
   const pages = {};
+  const generation = /^[a-f0-9]{32}$/.test(String(meta.archiveGeneration || ''))
+    ? String(meta.archiveGeneration)
+    : await ensureMessageArchiveGeneration(roomId);
   await Promise.all(streams.filter((stream) => Object.prototype.hasOwnProperty.call(cursors, stream.key)).map(async (stream) => {
-    pages[stream.key] = await loadArchivedMessagePage(roomId, stream.scopeKey, stream.uid, cursors[stream.key], s3, objectCache, limits[stream.key]);
+    pages[stream.key] = await loadArchivedMessagePage(roomId, generation, stream.scopeKey, stream.uid, cursors[stream.key], s3, objectCache, limits[stream.key]);
   }));
   return { pages };
 });
@@ -2512,6 +2619,7 @@ const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'A
 
 const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1', secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const t = now(); const cutoff = t - CHAT_RETENTION; const s3 = roomselfS3();
+  await cleanMessageArchiveQueue(s3);
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
   const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
   for (const roomId of new Set([...Object.keys(publicRooms), TEST_ROOM_ID])) {
@@ -2520,6 +2628,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
     if (pinned && Number(pinned.messageCreatedAt) <= cutoff) updates[`${ROOT}/rooms/${roomId}/meta/pinnedMessage`] = null;
     const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
     let cursor = null;
+    let archiveGeneration = '';
     while (true) {
       if (Object.keys(updates).length) {
         await db().ref().update(updates);
@@ -2536,14 +2645,18 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
         last = { createdAt: Number(msg.createdAt) || 0, key: id };
         entries.push({ id, message: msg });
       });
-      const archived = await archiveExpiredMessagePage(roomId, entries, s3);
+      if (!archiveGeneration) archiveGeneration = await ensureMessageArchiveGeneration(roomId);
+      const archived = await archiveExpiredMessagePage(roomId, archiveGeneration, entries, s3);
       const pageUpdates = { ...archived.indexUpdates };
       for (const { id, message } of entries) {
         pageUpdates[`${ROOT}/chat/${roomId}/streamerTimeline/${id}`] = null;
         pageUpdates[`${ROOT}/chat/${roomId}/broadcast/${id}`] = null;
         const privateUid = archiveMessageScopeUid(message);
         if (privateUid) pageUpdates[`${ROOT}/chat/${roomId}/private/${privateUid}/${id}`] = null;
-        if (message.kind === 'roomself' && message.roomselfImageId) pageUpdates[`${ROOT}/privateImages/${message.roomselfImageId}/archived`] = true;
+        if (message.kind === 'roomself' && message.roomselfImageId) {
+          pageUpdates[`${ROOT}/privateImages/${message.roomselfImageId}/archived`] = true;
+          pageUpdates[`${archivedRoomselfImagesPath(roomId, archiveGeneration)}/${message.roomselfImageId}`] = true;
+        }
       }
       await db().ref().update(pageUpdates);
       cursor = last;

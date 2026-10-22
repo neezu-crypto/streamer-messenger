@@ -1248,7 +1248,7 @@ function renderRoomState(room) {
   $('#send-message').disabled = room.locked && !state.isOwner;
   $('#open-image-picker').disabled = room.locked && !state.isOwner;
   $('#open-emote-picker').disabled = room.locked && !state.isOwner;
-  $('#composer-hint').textContent = room.locked && !state.isOwner ? '채팅방이 잠겨 있어 메시지를 보낼 수 없어요.' : '메시지는 최대 7일 보관돼요.';
+  $('#composer-hint').textContent = room.locked && !state.isOwner ? '채팅방이 잠겨 있어 메시지를 보낼 수 없어요.' : '오래된 대화도 같은 채팅방에서 이어 볼 수 있어요.';
   $('#streamer-compose-options').hidden = !state.isOwner;
 }
 
@@ -1853,6 +1853,7 @@ function subscribeTimeline() {
   if (state.isOwner) {
     const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE));
     state.unsubscribers.push(onValue(q, (snap) => {
+      if (state.archivedMessageMore.owner === false) state.archivedMessageMore.owner = null;
       state.liveMessages = Object.values(snap.val() || {});
       state.hasOlderMessages = (!state.olderMessagesExhausted && (state.liveMessages.length >= MESSAGE_PAGE_SIZE || state.olderMessages.length > 0)) || state.archivedMessageMore.owner !== false;
       state.timelineLoaded.owner = true;
@@ -1867,12 +1868,14 @@ function subscribeTimeline() {
   const own = ref(db, `streamerMessenger/chat/${roomId}/private/${state.session.uid}`);
   const broadcast = ref(db, `streamerMessenger/chat/${roomId}/broadcast`);
   state.unsubscribers.push(onValue(query(own, orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+    if (state.archivedMessageMore.private === false) state.archivedMessageMore.private = null;
     state.privateMessages = Object.values(snap.val() || {});
     state.hasOlderPrivateMessages = (!state.olderPrivateMessagesExhausted && (state.privateMessages.length >= MESSAGE_PAGE_SIZE || state.olderPrivateMessages.length > 0)) || state.archivedMessageMore.private !== false;
     state.timelineLoaded.private = true;
     mergeFanMessages();
   }, showError));
   state.unsubscribers.push(onValue(query(broadcast, orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+    if (state.archivedMessageMore.broadcast === false) state.archivedMessageMore.broadcast = null;
     state.broadcastMessages = Object.values(snap.val() || {});
     state.hasOlderBroadcastMessages = (!state.olderBroadcastMessagesExhausted && (state.broadcastMessages.length >= MESSAGE_PAGE_SIZE || state.olderBroadcastMessages.length > 0)) || state.archivedMessageMore.broadcast !== false;
     state.timelineLoaded.broadcast = true;
@@ -4669,7 +4672,7 @@ async function copyRoomPassword() {
 }
 
 async function discardRoom() {
-  const ok = await api().confirmDialog('채팅방, 참여자, 대기 신청, 서버 대화가 즉시 삭제됩니다. 신고 보존 중인 자료는 보관 기간까지 유지됩니다. 방을 폐기할까요?');
+  const ok = await api().confirmDialog('채팅방, 참여자, 대기 신청과 대화 보관 파일을 폐기합니다. 신고 보존 중인 자료는 보관 기간까지 유지됩니다. 방을 폐기할까요?');
   if (!ok) return;
   try {
     await call('messengerDiscardRoom', { roomId: state.room.roomId });
