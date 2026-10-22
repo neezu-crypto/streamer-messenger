@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const dns = require('node:dns').promises;
 const https = require('node:https');
 const net = require('node:net');
+const { gzipSync, gunzipSync } = require('node:zlib');
 const { promisify } = require('util');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
@@ -28,6 +29,8 @@ const SPAM_VIOLATION_WINDOW = 10 * 60 * 1000;
 const SPAM_VIOLATIONS_BEFORE_COOLDOWN = 3;
 const SPAM_COOLDOWNS = [60 * 1000, 10 * 60 * 1000, 60 * 60 * 1000];
 const CHAT_RETENTION = 7 * 24 * 60 * 60 * 1000;
+const ARCHIVED_MESSAGE_PAGE_SIZE = 20;
+const ARCHIVE_WRITE_PAGE_SIZE = 150;
 const REPORT_RETENTION = 14 * 24 * 60 * 60 * 1000;
 const ROOMSELF_MAX_BYTES = 15 * 1024 * 1024;
 const ROOMSELF_UPLOAD_WINDOW = 10 * 1000;
@@ -213,12 +216,143 @@ const testAccountRef = (uid) => testAccountsRef().child(uid);
 const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
 const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
 const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
+const archiveDateShard = (time) => new Date(Number(time) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10).replaceAll('-', '');
+const archiveRoomToken = (roomId) => crypto.createHash('sha256').update(String(roomId)).digest('hex').slice(0, 24);
+const archivePrivateScope = (uid) => `private_${crypto.createHash('sha256').update(String(uid)).digest('hex').slice(0, 24)}`;
+const archiveMessageScopeUid = (message) => message && message.senderRole === 'fan' ? String(message.senderUid || '') : String(message && message.recipientUid || '');
+const compareMessagePosition = (a, b) => Number(a && a.createdAt || 0) - Number(b && b.createdAt || 0) || (String(a && a.id || '') < String(b && b.id || '') ? -1 : String(a && a.id || '') > String(b && b.id || '') ? 1 : 0);
+const compareArchiveTuple = (createdAtA, idA, createdAtB, idB) => Number(createdAtA || 0) - Number(createdAtB || 0) || (String(idA || '') < String(idB || '') ? -1 : String(idA || '') > String(idB || '') ? 1 : 0);
 function roomselfBytesMatchType(bytes, contentType) {
   if (contentType === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (contentType === 'image/png') return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
   if (contentType === 'image/webp') return bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
   if (contentType === 'image/gif') return ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6));
   return false;
+}
+
+function messageArchiveIndexPath(roomId, scopeKey) {
+  return `${ROOT}/messageArchiveIndex/${roomId}/${scopeKey}`;
+}
+
+function previousArchiveDateShard(day) {
+  const value = String(day || '');
+  if (!/^\d{8}$/.test(value)) return '';
+  const date = new Date(Date.UTC(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, Number(value.slice(6, 8)) - 1));
+  return date.toISOString().slice(0, 10).replaceAll('-', '');
+}
+
+async function archiveExpiredMessagePage(roomId, entries, s3) {
+  const byDay = new Map();
+  for (const entry of entries) {
+    const message = { ...(entry.message || {}), id: String(entry.id || entry.message && entry.message.id || '') };
+    const day = archiveDateShard(message.createdAt);
+    if (!day || !message.id) throw new Error(`대화 보관 데이터의 날짜 또는 ID가 올바르지 않습니다: ${roomId}`);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(message);
+  }
+
+  const indexUpdates = {};
+  for (const [day, messages] of byDay) {
+    messages.sort(compareMessagePosition);
+    const chunkId = crypto.createHash('sha256').update(`${roomId}\0${messages.map((message) => message.id).join('\0')}`).digest('hex').slice(0, 40);
+    const key = `message-archives/${archiveRoomToken(roomId)}/${day}/${chunkId}.json.gz`;
+    const payload = Buffer.from(JSON.stringify({ version: 1, roomId, messages }));
+    await s3.send(new PutObjectCommand({
+      Bucket: ROOMSELF_BUCKET,
+      Key: key,
+      Body: gzipSync(payload),
+      ContentType: 'application/json',
+      ContentEncoding: 'gzip',
+    }));
+
+    const addScopeIndex = (scopeKey, scopeMessages) => {
+      if (!scopeMessages.length) return;
+      const ordered = scopeMessages.slice().sort(compareMessagePosition);
+      indexUpdates[`${messageArchiveIndexPath(roomId, scopeKey)}/${day}/${chunkId}`] = {
+        key,
+        count: ordered.length,
+        minCreatedAt: Number(ordered[0].createdAt) || 0,
+        minId: ordered[0].id,
+        maxCreatedAt: Number(ordered[ordered.length - 1].createdAt) || 0,
+        maxId: ordered[ordered.length - 1].id,
+      };
+    };
+
+    addScopeIndex('owner', messages);
+    addScopeIndex('broadcast', messages.filter((message) => message.scope === 'broadcast'));
+    const privateByUid = new Map();
+    for (const message of messages) {
+      const uid = archiveMessageScopeUid(message);
+      if (uid) {
+        if (!privateByUid.has(uid)) privateByUid.set(uid, []);
+        privateByUid.get(uid).push(message);
+      }
+    }
+    for (const [uid, privateMessages] of privateByUid) addScopeIndex(archivePrivateScope(uid), privateMessages);
+  }
+  return { indexUpdates };
+}
+
+async function readMessageArchiveObject(s3, key, roomId) {
+  const object = await s3.send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: key }));
+  const compressed = Buffer.from(await object.Body.transformToByteArray());
+  if (compressed.byteLength > 5 * 1024 * 1024) throw new Error('대화 보관 파일 크기 제한을 초과했습니다.');
+  const payload = JSON.parse(gunzipSync(compressed).toString('utf8'));
+  if (!payload || payload.version !== 1 || payload.roomId !== roomId || !Array.isArray(payload.messages)) throw new Error('대화 보관 파일 형식이 올바르지 않습니다.');
+  return payload.messages;
+}
+
+async function loadArchivedMessagePage(roomId, scopeKey, uid, rawCursor, s3, objectCache, pageSize = ARCHIVED_MESSAGE_PAGE_SIZE) {
+  const limit = Math.max(1, Math.min(ARCHIVED_MESSAGE_PAGE_SIZE, Number(pageSize) || ARCHIVED_MESSAGE_PAGE_SIZE));
+  let cursor = null;
+  if (rawCursor !== null && rawCursor !== undefined) {
+    const id = String(rawCursor.id || '');
+    const createdAt = Number(rawCursor.createdAt);
+    if (!/^[A-Za-z0-9_-]{20}$/.test(id) || !Number.isFinite(createdAt) || createdAt < 0) {
+      throw new HttpsError('invalid-argument', '이전 대화 위치가 올바르지 않습니다.');
+    }
+    cursor = { id, createdAt };
+  } else {
+    cursor = { id: '\uffff', createdAt: now() + 1 };
+  }
+
+  let upperDay = archiveDateShard(cursor.createdAt);
+  const selectedById = new Map();
+  const indexRef = db().ref(messageArchiveIndexPath(roomId, scopeKey));
+  while (upperDay) {
+    const daySnap = await indexRef.orderByKey().endAt(upperDay).limitToLast(1).get();
+    if (!daySnap.exists()) break;
+    let day = '';
+    let chunks = {};
+    daySnap.forEach((child) => { day = child.key; chunks = child.val() || {}; });
+    const candidates = Object.values(chunks).filter((chunk) => chunk && typeof chunk.key === 'string'
+      && compareArchiveTuple(chunk.minCreatedAt, chunk.minId, cursor.createdAt, cursor.id) < 0)
+      .sort((a, b) => compareArchiveTuple(b.maxCreatedAt, b.maxId, a.maxCreatedAt, a.maxId));
+
+    for (const chunk of candidates) {
+      const currentPage = [...selectedById.values()].sort((a, b) => compareMessagePosition(b, a));
+      if (currentPage.length > limit
+        && compareArchiveTuple(chunk.maxCreatedAt, chunk.maxId, currentPage[limit].createdAt, currentPage[limit].id) <= 0) break;
+      let messages = objectCache.get(chunk.key);
+      if (!messages) {
+        messages = readMessageArchiveObject(s3, chunk.key, roomId);
+        objectCache.set(chunk.key, messages);
+      }
+      for (const message of await messages) {
+        if (!message || compareMessagePosition(message, cursor) >= 0) continue;
+        if (scopeKey === 'broadcast' && message.scope !== 'broadcast') continue;
+        if (scopeKey.startsWith('private_') && archiveMessageScopeUid(message) !== uid) continue;
+        selectedById.set(String(message.id || ''), message);
+      }
+    }
+
+    const page = [...selectedById.values()].sort(compareMessagePosition);
+    if (page.length > limit) {
+      return { messages: page.slice(-limit), hasMore: true };
+    }
+    upperDay = previousArchiveDateShard(day);
+  }
+  return { messages: [...selectedById.values()].sort(compareMessagePosition), hasMore: false };
 }
 
 async function profileFor(uid) {
@@ -1848,13 +1982,35 @@ const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomse
   if (!snap.exists() || record.roomId !== room || !allowed || record.status !== 'sent') throw new HttpsError('permission-denied', '이 비공개 이미지를 볼 권한이 없습니다.');
   const recipientMember = (await roomRef(room).child(`members/${record.recipientUid}`).get()).val() || {};
   if (recipientMember.status !== 'active') throw new HttpsError('permission-denied', '대화가 중단된 팬의 이미지는 볼 수 없습니다.');
-  if (now() - Number(record.createdAt || 0) > CHAT_RETENTION) throw new HttpsError('not-found', '이미지 보관 기간이 끝났습니다.');
   const msg = (await db().ref(`${ROOT}/chat/${room}/streamerTimeline/${record.messageId}`).get()).val() || {};
-  if (msg.kind !== 'roomself' || msg.roomselfImageId !== id || msg.recipientUid !== record.recipientUid || msg.senderUid !== record.ownerUid) throw new HttpsError('not-found', '이미지를 찾을 수 없습니다.');
+  const messageMatches = msg.kind === 'roomself' && msg.roomselfImageId === id && msg.recipientUid === record.recipientUid && msg.senderUid === record.ownerUid;
+  if (!messageMatches && record.archived !== true) throw new HttpsError('not-found', '이미지를 찾을 수 없습니다.');
   const object = await roomselfS3().send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: record.key }));
   const bytes = await object.Body.transformToByteArray();
   if (bytes.byteLength > ROOMSELF_MAX_BYTES) throw new HttpsError('resource-exhausted', '이미지 용량 제한을 초과했습니다.');
   return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64'), streamerName: meta.streamerNickname || '' };
+});
+
+const messengerLoadArchivedMessages = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20, timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
+  const data = request.data || {};
+  const roomId = String(data.roomId || '');
+  const principal = await requireRoomPrincipal(request, roomId);
+  const { isOwner } = await requireRoomMember(principal, roomId);
+  const cursors = data.cursors && typeof data.cursors === 'object' ? data.cursors : {};
+  const limits = data.limits && typeof data.limits === 'object' ? data.limits : {};
+  const streams = isOwner
+    ? [{ key: 'owner', scopeKey: 'owner', uid: '' }]
+    : [
+      { key: 'private', scopeKey: archivePrivateScope(principal.uid), uid: principal.uid },
+      { key: 'broadcast', scopeKey: 'broadcast', uid: '' },
+    ];
+  const s3 = roomselfS3();
+  const objectCache = new Map();
+  const pages = {};
+  await Promise.all(streams.filter((stream) => Object.prototype.hasOwnProperty.call(cursors, stream.key)).map(async (stream) => {
+    pages[stream.key] = await loadArchivedMessagePage(roomId, stream.scopeKey, stream.uid, cursors[stream.key], s3, objectCache, limits[stream.key]);
+  }));
+  return { pages };
 });
 
 const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => {
@@ -2354,8 +2510,8 @@ const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'A
   if (Object.keys(updates).length) await db().ref().update(updates);
 });
 
-const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1', secrets: [roomselfAccessKeyId, roomselfSecretAccessKey] }, async () => {
-  const t = now(); const cutoff = t - CHAT_RETENTION;
+const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1', secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async () => {
+  const t = now(); const cutoff = t - CHAT_RETENTION; const s3 = roomselfS3();
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
   const publicRooms = publicRoomsSnap.val() || {}; const updates = {};
   for (const roomId of new Set([...Object.keys(publicRooms), TEST_ROOM_ID])) {
@@ -2365,22 +2521,33 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
     const timelineRef = db().ref(`${ROOT}/chat/${roomId}/streamerTimeline`);
     let cursor = null;
     while (true) {
+      if (Object.keys(updates).length) {
+        await db().ref().update(updates);
+        for (const key of Object.keys(updates)) delete updates[key];
+      }
       let query = timelineRef.orderByChild('createdAt').endAt(cutoff);
       if (cursor) query = query.startAfter(cursor.createdAt, cursor.key);
-      const page = await query.limitToFirst(400).get();
+      const page = await query.limitToFirst(ARCHIVE_WRITE_PAGE_SIZE).get();
       if (!page.exists()) break;
+      const entries = [];
       let last = null;
       page.forEach((child) => {
         const msg = child.val() || {}; const id = child.key;
         last = { createdAt: Number(msg.createdAt) || 0, key: id };
-        updates[`${ROOT}/chat/${roomId}/streamerTimeline/${id}`] = null;
-        updates[`${ROOT}/chat/${roomId}/broadcast/${id}`] = null;
-        const privateUid = msg.senderRole === 'fan' ? msg.senderUid : msg.recipientUid;
-        if (privateUid) updates[`${ROOT}/chat/${roomId}/private/${privateUid}/${id}`] = null;
+        entries.push({ id, message: msg });
       });
+      const archived = await archiveExpiredMessagePage(roomId, entries, s3);
+      const pageUpdates = { ...archived.indexUpdates };
+      for (const { id, message } of entries) {
+        pageUpdates[`${ROOT}/chat/${roomId}/streamerTimeline/${id}`] = null;
+        pageUpdates[`${ROOT}/chat/${roomId}/broadcast/${id}`] = null;
+        const privateUid = archiveMessageScopeUid(message);
+        if (privateUid) pageUpdates[`${ROOT}/chat/${roomId}/private/${privateUid}/${id}`] = null;
+        if (message.kind === 'roomself' && message.roomselfImageId) pageUpdates[`${ROOT}/privateImages/${message.roomselfImageId}/archived`] = true;
+      }
+      await db().ref().update(pageUpdates);
       cursor = last;
-      if (Object.keys(updates).length >= 900) { await db().ref().update(updates); for (const key of Object.keys(updates)) delete updates[key]; }
-      if (page.numChildren() < 400 || !cursor) break;
+      if (page.numChildren() < ARCHIVE_WRITE_PAGE_SIZE || !cursor) break;
     }
   }
   const reportsSnap = await db().ref(`${ROOT}/reports`).get();
@@ -2393,7 +2560,6 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
   if (Object.keys(updates).length) await db().ref().update(updates);
   const today = roomselfDateShard(t);
   const daysSnap = await db().ref(`${ROOT}/privateImageDays`).orderByKey().endAt(today).limitToLast(23).get();
-  const s3 = roomselfS3();
   for (const day of Object.keys(daysSnap.val() || {})) {
     const daySnap = await db().ref(`${ROOT}/privateImageDays/${day}`).get();
     const ids = Object.keys(daySnap.val() || {});
@@ -2401,7 +2567,7 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
       const batch = ids.slice(i, i + 100);
       for (const id of batch) {
         const ref = db().ref(`${ROOT}/privateImages/${id}`); const image = (await ref.get()).val();
-        if (!image || Number(image.expiresAt) >= t) continue;
+        if (!image || image.archived === true || Number(image.expiresAt) >= t) continue;
         const refs = (await db().ref(`${ROOT}/privateImageRefs/${id}`).get()).val() || {};
         const retained = Object.values(refs).some((until) => Number(until) >= t);
         if (retained) continue;
@@ -2417,7 +2583,7 @@ module.exports = {
   messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
   messengerListApplications, messengerListFans, messengerReviewApplication, messengerSetMemberStatus,
   messengerRoomMarketUpdate, messengerSetPinnedMessage, messengerMiniGameUpdate, messengerWatchPartyUpdate,
-  messengerSendMessage, messengerGetLinkPreview, messengerGetStreamerLiveStatus, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
+  messengerSendMessage, messengerLoadArchivedMessages, messengerGetLinkPreview, messengerGetStreamerLiveStatus, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,

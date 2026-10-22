@@ -33,8 +33,9 @@ function loadRoomToolsPipPreferences() {
   } catch (_) { return null; }
 }
 let roomToolsPipPreferences = loadRoomToolsPipPreferences();
-const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
+const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, archivedMessageMore: { owner: null, private: null, broadcast: null }, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
+let archivedInitialLoadRoomId = '';
 state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
@@ -1222,6 +1223,8 @@ async function openChat(room, isOwner) {
   state.messages = []; state.olderMessages = []; state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
   state.liveMessages = []; state.hasOlderMessages = false; state.hasOlderPrivateMessages = false; state.hasOlderBroadcastMessages = false;
   state.olderMessagesExhausted = false; state.olderPrivateMessagesExhausted = false; state.olderBroadcastMessagesExhausted = false;
+  state.archivedMessageMore = { owner: null, private: null, broadcast: null };
+  archivedInitialLoadRoomId = '';
   state.loadingOlderMessages = false; state.optimisticMessages = [];
   state.notificationsPrimed = false; state.timelineLoaded = { owner: false, private: false, broadcast: false };
   state.newMessagePreview = null;
@@ -1821,7 +1824,7 @@ function subscribeMiniGame() {
 
 function subscribeTimeline() {
   clearSubscriptions();
-  const { db, ref, onValue, query, orderByKey, limitToLast } = api();
+  const { db, ref, onValue, query, orderByChild, limitToLast } = api();
   const roomId = state.room.roomId;
   subscribePinnedMessage();
   subscribeMiniGame();
@@ -1848,29 +1851,30 @@ function subscribeTimeline() {
     }));
   }
   if (state.isOwner) {
-    const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByKey(), limitToLast(MESSAGE_PAGE_SIZE));
+    const q = query(ref(db, `streamerMessenger/chat/${roomId}/streamerTimeline`), orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE));
     state.unsubscribers.push(onValue(q, (snap) => {
       state.liveMessages = Object.values(snap.val() || {});
-      state.hasOlderMessages = !state.olderMessagesExhausted && (state.liveMessages.length >= MESSAGE_PAGE_SIZE || state.olderMessages.length > 0);
+      state.hasOlderMessages = (!state.olderMessagesExhausted && (state.liveMessages.length >= MESSAGE_PAGE_SIZE || state.olderMessages.length > 0)) || state.archivedMessageMore.owner !== false;
       state.timelineLoaded.owner = true;
       discardAcknowledgedOptimisticMessages(state.liveMessages);
       state.messages = combineMessages(state.olderMessages, state.liveMessages, state.optimisticMessages);
       trackNotifications(state.liveMessages);
       renderTimeline();
+      void maybeLoadInitialArchivedMessages();
     }, showError));
     return;
   }
   const own = ref(db, `streamerMessenger/chat/${roomId}/private/${state.session.uid}`);
   const broadcast = ref(db, `streamerMessenger/chat/${roomId}/broadcast`);
-  state.unsubscribers.push(onValue(query(own, orderByKey(), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+  state.unsubscribers.push(onValue(query(own, orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
     state.privateMessages = Object.values(snap.val() || {});
-    state.hasOlderPrivateMessages = !state.olderPrivateMessagesExhausted && (state.privateMessages.length >= MESSAGE_PAGE_SIZE || state.olderPrivateMessages.length > 0);
+    state.hasOlderPrivateMessages = (!state.olderPrivateMessagesExhausted && (state.privateMessages.length >= MESSAGE_PAGE_SIZE || state.olderPrivateMessages.length > 0)) || state.archivedMessageMore.private !== false;
     state.timelineLoaded.private = true;
     mergeFanMessages();
   }, showError));
-  state.unsubscribers.push(onValue(query(broadcast, orderByKey(), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
+  state.unsubscribers.push(onValue(query(broadcast, orderByChild('createdAt'), limitToLast(MESSAGE_PAGE_SIZE)), (snap) => {
     state.broadcastMessages = Object.values(snap.val() || {});
-    state.hasOlderBroadcastMessages = !state.olderBroadcastMessagesExhausted && (state.broadcastMessages.length >= MESSAGE_PAGE_SIZE || state.olderBroadcastMessages.length > 0);
+    state.hasOlderBroadcastMessages = (!state.olderBroadcastMessagesExhausted && (state.broadcastMessages.length >= MESSAGE_PAGE_SIZE || state.olderBroadcastMessages.length > 0)) || state.archivedMessageMore.broadcast !== false;
     state.timelineLoaded.broadcast = true;
     mergeFanMessages();
   }, showError));
@@ -1883,6 +1887,66 @@ function mergeFanMessages() {
   state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, live, state.optimisticMessages);
   trackNotifications(live);
   renderTimeline();
+  void maybeLoadInitialArchivedMessages();
+}
+
+async function maybeLoadInitialArchivedMessages() {
+  if (!state.room || state.loadingOlderMessages || archivedInitialLoadRoomId === state.room.roomId) return;
+  const roomId = state.room.roomId;
+  const owner = state.isOwner;
+  if (owner ? !state.timelineLoaded.owner : !(state.timelineLoaded.private && state.timelineLoaded.broadcast)) return;
+  const cursors = {};
+  const limits = {};
+  if (owner) {
+    if (state.liveMessages.length < MESSAGE_PAGE_SIZE) {
+      const cursor = combineMessages(state.liveMessages)[0] || null;
+      cursors.owner = cursor ? { id: cursor.id, createdAt: cursor.createdAt } : null;
+      limits.owner = Math.max(1, MESSAGE_PAGE_SIZE - state.liveMessages.length);
+    }
+  } else {
+    for (const [key, live] of [['private', state.privateMessages || []], ['broadcast', state.broadcastMessages || []]]) {
+      if (live.length >= MESSAGE_PAGE_SIZE) continue;
+      const cursor = combineMessages(live)[0] || null;
+      cursors[key] = cursor ? { id: cursor.id, createdAt: cursor.createdAt } : null;
+      limits[key] = Math.max(1, MESSAGE_PAGE_SIZE - live.length);
+    }
+  }
+  archivedInitialLoadRoomId = roomId;
+  if (!Object.keys(cursors).length) return;
+  state.loadingOlderMessages = true;
+  renderTimeline({ preservePosition: true });
+  try {
+    const result = await call('messengerLoadArchivedMessages', { roomId, cursors, limits });
+    if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner) return;
+    if (owner) {
+      const archivePage = result.pages && result.pages.owner || { messages: [], hasMore: false };
+      state.olderMessages = combineMessages(state.olderMessages, archivePage.messages || []);
+      state.archivedMessageMore.owner = archivePage.hasMore === true;
+      state.hasOlderMessages = state.archivedMessageMore.owner;
+      state.messages = combineMessages(state.olderMessages, state.liveMessages, state.optimisticMessages);
+    } else {
+      for (const key of Object.keys(cursors)) {
+        const archivePage = result.pages && result.pages[key] || { messages: [], hasMore: false };
+        if (key === 'private') state.olderPrivateMessages = combineMessages(state.olderPrivateMessages, archivePage.messages || []);
+        else state.olderBroadcastMessages = combineMessages(state.olderBroadcastMessages, archivePage.messages || []);
+        state.archivedMessageMore[key] = archivePage.hasMore === true;
+        if (key === 'private') state.hasOlderPrivateMessages = state.archivedMessageMore.private;
+        else state.hasOlderBroadcastMessages = state.archivedMessageMore.broadcast;
+      }
+      state.hasOlderMessages = state.hasOlderPrivateMessages || state.hasOlderBroadcastMessages;
+      state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, state.privateMessages, state.broadcastMessages, state.optimisticMessages);
+    }
+  } catch (error) {
+    if (state.room && state.room.roomId === roomId) {
+      console.warn('초기 보관 대화를 불러오지 못했습니다.', error);
+      showToast('이전 대화를 불러오지 못했어요. 위로 올려 다시 시도해 주세요.');
+    }
+  } finally {
+    if (state.room && state.room.roomId === roomId && state.isOwner === owner) {
+      state.loadingOlderMessages = false;
+      renderTimeline({ preservePosition: true });
+    }
+  }
 }
 
 function miniGameLines(selector) {
@@ -3078,7 +3142,7 @@ async function executeRoomMarketTrade(type) {
 function combineMessages(...groups) {
   const byId = new Map();
   for (const group of groups) for (const message of group || []) if (message && message.id) byId.set(message.id, message);
-  return [...byId.values()].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0) || String(a.id).localeCompare(String(b.id)));
+  return [...byId.values()].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0) || (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
 }
 
 function discardAcknowledgedOptimisticMessages(liveMessages) {
@@ -3091,47 +3155,86 @@ async function loadOlderMessages() {
   const roomId = state.room.roomId;
   const owner = state.isOwner;
   const uid = state.session.uid;
-  const { db, ref, get, query, orderByKey, endBefore, limitToLast } = api();
+  if (owner ? !state.timelineLoaded.owner : !(state.timelineLoaded.private && state.timelineLoaded.broadcast)) return;
+  const { db, ref, get, query, orderByChild, endBefore, limitToLast } = api();
   const pageLimit = MESSAGE_PAGE_SIZE + 1;
   state.loadingOlderMessages = true;
   renderTimeline({ preservePosition: true });
   try {
     if (owner) {
-      const loaded = state.olderMessages;
-      const cursor = loaded.length ? loaded[0].id : (state.liveMessages[0] && state.liveMessages[0].id);
-      if (!cursor) { state.hasOlderMessages = false; state.olderMessagesExhausted = true; return; }
-      const path = `streamerMessenger/chat/${roomId}/streamerTimeline`;
-      const snapshot = await get(query(ref(db, path), orderByKey(), endBefore(cursor), limitToLast(pageLimit)));
-      if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner) return;
-      const page = Object.values(snapshot.val() || {});
-      state.hasOlderMessages = page.length > MESSAGE_PAGE_SIZE;
-      state.olderMessagesExhausted = !state.hasOlderMessages;
-      state.olderMessages = combineMessages(state.olderMessages, page.slice(-MESSAGE_PAGE_SIZE));
+      let rtdbHasMore = false;
+      let rtdbPageCount = 0;
+      if (!state.olderMessagesExhausted) {
+        const cursor = combineMessages(state.olderMessages, state.liveMessages)[0] || null;
+        if (cursor) {
+          const path = `streamerMessenger/chat/${roomId}/streamerTimeline`;
+          const snapshot = await get(query(ref(db, path), orderByChild('createdAt'), endBefore(cursor.createdAt, cursor.id), limitToLast(pageLimit)));
+          if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner) return;
+          const page = combineMessages(Object.values(snapshot.val() || {}));
+          rtdbHasMore = page.length > MESSAGE_PAGE_SIZE;
+          const rtdbPage = page.slice(-MESSAGE_PAGE_SIZE);
+          rtdbPageCount = rtdbPage.length;
+          state.olderMessages = combineMessages(state.olderMessages, rtdbPage);
+        }
+        state.olderMessagesExhausted = !rtdbHasMore;
+      }
+      const archiveLimit = MESSAGE_PAGE_SIZE - rtdbPageCount;
+      if (!rtdbHasMore && archiveLimit > 0 && state.archivedMessageMore.owner !== false) {
+        const cursor = combineMessages(state.olderMessages, state.liveMessages)[0] || null;
+        const result = await call('messengerLoadArchivedMessages', {
+          roomId,
+          cursors: { owner: cursor ? { id: cursor.id, createdAt: cursor.createdAt } : null },
+          limits: { owner: archiveLimit },
+        });
+        if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner) return;
+        const archivePage = result.pages && result.pages.owner || { messages: [], hasMore: false };
+        state.olderMessages = combineMessages(state.olderMessages, archivePage.messages || []);
+        state.archivedMessageMore.owner = archivePage.hasMore === true;
+      }
+      state.hasOlderMessages = rtdbHasMore || state.archivedMessageMore.owner !== false;
       state.messages = combineMessages(state.olderMessages, state.liveMessages, state.optimisticMessages);
     } else {
       const streams = [
-        { path: `streamerMessenger/chat/${roomId}/private/${uid}`, older: state.olderPrivateMessages, live: state.privateMessages || [], key: 'private' },
-        { path: `streamerMessenger/chat/${roomId}/broadcast`, older: state.olderBroadcastMessages, live: state.broadcastMessages || [], key: 'broadcast' },
+        { path: `streamerMessenger/chat/${roomId}/private/${uid}`, olderKey: 'olderPrivateMessages', live: state.privateMessages || [], exhaustedKey: 'olderPrivateMessagesExhausted', key: 'private' },
+        { path: `streamerMessenger/chat/${roomId}/broadcast`, olderKey: 'olderBroadcastMessages', live: state.broadcastMessages || [], exhaustedKey: 'olderBroadcastMessagesExhausted', key: 'broadcast' },
       ];
       const pages = await Promise.all(streams.map(async (stream) => {
-        const cursor = stream.older.length ? stream.older[0].id : (stream.live[0] && stream.live[0].id);
-        if (!cursor) return { key: stream.key, page: [], hasMore: false };
-        const snapshot = await get(query(ref(db, stream.path), orderByKey(), endBefore(cursor), limitToLast(pageLimit)));
-        const values = Object.values(snapshot.val() || {});
-        return { key: stream.key, page: values.slice(-MESSAGE_PAGE_SIZE), hasMore: values.length > MESSAGE_PAGE_SIZE };
+        const older = state[stream.olderKey] || [];
+        if (state[stream.exhaustedKey]) return { key: stream.key, page: [], rtdbHasMore: false };
+        const cursor = combineMessages(older, stream.live)[0] || null;
+        if (!cursor) return { key: stream.key, page: [], rtdbHasMore: false };
+        const snapshot = await get(query(ref(db, stream.path), orderByChild('createdAt'), endBefore(cursor.createdAt, cursor.id), limitToLast(pageLimit)));
+        const values = combineMessages(Object.values(snapshot.val() || {}));
+        return { key: stream.key, page: values.slice(-MESSAGE_PAGE_SIZE), rtdbHasMore: values.length > MESSAGE_PAGE_SIZE };
       }));
       if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner || state.session.uid !== uid) return;
+      const archiveCursors = {};
+      const archiveLimits = {};
+      const rtdbHasMoreByStream = {};
       for (const result of pages) {
-        if (result.key === 'private') {
-          state.olderPrivateMessages = combineMessages(state.olderPrivateMessages, result.page);
-          state.hasOlderPrivateMessages = result.hasMore;
-          state.olderPrivateMessagesExhausted = !result.hasMore;
-        } else {
-          state.olderBroadcastMessages = combineMessages(state.olderBroadcastMessages, result.page);
-          state.hasOlderBroadcastMessages = result.hasMore;
-          state.olderBroadcastMessagesExhausted = !result.hasMore;
+        const stream = streams.find((item) => item.key === result.key);
+        state[stream.olderKey] = combineMessages(state[stream.olderKey], result.page);
+        state[stream.exhaustedKey] = !result.rtdbHasMore;
+        rtdbHasMoreByStream[result.key] = result.rtdbHasMore;
+        const archiveLimit = MESSAGE_PAGE_SIZE - result.page.length;
+        if (!result.rtdbHasMore && archiveLimit > 0 && state.archivedMessageMore[result.key] !== false) {
+          const cursor = combineMessages(state[stream.olderKey], stream.live)[0] || null;
+          archiveCursors[result.key] = cursor ? { id: cursor.id, createdAt: cursor.createdAt } : null;
+          archiveLimits[result.key] = archiveLimit;
         }
       }
+      if (Object.keys(archiveCursors).length) {
+        const result = await call('messengerLoadArchivedMessages', { roomId, cursors: archiveCursors, limits: archiveLimits });
+        if (!state.room || state.room.roomId !== roomId || state.isOwner !== owner || state.session.uid !== uid) return;
+        for (const key of Object.keys(archiveCursors)) {
+          const stream = streams.find((item) => item.key === key);
+          const archivePage = result.pages && result.pages[key] || { messages: [], hasMore: false };
+          state[stream.olderKey] = combineMessages(state[stream.olderKey], archivePage.messages || []);
+          state.archivedMessageMore[key] = archivePage.hasMore === true;
+        }
+      }
+      state.hasOlderPrivateMessages = rtdbHasMoreByStream.private === true || state.archivedMessageMore.private !== false;
+      state.hasOlderBroadcastMessages = rtdbHasMoreByStream.broadcast === true || state.archivedMessageMore.broadcast !== false;
       state.hasOlderMessages = state.hasOlderPrivateMessages || state.hasOlderBroadcastMessages;
       state.messages = combineMessages(state.olderPrivateMessages, state.olderBroadcastMessages, state.privateMessages, state.broadcastMessages, state.optimisticMessages);
     }
@@ -4602,6 +4705,8 @@ function leaveChat() {
   state.messages = []; state.liveMessages = []; state.olderMessages = [];
   state.privateMessages = []; state.broadcastMessages = [];
   state.olderPrivateMessages = []; state.olderBroadcastMessages = [];
+  state.archivedMessageMore = { owner: null, private: null, broadcast: null };
+  archivedInitialLoadRoomId = '';
   clearNewMessagePreview();
   state.optimisticMessages = []; state.galleryImages.clear(); state.imageUrls.clear();
   $('#page-shell').classList.remove('chat-open');

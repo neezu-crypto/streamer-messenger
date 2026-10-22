@@ -26,6 +26,7 @@ module.exports = {
   messengerMiniGameUpdate: messenger.messengerMiniGameUpdate,
   messengerWatchPartyUpdate: messenger.messengerWatchPartyUpdate,
   messengerSendMessage: messenger.messengerSendMessage,
+  messengerLoadArchivedMessages: messenger.messengerLoadArchivedMessages,
   messengerGetLinkPreview: messenger.messengerGetLinkPreview,
   messengerGetStreamerLiveStatus: messenger.messengerGetStreamerLiveStatus,
   messengerSearchStreamerClips: messenger.messengerSearchStreamerClips,
