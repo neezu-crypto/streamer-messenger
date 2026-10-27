@@ -50,7 +50,7 @@ const SOOP_CLIP_CACHE_LIMIT = 80;
 const soopClipSearchCache = new Map();
 const SOOP_LIVE_STATUS_CACHE_TTL = 15 * 1000;
 const soopLiveStatusCache = new Map();
-const BROADCAST_HISTORY_POLL_MS = 2 * 60 * 1000;
+const BROADCAST_HISTORY_LIVE_POLL_MS = 5 * 60 * 1000;
 const BROADCAST_HISTORY_IDLE_POLL_MS = 10 * 60 * 1000;
 const BROADCAST_HISTORY_ERROR_POLL_MS = 5 * 60 * 1000;
 const BROADCAST_HISTORY_VOD_RETRY_AFTER_MS = [
@@ -2444,7 +2444,7 @@ const messengerSyncStreamerBroadcastHistory = onSchedule({
             await endTrackedBroadcast(roomId, state, checkedAt, updates);
           }
           if (!state.activeBroadcastId) await startTrackedBroadcast(roomId, room, soopId, status, state, checkedAt, updates);
-          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_POLL_MS;
+          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_LIVE_POLL_MS;
         } else {
           if (state.activeBroadcastId) await endTrackedBroadcast(roomId, state, checkedAt, updates);
           state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
