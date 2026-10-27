@@ -6,8 +6,10 @@ const { gzipSync, gunzipSync } = require('node:zlib');
 const { promisify } = require('util');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
+const { getFunctions } = require('firebase-admin/functions');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
+const { onTaskDispatched } = require('firebase-functions/v2/tasks');
 const logger = require('firebase-functions/logger');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
@@ -63,6 +65,8 @@ const BROADCAST_HISTORY_VOD_RETRY_AFTER_MS = [
   36 * 60 * 60 * 1000,
 ];
 const BROADCAST_HISTORY_MAX_CONCURRENCY = 8;
+const BROADCAST_HISTORY_TASK_FUNCTION = 'messengerProcessStreamerBroadcastHistory';
+const BROADCAST_HISTORY_TASK_START_DELAY_SECONDS = 5;
 const messengerStickerIndex = new Map();
 for (const product of stickerCatalog.products || []) {
   for (const sticker of product.preview && Array.isArray(product.preview.stickers) ? product.preview.stickers : []) {
@@ -2250,17 +2254,6 @@ function matchBroadcastVod(vods, broadcast) {
   return candidates.length ? candidates[0].vod : null;
 }
 
-async function mapWithConcurrency(items, limit, worker) {
-  let next = 0;
-  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      await worker(items[index]);
-    }
-  });
-  await Promise.all(workers);
-}
-
 function broadcastHistoryMessagePath(roomId, messageId) {
   return `${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`;
 }
@@ -2413,97 +2406,283 @@ async function updatePendingBroadcastVod(roomId, pending, state, updates, checke
   delete state.pendingVods[pending.broadcastId];
 }
 
-const messengerSyncStreamerBroadcastHistory = onSchedule({
-  schedule: '*/5 * * * *',
-  timeZone: 'Asia/Seoul',
+function broadcastHistoryMonitorRef(roomId) {
+  return db().ref(`${ROOT}/broadcastMonitor/${roomId}`);
+}
+
+async function transactBroadcastHistoryMonitor(monitorRef, update, fallbackState) {
+  const fallback = arguments.length >= 3 ? fallbackState : (await monitorRef.get()).val();
+  return monitorRef.transaction((current) => update(current == null ? fallback : current));
+}
+
+function broadcastHistoryTaskQueue() {
+  return getFunctions().taskQueue(BROADCAST_HISTORY_TASK_FUNCTION);
+}
+
+function broadcastHistoryTaskId(roomId, generation, dueAt) {
+  const digest = crypto.createHash('sha256').update(`${roomId}\0${generation}\0${dueAt}`).digest('hex').slice(0, 48);
+  return `bh-${digest}`;
+}
+
+function isBroadcastHistoryRoom(roomId, room) {
+  return roomId !== TEST_ROOM_ID && room && ['streamer', 'admin'].includes(room.roomType || 'streamer')
+    && /^[a-z0-9]{2,30}$/.test(String(room.streamerSoopId || '').trim().toLowerCase());
+}
+
+async function enqueueBroadcastHistoryTask(roomId, generation, dueAt, expectedRunningTaskId = '') {
+  const taskId = broadcastHistoryTaskId(roomId, generation, dueAt);
+  const monitorRef = broadcastHistoryMonitorRef(roomId);
+  const reservation = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    if (!current || current.monitoringEnabled !== true || Number(current.monitorGeneration) !== generation) return;
+    if (current.scheduledTaskId) return current;
+    if (expectedRunningTaskId) {
+      if (current.runningTaskId !== expectedRunningTaskId) return;
+    } else if (current.runningTaskId) return;
+    return { ...current, scheduledTaskId: taskId, scheduledTaskAt: dueAt, updatedAt: now() };
+  });
+  const state = reservation.snapshot.val();
+  if (!state || state.scheduledTaskId !== taskId) return false;
+
+  try {
+    await broadcastHistoryTaskQueue().enqueue({ roomId, generation, taskId }, {
+      id: taskId,
+      scheduleDelaySeconds: Math.max(BROADCAST_HISTORY_TASK_START_DELAY_SECONDS, Math.ceil((dueAt - now()) / 1000)),
+      dispatchDeadlineSeconds: 120,
+    });
+  } catch (error) {
+    if (error && error.code === 'functions/task-already-exists') return true;
+    await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+      if (!current || current.scheduledTaskId !== taskId) return;
+      return { ...current, scheduledTaskId: '', scheduledTaskAt: 0, updatedAt: now() };
+    });
+    throw error;
+  }
+  return true;
+}
+
+async function ensureBroadcastHistoryMonitor(roomId) {
+  const meta = (await roomRef(roomId).child('meta').get()).val();
+  if (!isBroadcastHistoryRoom(roomId, meta)) return;
+  const memberCount = Number(meta.memberCount) || 0;
+  if (memberCount <= 0) return;
+
+  const monitorRef = broadcastHistoryMonitorRef(roomId);
+  const startedAt = now();
+  const result = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    const state = { ...(current || { pendingVods: {} }), pendingVods: { ...((current && current.pendingVods) || {}) } };
+    if (Number(meta.memberCount) <= 0) return;
+    if (state.monitoringEnabled !== true) {
+      state.monitorGeneration = (Number(state.monitorGeneration) || 0) + 1;
+      state.monitoringEnabled = true;
+      state.nextLiveCheckAt = startedAt;
+      state.pendingVods = state.pendingVods || {};
+      state.soopId = String(meta.streamerSoopId || '').trim().toLowerCase();
+      state.updatedAt = startedAt;
+    }
+    return state;
+  });
+  const state = result.snapshot.val();
+  if (!state || state.monitoringEnabled !== true) return;
+  const generation = Number(state.monitorGeneration) || 0;
+  const dueAt = Number(state.nextLiveCheckAt) || startedAt;
+  await enqueueBroadcastHistoryTask(roomId, generation, dueAt);
+}
+
+async function pauseBroadcastHistoryMonitor(roomId) {
+  const monitorRef = broadcastHistoryMonitorRef(roomId);
+  let scheduledTaskId = '';
+  const result = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    if (!current) return;
+    scheduledTaskId = String(current.scheduledTaskId || '');
+    if (current.monitoringEnabled === false && !scheduledTaskId && !current.runningTaskId && Number(current.nextLiveCheckAt) === 0) return current;
+    return {
+      ...current,
+      monitoringEnabled: false,
+      monitorGeneration: (Number(current.monitorGeneration) || 0) + 1,
+      scheduledTaskId: '',
+      scheduledTaskAt: 0,
+      runningTaskId: '',
+      nextLiveCheckAt: 0,
+      updatedAt: now(),
+    };
+  });
+  if (!result.committed || !scheduledTaskId) return;
+  try {
+    await broadcastHistoryTaskQueue().delete(scheduledTaskId);
+  } catch (error) {
+    // A dispatched task cannot be deleted. Its generation check makes it a no-op.
+    if (!['functions/task-not-found', 'functions/task-already-exists'].includes(error && error.code)) {
+      logger.warn('Could not cancel queued broadcast-history task', { roomId, taskId: scheduledTaskId, message: String(error && error.message || error).slice(0, 120) });
+    }
+  }
+}
+
+const messengerScheduleStreamerBroadcastHistory = onValueWritten({
+  ref: '/streamerMessenger/rooms/{roomId}/meta/memberCount',
   region: 'us-central1',
-  timeoutSeconds: 540,
+  retry: true,
+}, async (event) => {
+  const roomId = String(event.params.roomId || '');
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || roomId === TEST_ROOM_ID) return;
+  // Re-read the authoritative count because RTDB trigger deliveries may arrive out of order.
+  const currentCount = Number((await roomRef(roomId).child('meta/memberCount').get()).val()) || 0;
+  if (currentCount <= 0) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
+  await ensureBroadcastHistoryMonitor(roomId);
+});
+
+const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
+  region: 'us-central1',
+  timeoutSeconds: 120,
   memory: '512MiB',
-  maxInstances: 1,
-  retryCount: 0,
-}, async () => {
-  const checkedAt = now();
-  const [roomsSnapshot, monitorsSnapshot] = await Promise.all([
-    db().ref(`${ROOT}/publicRooms`).get(),
-    db().ref(`${ROOT}/broadcastMonitor`).get(),
-  ]);
-  const rooms = roomsSnapshot.val() || {};
-  const monitors = monitorsSnapshot.val() || {};
-  const eligibleRooms = Object.entries(rooms).filter(([roomId, room]) => roomId !== TEST_ROOM_ID
-    && room && ['streamer', 'admin'].includes(room.roomType || 'streamer')
-    && /^[a-z0-9]{2,30}$/.test(String(room.streamerSoopId || '').toLowerCase()));
-  const stationStatusCache = new Map();
-  const vodListCache = new Map();
-  const getStationStatus = (soopId) => {
-    if (!stationStatusCache.has(soopId)) stationStatusCache.set(soopId, fetchSoopStationStatus(soopId));
-    return stationStatusCache.get(soopId);
-  };
-  const getRecentVods = (soopId) => {
-    if (!vodListCache.has(soopId)) vodListCache.set(soopId, fetchRecentSoopVods(soopId));
-    return vodListCache.get(soopId);
-  };
+  maxInstances: 20,
+  rateLimits: { maxConcurrentDispatches: BROADCAST_HISTORY_MAX_CONCURRENCY, maxDispatchesPerSecond: BROADCAST_HISTORY_MAX_CONCURRENCY },
+  retryConfig: { maxAttempts: 5, minBackoffSeconds: 30, maxBackoffSeconds: 300, maxDoublings: 3 },
+}, async (request) => {
+  const payload = request.data || {};
+  const roomId = String(payload.roomId || '');
+  const generation = Number(payload.generation);
+  const taskId = String(payload.taskId || '');
+  if (!/^[a-z0-9]{2,30}$/.test(roomId) || roomId === TEST_ROOM_ID || !Number.isInteger(generation) || !/^bh-[a-f0-9]{48}$/.test(taskId)) {
+    logger.warn('Invalid broadcast-history task payload');
+    return;
+  }
 
-  await mapWithConcurrency(eligibleRooms, BROADCAST_HISTORY_MAX_CONCURRENCY, async ([roomId, room]) => {
-    const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
-    const state = { ...(monitors[roomId] || {}), pendingVods: { ...((monitors[roomId] && monitors[roomId].pendingVods) || {}) }, soopId };
-    const updates = {};
-    const memberCount = await getBroadcastHistoryMemberCount(roomId, room);
-    const hasParticipants = memberCount > 0;
-
-    // A room without approved participants does no broadcast-history work at all.
-    // Preserve any in-progress state so it can resume immediately if someone joins.
-    if (!hasParticipants) {
-      if (monitors[roomId] && (monitors[roomId].monitoringEnabled !== false || Number(monitors[roomId].nextLiveCheckAt) !== 0)) {
-        state.monitoringEnabled = false;
-        state.nextLiveCheckAt = 0;
-        state.updatedAt = checkedAt;
-        updates[`${ROOT}/broadcastMonitor/${roomId}`] = state;
-        await db().ref().update(updates);
-      }
+  const monitorRef = broadcastHistoryMonitorRef(roomId);
+  const monitorBeforeClaim = (await monitorRef.get()).val();
+  let claimDecision = '';
+  const claim = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    if (!current) {
+      claimDecision = 'missing-monitor';
       return;
     }
+    if (current.monitoringEnabled !== true) {
+      claimDecision = 'monitor-disabled';
+      return;
+    }
+    if (Number(current.monitorGeneration) !== generation) {
+      claimDecision = 'generation-mismatch';
+      return;
+    }
+    if (current.scheduledTaskId === taskId) {
+      claimDecision = 'claimed-scheduled-task';
+      const startedAt = now();
+      return { ...current, scheduledTaskId: '', scheduledTaskAt: 0, runningTaskId: taskId, runningStartedAt: startedAt, lastTaskStartedAt: startedAt, updatedAt: startedAt };
+    }
+    // Cloud Tasks may redeliver a task after a transient failure.
+    if (current.runningTaskId === taskId) {
+      claimDecision = 'redelivered-running-task';
+      return current;
+    }
+    claimDecision = 'task-id-mismatch';
+  }, monitorBeforeClaim);
+  let stateAtClaim = claim.snapshot.val();
+  if (!stateAtClaim || stateAtClaim.runningTaskId !== taskId || Number(stateAtClaim.monitorGeneration) !== generation) {
+    logger.warn('Skipped stale broadcast-history task', {
+      roomId,
+      taskGeneration: generation,
+      hasMonitor: !!monitorBeforeClaim,
+      monitoringEnabled: monitorBeforeClaim && monitorBeforeClaim.monitoringEnabled === true,
+      storedGeneration: monitorBeforeClaim && Number(monitorBeforeClaim.monitorGeneration),
+      generationMatches: !!monitorBeforeClaim && Number(monitorBeforeClaim.monitorGeneration) === generation,
+      scheduledTaskMatches: !!monitorBeforeClaim && monitorBeforeClaim.scheduledTaskId === taskId,
+      runningTaskMatches: !!monitorBeforeClaim && monitorBeforeClaim.runningTaskId === taskId,
+      claimCommitted: claim.committed,
+      claimDecision,
+      claimedScheduledTaskMatches: !!stateAtClaim && stateAtClaim.scheduledTaskId === taskId,
+      claimedRunningTaskMatches: !!stateAtClaim && stateAtClaim.runningTaskId === taskId,
+      claimedGeneration: stateAtClaim && Number(stateAtClaim.monitorGeneration),
+    });
+    return;
+  }
 
-    const resumedMonitoring = hasParticipants && state.monitoringEnabled !== true;
-    state.monitoringEnabled = true;
-    const liveCheckDue = resumedMonitoring || !Number(state.nextLiveCheckAt) || Number(state.nextLiveCheckAt) <= checkedAt;
-    if (liveCheckDue) {
-      try {
-        const status = await getStationStatus(soopId);
-        if (status.isLive) {
-          if (state.activeBroadcastId && state.activeBroadcastId !== status.broadcastId) {
-            await endTrackedBroadcast(roomId, state, checkedAt, updates);
-          }
-          if (!state.activeBroadcastId) await startTrackedBroadcast(roomId, room, soopId, status, state, checkedAt, updates);
-          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_LIVE_POLL_MS;
-        } else {
-          if (state.activeBroadcastId) await endTrackedBroadcast(roomId, state, checkedAt, updates);
-          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
+  const [metaSnapshot, roomSnapshot] = await Promise.all([
+    roomRef(roomId).child('meta').get(),
+    db().ref(`${ROOT}/publicRooms/${roomId}`).get(),
+  ]);
+  const meta = metaSnapshot.val();
+  const projectedRoom = roomSnapshot.val();
+  const room = { ...(projectedRoom || {}), ...(meta || {}) };
+  if (!isBroadcastHistoryRoom(roomId, room)) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
+  const memberCount = await getBroadcastHistoryMemberCount(roomId, projectedRoom);
+  if (memberCount <= 0) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
+
+  const checkedAt = now();
+  const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
+  stateAtClaim = { ...stateAtClaim, pendingVods: { ...(stateAtClaim.pendingVods || {}) }, soopId };
+  const updates = {};
+  const liveCheckDue = !Number(stateAtClaim.nextLiveCheckAt) || Number(stateAtClaim.nextLiveCheckAt) <= checkedAt;
+  if (liveCheckDue) {
+    try {
+      const status = await fetchSoopStationStatus(soopId);
+      if (status.isLive) {
+        if (stateAtClaim.activeBroadcastId && stateAtClaim.activeBroadcastId !== status.broadcastId) {
+          await endTrackedBroadcast(roomId, stateAtClaim, checkedAt, updates);
         }
-        state.lastSuccessfulCheckAt = checkedAt;
-        state.lastErrorAt = 0;
-      } catch (error) {
-        state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_ERROR_POLL_MS;
-        state.lastErrorAt = checkedAt;
-        logger.warn('SOOP broadcaster status sync failed', {
-          roomId,
-          soopId,
-          message: String(error && error.message || error).slice(0, 120),
-        });
+        if (!stateAtClaim.activeBroadcastId) await startTrackedBroadcast(roomId, room, soopId, status, stateAtClaim, checkedAt, updates);
+        stateAtClaim.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_LIVE_POLL_MS;
+      } else {
+        if (stateAtClaim.activeBroadcastId) await endTrackedBroadcast(roomId, stateAtClaim, checkedAt, updates);
+        stateAtClaim.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
       }
+      stateAtClaim.lastSuccessfulCheckAt = checkedAt;
+      stateAtClaim.lastErrorAt = 0;
+    } catch (error) {
+      stateAtClaim.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_ERROR_POLL_MS;
+      stateAtClaim.lastErrorAt = checkedAt;
+      logger.warn('SOOP broadcaster status sync failed', { roomId, soopId, message: String(error && error.message || error).slice(0, 120) });
     }
+  }
 
-    const dueVod = Object.values(state.pendingVods)
-      .filter((pending) => pending && Number(pending.nextLookupAt) <= checkedAt)
-      .sort((a, b) => Number(a.nextLookupAt) - Number(b.nextLookupAt))[0];
-    if (dueVod) await updatePendingBroadcastVod(roomId, dueVod, state, updates, checkedAt, getRecentVods);
+  const dueVod = Object.values(stateAtClaim.pendingVods)
+    .filter((pending) => pending && Number(pending.nextLookupAt) <= checkedAt)
+    .sort((a, b) => Number(a.nextLookupAt) - Number(b.nextLookupAt))[0];
+  if (dueVod) await updatePendingBroadcastVod(roomId, dueVod, stateAtClaim, updates, checkedAt);
+  for (const [broadcastId, pending] of Object.entries(stateAtClaim.pendingVods)) {
+    if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete stateAtClaim.pendingVods[broadcastId];
+  }
+  stateAtClaim.updatedAt = checkedAt;
 
-    const pendingEntries = Object.entries(state.pendingVods);
-    for (const [broadcastId, pending] of pendingEntries) {
-      if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete state.pendingVods[broadcastId];
-    }
-    state.updatedAt = checkedAt;
-    updates[`${ROOT}/broadcastMonitor/${roomId}`] = state;
-    await db().ref().update(updates);
+  // Do not publish a result if the last participant left while an external request was in flight.
+  const latestMemberCount = await getBroadcastHistoryMemberCount(roomId, (await db().ref(`${ROOT}/publicRooms/${roomId}`).get()).val());
+  const latestMonitor = (await monitorRef.get()).val();
+  if (latestMemberCount <= 0) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
+  if (!latestMonitor || latestMonitor.monitoringEnabled !== true || Number(latestMonitor.monitorGeneration) !== generation || latestMonitor.runningTaskId !== taskId) return;
+
+  if (Object.keys(updates).length) await db().ref().update(updates);
+  const stateSave = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    if (!current || current.monitoringEnabled !== true || Number(current.monitorGeneration) !== generation || current.runningTaskId !== taskId) return;
+    return {
+      ...stateAtClaim,
+      monitoringEnabled: true,
+      monitorGeneration: generation,
+      scheduledTaskId: current.scheduledTaskId || '',
+      scheduledTaskAt: Number(current.scheduledTaskAt) || 0,
+      runningTaskId: taskId,
+      runningStartedAt: Number(current.runningStartedAt) || checkedAt,
+    };
+  }, latestMonitor);
+  const savedState = stateSave.snapshot.val();
+  if (!stateSave.committed || !savedState || savedState.runningTaskId !== taskId || Number(savedState.monitorGeneration) !== generation) return;
+
+  const dueTimes = [Number(savedState.nextLiveCheckAt), ...Object.values(savedState.pendingVods || {}).map((pending) => Number(pending && pending.nextLookupAt))]
+    .filter((value) => value > 0);
+  const nextDueAt = dueTimes.length ? Math.min(...dueTimes) : checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
+  await enqueueBroadcastHistoryTask(roomId, generation, nextDueAt, taskId);
+  await transactBroadcastHistoryMonitor(monitorRef, (current) => {
+    if (!current || current.monitorGeneration !== generation || current.runningTaskId !== taskId) return;
+    return { ...current, runningTaskId: '', runningStartedAt: 0, updatedAt: now() };
   });
 });
 
@@ -3040,5 +3219,6 @@ module.exports = {
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,
-  messengerExpireRequests, messengerPurgeExpiredData, messengerSyncStreamerBroadcastHistory,
+  messengerExpireRequests, messengerPurgeExpiredData,
+  messengerScheduleStreamerBroadcastHistory, messengerProcessStreamerBroadcastHistory,
 };
