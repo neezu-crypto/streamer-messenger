@@ -2402,7 +2402,7 @@ async function updatePendingBroadcastVod(roomId, pending, state, updates, checke
 }
 
 const messengerSyncStreamerBroadcastHistory = onSchedule({
-  schedule: 'every 2 minutes',
+  schedule: '* * * * *',
   timeZone: 'Asia/Seoul',
   region: 'us-central1',
   timeoutSeconds: 540,
