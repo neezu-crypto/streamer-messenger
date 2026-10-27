@@ -1368,6 +1368,9 @@ function loadOwnedEmoteIds(uid) {
 async function openEmotePicker() {
   if (!state.room || !state.session) return;
   if (!state.session.trusted && !state.session.isVerifiedStreamer && !state.session.isTestAccount) {
+    const authDialog = $('#auth-dialog');
+    authDialog.classList.add('emote-auth-entry');
+    authDialog.addEventListener('close', () => authDialog.classList.remove('emote-auth-entry'), { once: true });
     openDialog('auth-dialog');
     return;
   }
