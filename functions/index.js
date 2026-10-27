@@ -45,5 +45,6 @@ module.exports = {
   messengerAdminGetVisitorAnalytics: messenger.messengerAdminGetVisitorAnalytics,
   messengerExpireRequests: messenger.messengerExpireRequests,
   messengerPurgeExpiredData: messenger.messengerPurgeExpiredData,
-  messengerSyncStreamerBroadcastHistory: messenger.messengerSyncStreamerBroadcastHistory,
+  messengerScheduleStreamerBroadcastHistory: messenger.messengerScheduleStreamerBroadcastHistory,
+  messengerProcessStreamerBroadcastHistory: messenger.messengerProcessStreamerBroadcastHistory,
 };
