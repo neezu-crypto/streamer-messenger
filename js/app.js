@@ -4212,6 +4212,14 @@ function broadcastHistoryTime(value) {
   });
 }
 
+function formatBroadcastHistoryElapsed(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':');
+}
+
 function renderStreamerBroadcastMessage(message, bubble) {
   bubble.classList.add('broadcast-history-bubble');
   const status = message.broadcastStatus === 'live' ? 'live' : 'ended';
@@ -4274,6 +4282,63 @@ function renderStreamerBroadcastMessage(message, bubble) {
         if (!opened) showError({ message: '채팅 도구에서 다시보기를 재생할 수 없습니다.' });
       });
       card.appendChild(play);
+
+      const viewerAnalysis = message.viewerAnalysis || {};
+      if (viewerAnalysis.status === 'ready' && viewerAnalysis.highest && viewerAnalysis.lowest) {
+        const analysis = document.createElement('div');
+        analysis.className = 'broadcast-history-viewer-analysis';
+        const note = document.createElement('small');
+        note.className = 'broadcast-history-viewer-note';
+        note.textContent = '시청자 분석 · 방송 시작과 종료 각 5분 제외';
+        analysis.appendChild(note);
+
+        const points = [
+          { key: 'highest', label: '최고', point: viewerAnalysis.highest },
+          { key: 'lowest', label: '최저', point: viewerAnalysis.lowest },
+        ];
+        points.forEach(({ key, label, point }) => {
+          const second = Math.max(0, Math.floor(Number(point.second) || 0));
+          const viewers = Math.max(0, Math.floor(Number(point.viewers) || 0));
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `broadcast-history-viewer-point is-${key}`;
+          button.title = `채팅 도구에서 ${label} 시청자 시점 ${formatBroadcastHistoryElapsed(second)}부터 다시보기`;
+          button.setAttribute('aria-label', `${label} 시청자 ${viewers.toLocaleString('ko-KR')}명, ${formatBroadcastHistoryElapsed(second)}부터 채팅 도구에서 재생`);
+          const name = document.createElement('strong');
+          name.textContent = `${label} ${viewers.toLocaleString('ko-KR')}명`;
+          const elapsed = document.createElement('span');
+          elapsed.textContent = formatBroadcastHistoryElapsed(second);
+          button.append(name, elapsed);
+          button.addEventListener('click', () => {
+            let href = vod.url || `https://vod.sooplive.com/player/${encodeURIComponent(vod.id)}`;
+            try {
+              const target = new URL(href);
+              target.searchParams.set('change_second', String(second));
+              href = target.href;
+            } catch (_) { /* 내부 플레이어는 clipId와 baseSecond로 재생합니다. */ }
+            const opened = openRoomToolVideo({
+              kind: 'soop-vod-clip',
+              clipId: String(vod.id),
+              baseSecond: second,
+              clipTitle: vod.title || message.title || 'SOOP 다시보기',
+              href,
+            });
+            if (!opened) showError({ message: '채팅 도구에서 다시보기를 재생할 수 없습니다.' });
+          });
+          analysis.appendChild(button);
+        });
+        card.appendChild(analysis);
+      } else if (viewerAnalysis.status === 'pending') {
+        const analysisStatus = document.createElement('p');
+        analysisStatus.className = 'broadcast-history-vod-status is-analysis-pending';
+        analysisStatus.textContent = '시청자 그래프를 분석하고 있어요.';
+        card.appendChild(analysisStatus);
+      } else if (viewerAnalysis.status === 'unavailable') {
+        const analysisStatus = document.createElement('p');
+        analysisStatus.className = 'broadcast-history-vod-status is-muted';
+        analysisStatus.textContent = '이 다시보기는 시청자 그래프를 확인할 수 없어요.';
+        card.appendChild(analysisStatus);
+      }
     } else {
       const vodStatus = document.createElement('p');
       vodStatus.className = `broadcast-history-vod-status${message.vodStatus === 'not_found' ? ' is-muted' : ''}`;
