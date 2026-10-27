@@ -50,6 +50,19 @@ const SOOP_CLIP_CACHE_LIMIT = 80;
 const soopClipSearchCache = new Map();
 const SOOP_LIVE_STATUS_CACHE_TTL = 15 * 1000;
 const soopLiveStatusCache = new Map();
+const BROADCAST_HISTORY_POLL_MS = 2 * 60 * 1000;
+const BROADCAST_HISTORY_IDLE_POLL_MS = 10 * 60 * 1000;
+const BROADCAST_HISTORY_ERROR_POLL_MS = 5 * 60 * 1000;
+const BROADCAST_HISTORY_VOD_RETRY_AFTER_MS = [
+  2 * 60 * 1000,
+  10 * 60 * 1000,
+  30 * 60 * 1000,
+  90 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+  18 * 60 * 60 * 1000,
+  36 * 60 * 60 * 1000,
+];
+const BROADCAST_HISTORY_MAX_CONCURRENCY = 8;
 const messengerStickerIndex = new Map();
 for (const product of stickerCatalog.products || []) {
   for (const sticker of product.preview && Array.isArray(product.preview.stickers) ? product.preview.stickers : []) {
@@ -2129,6 +2142,341 @@ const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => 
   return getLinkPreview(url);
 });
 
+async function fetchSoopStationStatus(soopId) {
+  const response = await fetch(`https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/station`, {
+    headers: {
+      accept: 'application/json',
+      origin: 'https://www.sooplive.com',
+      referer: `https://www.sooplive.com/station/${encodeURIComponent(soopId)}`,
+      'user-agent': 'Mozilla/5.0',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`SOOP station API returned ${response.status}`);
+  const payload = await response.json();
+  const stationId = payload && payload.station && payload.station.user_id;
+  if (typeof stationId !== 'string' || stationId.toLowerCase() !== soopId) throw new Error('SOOP station response did not match the requested streamer');
+
+  const broad = payload && payload.broad && typeof payload.broad === 'object' ? payload.broad : null;
+  if (!broad) return { isLive: false };
+  const broadcastId = String(broad.broad_no || '').trim();
+  if (!/^\d{1,20}$/.test(broadcastId) || broadcastId === '0') throw new Error('SOOP broadcast ID is invalid');
+  return {
+    isLive: true,
+    broadcastId,
+    title: String(broad.broad_title || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    streamUrl: `https://play.sooplive.com/${encodeURIComponent(soopId)}/${encodeURIComponent(broadcastId)}`,
+  };
+}
+
+function broadcastHistoryMessageId(roomId, broadcastId) {
+  return crypto.createHash('sha256').update(`${roomId}\0${broadcastId}`).digest('base64url').slice(0, 20);
+}
+
+function parseSoopVodDate(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const [, year, month, day, hour, minute, second = '0'] = match;
+    return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)) - 9 * 60 * 60 * 1000;
+  }
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeBroadcastVod(record) {
+  const id = String(record && record.title_no || '');
+  if (!/^\d{1,20}$/.test(id)) return null;
+  const thumbnailValue = String(record && record.ucc && record.ucc.thumb || '');
+  let thumbnailUrl = '';
+  try {
+    const parsed = new URL(thumbnailValue.startsWith('//') ? `https:${thumbnailValue}` : thumbnailValue);
+    if (parsed.protocol === 'https:' && (parsed.hostname === 'sooplive.com' || parsed.hostname.endsWith('.sooplive.com'))) thumbnailUrl = parsed.href;
+  } catch (_) { /* 잘못된 썸네일은 저장하지 않습니다. */ }
+  return {
+    id,
+    title: String(record.title_name || '제목 없는 다시보기').replace(/\s+/g, ' ').trim().slice(0, 180),
+    createdAt: String(record.reg_date || '').slice(0, 32),
+    publishedAt: parseSoopVodDate(record.reg_date),
+    durationMs: Math.max(0, Number(record.ucc && record.ucc.total_file_duration) || 0),
+    thumbnailUrl,
+    url: `https://vod.sooplive.com/player/${id}`,
+  };
+}
+
+async function fetchRecentSoopVods(soopId) {
+  const endpoint = new URL(`https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/vods/review`);
+  endpoint.searchParams.set('orderby', 'reg_date');
+  endpoint.searchParams.set('page', '1');
+  endpoint.searchParams.set('field', 'title,contents,user_nick,user_id');
+  endpoint.searchParams.set('per_page', '30');
+  const response = await fetch(endpoint, {
+    headers: { accept: 'application/json', 'user-agent': 'StreamerMessenger/1.0' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`SOOP VOD API returned ${response.status}`);
+  const payload = await response.json();
+  if (!Array.isArray(payload && payload.data)) throw new Error('SOOP VOD response did not contain a record list');
+  return payload.data.map(normalizeBroadcastVod).filter((vod) => vod && vod.publishedAt);
+}
+
+function matchBroadcastVod(vods, broadcast) {
+  const startedAt = Number(broadcast.startedAt) || 0;
+  const endedAt = Number(broadcast.endedAt) || 0;
+  const expectedDuration = Math.max(0, endedAt - startedAt);
+  const normalizeTitle = (value) => String(value || '').toLocaleLowerCase().replace(/[\s.,!?()[\]{}:;'"“”‘’·|/\\-]+/g, '');
+  const title = normalizeTitle(broadcast.title);
+  const candidates = (vods || []).map((vod) => {
+    if (vod.publishedAt < startedAt - 30 * 60 * 1000 || vod.publishedAt > endedAt + 36 * 60 * 60 * 1000) return null;
+    const titleMatches = !!title && normalizeTitle(vod.title) === title;
+    const distanceFromEnd = Math.abs(vod.publishedAt - endedAt);
+    if (!titleMatches && distanceFromEnd > 60 * 60 * 1000) return null;
+    if (expectedDuration && vod.durationMs && vod.durationMs < expectedDuration * 0.65) return null;
+    if (!titleMatches && (!expectedDuration || !vod.durationMs)) return null;
+    const durationDifference = expectedDuration && vod.durationMs ? Math.abs(vod.durationMs - expectedDuration) : 0;
+    return { vod, score: (titleMatches ? 0 : 1000000000000) + distanceFromEnd + durationDifference * 0.05 };
+  }).filter(Boolean).sort((a, b) => a.score - b.score);
+  return candidates.length ? candidates[0].vod : null;
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      await worker(items[index]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function broadcastHistoryMessagePath(roomId, messageId) {
+  return `${ROOT}/chat/${roomId}/streamerTimeline/${messageId}`;
+}
+
+function addBroadcastHistoryMessageUpdates(updates, roomId, message) {
+  updates[broadcastHistoryMessagePath(roomId, message.id)] = message;
+  updates[`${ROOT}/chat/${roomId}/broadcast/${message.id}`] = message;
+}
+
+async function endTrackedBroadcast(roomId, state, endedAt, updates) {
+  const broadcastId = String(state.activeBroadcastId || '');
+  const messageId = String(state.activeMessageId || '');
+  if (!broadcastId || !messageId) return;
+  const messageSnapshot = await db().ref(broadcastHistoryMessagePath(roomId, messageId)).get();
+  const current = messageSnapshot.val() || {};
+  const message = {
+    ...current,
+    id: messageId,
+    roomId,
+    senderUid: current.senderUid || state.activeSenderUid || 'streamer-messenger-system',
+    senderRole: 'streamer',
+    senderName: current.senderName || state.activeSenderName || '스트리머',
+    senderAvatarUrl: current.senderAvatarUrl || state.activeSenderAvatarUrl || '',
+    createdAt: endedAt,
+    scope: 'broadcast',
+    kind: 'streamer-broadcast',
+    broadcastId,
+    title: String(current.title || state.activeTitle || '제목 없는 방송'),
+    streamUrl: String(current.streamUrl || state.activeStreamUrl || ''),
+    startedAt: Number(current.startedAt) || Number(state.activeStartedAt) || endedAt,
+    broadcastStatus: 'ended',
+    endedAt,
+    vodStatus: 'pending',
+    updatedAt: endedAt,
+  };
+  addBroadcastHistoryMessageUpdates(updates, roomId, message);
+  state.pendingVods = state.pendingVods || {};
+  state.pendingVods[broadcastId] = {
+    broadcastId,
+    messageId,
+    title: message.title,
+    startedAt: message.startedAt,
+    endedAt,
+    lookupIndex: 0,
+    nextLookupAt: endedAt + BROADCAST_HISTORY_VOD_RETRY_AFTER_MS[0],
+    soopId: String(state.soopId || ''),
+  };
+  state.activeBroadcastId = '';
+  state.activeMessageId = '';
+  state.activeSenderUid = '';
+  state.activeSenderName = '';
+  state.activeSenderAvatarUrl = '';
+  state.activeTitle = '';
+  state.activeStreamUrl = '';
+  state.activeStartedAt = 0;
+}
+
+async function startTrackedBroadcast(roomId, room, soopId, status, state, startedAt, updates) {
+  const metadata = (await roomRef(roomId).child('meta').get()).val() || {};
+  const ownerUid = String(metadata.ownerUid || '');
+  if (!ownerUid) throw new Error('room owner is missing');
+  const messageId = broadcastHistoryMessageId(roomId, status.broadcastId);
+  const senderName = String(room.streamerNickname || metadata.streamerNickname || '스트리머').slice(0, 30);
+  const message = {
+    id: messageId,
+    roomId,
+    senderUid: ownerUid,
+    senderRole: 'streamer',
+    senderName,
+    senderAvatarUrl: String(room.streamerAvatarUrl || metadata.streamerAvatarUrl || ''),
+    createdAt: startedAt,
+    scope: 'broadcast',
+    kind: 'streamer-broadcast',
+    broadcastId: status.broadcastId,
+    title: String(status.title || '제목 없는 방송'),
+    streamUrl: status.streamUrl,
+    broadcastStatus: 'live',
+    startedAt,
+    vodStatus: 'not_applicable',
+  };
+  addBroadcastHistoryMessageUpdates(updates, roomId, message);
+  state.activeBroadcastId = status.broadcastId;
+  state.activeMessageId = messageId;
+  state.activeSenderUid = ownerUid;
+  state.activeSenderName = senderName;
+  state.activeSenderAvatarUrl = message.senderAvatarUrl;
+  state.activeTitle = message.title;
+  state.activeStreamUrl = status.streamUrl;
+  state.activeStartedAt = startedAt;
+  state.soopId = soopId;
+}
+
+async function updatePendingBroadcastVod(roomId, pending, state, updates, checkedAt, getRecentVods = fetchRecentSoopVods) {
+  const messageRef = db().ref(broadcastHistoryMessagePath(roomId, pending.messageId));
+  const messageSnapshot = await messageRef.get();
+  const current = messageSnapshot.val();
+  if (!current || current.broadcastStatus !== 'ended') {
+    delete state.pendingVods[pending.broadcastId];
+    return;
+  }
+
+  let vods;
+  try {
+    vods = await getRecentVods(pending.soopId);
+  } catch (error) {
+    state.pendingVods[pending.broadcastId] = {
+      ...pending,
+      errorCount: (Number(pending.errorCount) || 0) + 1,
+      nextLookupAt: checkedAt + 15 * 60 * 1000,
+    };
+    logger.warn('SOOP broadcast history VOD lookup failed', {
+      roomId,
+      soopId: pending.soopId,
+      broadcastId: pending.broadcastId,
+      message: String(error && error.message || error).slice(0, 120),
+    });
+    return;
+  }
+
+  const vod = matchBroadcastVod(vods, pending);
+  if (vod) {
+    const updated = {
+      ...current,
+      createdAt: checkedAt,
+      vodStatus: 'ready',
+      vod: {
+        id: vod.id,
+        title: vod.title,
+        createdAt: vod.createdAt,
+        durationMs: vod.durationMs,
+        thumbnailUrl: vod.thumbnailUrl,
+        url: vod.url,
+      },
+      updatedAt: checkedAt,
+    };
+    addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+    delete state.pendingVods[pending.broadcastId];
+    return;
+  }
+
+  const nextLookupIndex = (Number(pending.lookupIndex) || 0) + 1;
+  const nextDelay = BROADCAST_HISTORY_VOD_RETRY_AFTER_MS[nextLookupIndex];
+  if (nextDelay) {
+    state.pendingVods[pending.broadcastId] = { ...pending, lookupIndex: nextLookupIndex, nextLookupAt: pending.endedAt + nextDelay };
+    return;
+  }
+
+  const updated = { ...current, createdAt: checkedAt, vodStatus: 'not_found', updatedAt: checkedAt };
+  addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+  delete state.pendingVods[pending.broadcastId];
+}
+
+const messengerSyncStreamerBroadcastHistory = onSchedule({
+  schedule: 'every 2 minutes',
+  timeZone: 'Asia/Seoul',
+  region: 'us-central1',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+  maxInstances: 1,
+  retryCount: 0,
+}, async () => {
+  const checkedAt = now();
+  const [roomsSnapshot, monitorsSnapshot] = await Promise.all([
+    db().ref(`${ROOT}/publicRooms`).get(),
+    db().ref(`${ROOT}/broadcastMonitor`).get(),
+  ]);
+  const rooms = roomsSnapshot.val() || {};
+  const monitors = monitorsSnapshot.val() || {};
+  const eligibleRooms = Object.entries(rooms).filter(([roomId, room]) => roomId !== TEST_ROOM_ID
+    && room && ['streamer', 'admin'].includes(room.roomType || 'streamer')
+    && /^[a-z0-9]{2,30}$/.test(String(room.streamerSoopId || '').toLowerCase()));
+  const stationStatusCache = new Map();
+  const vodListCache = new Map();
+  const getStationStatus = (soopId) => {
+    if (!stationStatusCache.has(soopId)) stationStatusCache.set(soopId, fetchSoopStationStatus(soopId));
+    return stationStatusCache.get(soopId);
+  };
+  const getRecentVods = (soopId) => {
+    if (!vodListCache.has(soopId)) vodListCache.set(soopId, fetchRecentSoopVods(soopId));
+    return vodListCache.get(soopId);
+  };
+
+  await mapWithConcurrency(eligibleRooms, BROADCAST_HISTORY_MAX_CONCURRENCY, async ([roomId, room]) => {
+    const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
+    const state = { ...(monitors[roomId] || {}), pendingVods: { ...((monitors[roomId] && monitors[roomId].pendingVods) || {}) }, soopId };
+    const updates = {};
+    const liveCheckDue = !Number(state.nextLiveCheckAt) || Number(state.nextLiveCheckAt) <= checkedAt;
+    if (liveCheckDue) {
+      try {
+        const status = await getStationStatus(soopId);
+        if (status.isLive) {
+          if (state.activeBroadcastId && state.activeBroadcastId !== status.broadcastId) {
+            await endTrackedBroadcast(roomId, state, checkedAt, updates);
+          }
+          if (!state.activeBroadcastId) await startTrackedBroadcast(roomId, room, soopId, status, state, checkedAt, updates);
+          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_POLL_MS;
+        } else {
+          if (state.activeBroadcastId) await endTrackedBroadcast(roomId, state, checkedAt, updates);
+          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
+        }
+        state.lastSuccessfulCheckAt = checkedAt;
+        state.lastErrorAt = 0;
+      } catch (error) {
+        state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_ERROR_POLL_MS;
+        state.lastErrorAt = checkedAt;
+        logger.warn('SOOP broadcaster status sync failed', {
+          roomId,
+          soopId,
+          message: String(error && error.message || error).slice(0, 120),
+        });
+      }
+    }
+
+    const dueVod = Object.values(state.pendingVods)
+      .filter((pending) => pending && Number(pending.nextLookupAt) <= checkedAt)
+      .sort((a, b) => Number(a.nextLookupAt) - Number(b.nextLookupAt))[0];
+    if (dueVod) await updatePendingBroadcastVod(roomId, dueVod, state, updates, checkedAt, getRecentVods);
+
+    const pendingEntries = Object.entries(state.pendingVods);
+    for (const [broadcastId, pending] of pendingEntries) {
+      if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete state.pendingVods[broadcastId];
+    }
+    state.updatedAt = checkedAt;
+    updates[`${ROOT}/broadcastMonitor/${roomId}`] = state;
+    await db().ref().update(updates);
+  });
+});
+
 const messengerGetStreamerLiveStatus = onCall({ maxInstances: 10 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
@@ -2140,53 +2488,15 @@ const messengerGetStreamerLiveStatus = onCall({ maxInstances: 10 }, async (reque
   const cached = soopLiveStatusCache.get(soopId);
   if (cached && cached.expiresAt > now()) return cached.value;
 
-  let response;
+  let status;
   try {
-    response = await fetch(`https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/station`, {
-      headers: {
-        accept: 'application/json',
-        origin: 'https://www.sooplive.com',
-        referer: `https://www.sooplive.com/station/${encodeURIComponent(soopId)}`,
-        'user-agent': 'Mozilla/5.0',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
+    status = await fetchSoopStationStatus(soopId);
   } catch (error) {
     logger.warn('SOOP live status request failed', { roomId, soopId, message: String(error && error.message || error).slice(0, 120) });
     throw new HttpsError('unavailable', 'SOOP 방송 상태를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
   }
-  if (!response.ok) {
-    logger.warn('SOOP station API returned an error', { roomId, soopId, status: response.status });
-    throw new HttpsError('unavailable', 'SOOP 방송 상태를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (_) {
-    throw new HttpsError('unavailable', 'SOOP 방송 상태 응답을 읽지 못했습니다. 방송국 후원 링크를 열어 주세요.');
-  }
-  const stationId = payload && payload.station && payload.station.user_id;
-  if (typeof stationId !== 'string' || stationId.toLowerCase() !== soopId) {
-    throw new HttpsError('unavailable', 'SOOP 방송 상태 응답을 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
-  }
-
   const checkedAt = now();
-  const broad = payload.broad && typeof payload.broad === 'object' ? payload.broad : null;
-  let value = { isLive: false, checkedAt };
-  if (broad) {
-    const broadcastId = String(broad.broad_no || '').trim();
-    if (!/^\d{1,20}$/.test(broadcastId) || broadcastId === '0') {
-      throw new HttpsError('unavailable', 'SOOP 라이브 방송 정보를 확인하지 못했습니다. 방송국 후원 링크를 열어 주세요.');
-    }
-    value = {
-      isLive: true,
-      broadcastId,
-      title: String(broad.broad_title || '').replace(/\s+/g, ' ').trim().slice(0, 200),
-      streamUrl: `https://play.sooplive.com/${encodeURIComponent(soopId)}/${encodeURIComponent(broadcastId)}`,
-      checkedAt,
-    };
-  }
+  const value = { ...status, checkedAt };
 
   soopLiveStatusCache.set(soopId, { value, expiresAt: checkedAt + SOOP_LIVE_STATUS_CACHE_TTL });
   if (soopLiveStatusCache.size > 100) {
@@ -2700,5 +3010,5 @@ module.exports = {
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
   messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,
-  messengerExpireRequests, messengerPurgeExpiredData,
+  messengerExpireRequests, messengerPurgeExpiredData, messengerSyncStreamerBroadcastHistory,
 };

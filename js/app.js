@@ -3331,6 +3331,7 @@ function renderNewMessagePreview() {
   const sender = message.senderName || (message.senderRole === 'streamer' ? '스트리머' : '새 메시지');
   let text = message.kind === 'image' ? '사진을 보냈어요'
     : message.kind === 'emote' ? `${state.emoteCatalog.find((sticker) => sticker.id === message.stickerId)?.label || '감정표현'} 스티커를 보냈어요`
+      : message.kind === 'streamer-broadcast' ? `${message.broadcastStatus === 'live' ? '방송을 시작했어요' : '방송을 종료했어요'}${message.title ? ` · ${message.title}` : ''}`
       : String(message.text || '').replace(/\s+/g, ' ').trim();
   if (!text) text = message.kind === 'roomself' ? '비공개 이미지를 보냈어요' : '새 메시지가 도착했어요';
   if (text.length > 90) text = `${text.slice(0, 89)}…`;
@@ -4203,6 +4204,89 @@ function renderTextWithLinks(message, bubble) {
   }
 }
 
+function broadcastHistoryTime(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+  return new Date(timestamp).toLocaleString('ko-KR', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function renderStreamerBroadcastMessage(message, bubble) {
+  bubble.classList.add('broadcast-history-bubble');
+  const status = message.broadcastStatus === 'live' ? 'live' : 'ended';
+  const card = document.createElement('section');
+  card.className = `broadcast-history-card is-${status}`;
+
+  const heading = document.createElement('div');
+  heading.className = 'broadcast-history-heading';
+  const badge = document.createElement('span');
+  badge.className = `broadcast-history-badge is-${status}`;
+  badge.textContent = status === 'live' ? 'LIVE' : '방송 기록';
+  const stateLabel = document.createElement('strong');
+  stateLabel.textContent = status === 'live' ? '방송 중' : '방송 종료';
+  heading.append(badge, stateLabel);
+
+  const title = document.createElement('strong');
+  title.className = 'broadcast-history-title';
+  title.textContent = message.title || '제목 없는 방송';
+  title.title = message.title || '제목 없는 방송';
+  const time = document.createElement('small');
+  time.className = 'broadcast-history-time';
+  const start = broadcastHistoryTime(message.startedAt || message.createdAt);
+  const end = broadcastHistoryTime(message.endedAt);
+  time.textContent = status === 'live'
+    ? `${start} 시작`
+    : [start && `${start} 시작`, end && `${end} 종료`].filter(Boolean).join(' · ');
+  card.append(heading, title, time);
+
+  if (status === 'ended') {
+    if (message.vodStatus === 'ready' && message.vod && /^\d{1,20}$/.test(String(message.vod.id || ''))) {
+      const vod = message.vod;
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'broadcast-history-vod';
+      play.title = `채팅 도구에서 다시보기 재생: ${vod.title || message.title || 'SOOP 다시보기'}`;
+      play.setAttribute('aria-label', play.title);
+      if (vod.thumbnailUrl) {
+        const thumb = document.createElement('img');
+        thumb.src = vod.thumbnailUrl;
+        thumb.alt = '';
+        thumb.loading = 'lazy';
+        thumb.addEventListener('error', () => thumb.remove(), { once: true });
+        play.appendChild(thumb);
+      }
+      const copy = document.createElement('span');
+      copy.className = 'broadcast-history-vod-copy';
+      const vodTitle = document.createElement('strong');
+      vodTitle.textContent = vod.title || '방송 다시보기';
+      const action = document.createElement('small');
+      action.textContent = '▶ 채팅 도구에서 다시보기';
+      copy.append(vodTitle, action);
+      play.appendChild(copy);
+      play.addEventListener('click', () => {
+        const opened = openRoomToolVideo({
+          kind: 'soop-vod-clip',
+          clipId: String(vod.id),
+          clipTitle: vod.title || message.title || 'SOOP 다시보기',
+          href: vod.url || `https://vod.sooplive.com/player/${encodeURIComponent(vod.id)}`,
+        });
+        if (!opened) showError({ message: '채팅 도구에서 다시보기를 재생할 수 없습니다.' });
+      });
+      card.appendChild(play);
+    } else {
+      const vodStatus = document.createElement('p');
+      vodStatus.className = `broadcast-history-vod-status${message.vodStatus === 'not_found' ? ' is-muted' : ''}`;
+      vodStatus.textContent = message.vodStatus === 'not_found'
+        ? '방송국에서 다시보기를 찾지 못했어요.'
+        : '방송국 다시보기를 확인하고 있어요.';
+      card.appendChild(vodStatus);
+    }
+  }
+
+  bubble.appendChild(card);
+}
+
 function renderMessage(message) {
   const isMine = message.senderUid === state.session.uid;
   const isStreamerMessage = message.senderRole === 'streamer';
@@ -4246,6 +4330,8 @@ function renderMessage(message) {
       bubble.classList.add('emote-message-unavailable');
       bubble.textContent = '감정표현 스티커';
     }
+  } else if (message.kind === 'streamer-broadcast') {
+    renderStreamerBroadcastMessage(message, bubble);
   } else renderTextWithLinks(message, bubble);
   stack.appendChild(bubble);
   const meta = document.createElement('div'); meta.className = 'message-meta';
