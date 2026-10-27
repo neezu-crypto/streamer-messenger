@@ -66,6 +66,13 @@ const BROADCAST_HISTORY_VOD_RETRY_AFTER_MS = [
 ];
 const BROADCAST_HISTORY_MAX_CONCURRENCY = 8;
 const BROADCAST_HISTORY_TASK_FUNCTION = 'messengerProcessStreamerBroadcastHistory';
+const BROADCAST_HISTORY_VIEWER_ANALYSIS_TASK_FUNCTION = 'streamerFanPageMessengerVodAnalysisWorker';
+const BROADCAST_HISTORY_VIEWER_ANALYSIS_RETRY_AFTER_MS = [
+  30 * 1000,
+  2 * 60 * 1000,
+  10 * 60 * 1000,
+  30 * 60 * 1000,
+];
 const BROADCAST_HISTORY_TASK_START_DELAY_SECONDS = 5;
 const messengerStickerIndex = new Map();
 for (const product of stickerCatalog.products || []) {
@@ -2263,6 +2270,121 @@ function addBroadcastHistoryMessageUpdates(updates, roomId, message) {
   updates[`${ROOT}/chat/${roomId}/broadcast/${message.id}`] = message;
 }
 
+function broadcastHistoryViewerStatsCacheRef(soopId, vodId) {
+  return db().ref(`streamerFanPageViewerStatsCache/${soopId}/${vodId}`);
+}
+
+function broadcastHistoryViewerStatsTaskQueue() {
+  return getFunctions().taskQueue(BROADCAST_HISTORY_VIEWER_ANALYSIS_TASK_FUNCTION);
+}
+
+function reusableBroadcastViewerStats(record, soopId, vodId) {
+  if (!record || record.status !== 'completed' || Number(record.schemaVersion) !== 1) return null;
+  const stats = record.stats;
+  const validPoint = (point) => point && Number.isFinite(Number(point.second)) && Number(point.second) >= 0
+    && Number.isFinite(Number(point.viewers)) && Number(point.viewers) >= 0;
+  if (!stats || String(stats.streamerId || '').trim().toLowerCase() !== soopId
+    || String(stats.vodId || '').trim() !== vodId
+    || !validPoint(stats.highest) || !validPoint(stats.lowest)) return null;
+  return {
+    highest: { second: Math.floor(Number(stats.highest.second)), viewers: Math.floor(Number(stats.highest.viewers)) },
+    lowest: { second: Math.floor(Number(stats.lowest.second)), viewers: Math.floor(Number(stats.lowest.viewers)) },
+    analyzedAt: Number(record.analyzedAt) || Number(stats.checkedAt) || 0,
+  };
+}
+
+function broadcastHistoryViewerAnalysisTaskId(soopId, vodId, attempt) {
+  const digest = crypto.createHash('sha256').update(`${soopId}\0${vodId}\0${attempt}`).digest('hex').slice(0, 48);
+  return `bva-${digest}`;
+}
+
+async function enqueueBroadcastHistoryViewerAnalysis(soopId, vodId, attempt) {
+  await broadcastHistoryViewerStatsTaskQueue().enqueue({ streamerId: soopId, vodId }, {
+    id: broadcastHistoryViewerAnalysisTaskId(soopId, vodId, attempt),
+    dispatchDeadlineSeconds: 120,
+  });
+}
+
+function formatBroadcastHistoryElapsed(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':');
+}
+
+async function processPendingBroadcastViewerAnalysis(roomId, pending, state, updates, checkedAt) {
+  const normalizedSoopId = String(pending.soopId || '').trim().toLowerCase();
+  const vodId = String(pending.vodId || '').trim();
+  if (!/^[a-z0-9]{2,20}$/.test(normalizedSoopId) || !/^\d{1,20}$/.test(vodId)) {
+    delete state.pendingViewerAnalyses[pending.broadcastId];
+    return;
+  }
+
+  const messagePath = broadcastHistoryMessagePath(roomId, pending.messageId);
+  const messageSnapshot = await db().ref(messagePath).get();
+  const current = updates[messagePath] || messageSnapshot.val();
+  if (!current || current.broadcastStatus !== 'ended' || !current.vod || String(current.vod.id) !== vodId) {
+    delete state.pendingViewerAnalyses[pending.broadcastId];
+    return;
+  }
+
+  const cacheSnapshot = await broadcastHistoryViewerStatsCacheRef(normalizedSoopId, vodId).get();
+  const stats = reusableBroadcastViewerStats(cacheSnapshot.val(), normalizedSoopId, vodId);
+  if (stats) {
+    const updated = {
+      ...current,
+      viewerAnalysis: { status: 'ready', ...stats },
+      updatedAt: checkedAt,
+    };
+    addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+    delete state.pendingViewerAnalyses[pending.broadcastId];
+    return;
+  }
+
+  if (Number(pending.nextCheckAt) > checkedAt) return;
+  const attempt = Math.max(0, Number(pending.attempts) || 0);
+  if (attempt >= BROADCAST_HISTORY_VIEWER_ANALYSIS_RETRY_AFTER_MS.length) {
+    const updated = {
+      ...current,
+      viewerAnalysis: { status: 'unavailable', checkedAt },
+      updatedAt: checkedAt,
+    };
+    addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+    delete state.pendingViewerAnalyses[pending.broadcastId];
+    return;
+  }
+
+  const nextAttempt = attempt + 1;
+  try {
+    await enqueueBroadcastHistoryViewerAnalysis(normalizedSoopId, vodId, nextAttempt);
+  } catch (error) {
+    // A task with the same VOD/attempt ID may already be queued. That is safe:
+    // the fanpage worker and its shared cache make duplicate work idempotent.
+    if (!['functions/task-already-exists', 'functions/already-exists'].includes(error && error.code)) {
+      logger.warn('Could not enqueue broadcast VOD viewer analysis', {
+        roomId,
+        soopId: normalizedSoopId,
+        vodId,
+        attempt: nextAttempt,
+        message: String(error && error.message || error).slice(0, 120),
+      });
+    }
+  }
+
+  const updated = {
+    ...current,
+    viewerAnalysis: { status: 'pending' },
+    updatedAt: checkedAt,
+  };
+  addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+  state.pendingViewerAnalyses[pending.broadcastId] = {
+    ...pending,
+    attempts: nextAttempt,
+    nextCheckAt: checkedAt + BROADCAST_HISTORY_VIEWER_ANALYSIS_RETRY_AFTER_MS[attempt],
+  };
+}
+
 async function endTrackedBroadcast(roomId, state, endedAt, updates) {
   const broadcastId = String(state.activeBroadcastId || '');
   const messageId = String(state.activeMessageId || '');
@@ -2387,9 +2509,20 @@ async function updatePendingBroadcastVod(roomId, pending, state, updates, checke
         thumbnailUrl: vod.thumbnailUrl,
         url: vod.url,
       },
+      viewerAnalysis: { status: 'pending' },
       updatedAt: checkedAt,
     };
     addBroadcastHistoryMessageUpdates(updates, roomId, updated);
+    state.pendingViewerAnalyses = state.pendingViewerAnalyses || {};
+    state.pendingViewerAnalyses[pending.broadcastId] = {
+      broadcastId: pending.broadcastId,
+      messageId: pending.messageId,
+      soopId: pending.soopId,
+      vodId: vod.id,
+      attempts: 0,
+      nextCheckAt: checkedAt,
+      createdAt: checkedAt,
+    };
     delete state.pendingVods[pending.broadcastId];
     return;
   }
@@ -2469,7 +2602,11 @@ async function ensureBroadcastHistoryMonitor(roomId) {
   const monitorRef = broadcastHistoryMonitorRef(roomId);
   const startedAt = now();
   const result = await transactBroadcastHistoryMonitor(monitorRef, (current) => {
-    const state = { ...(current || { pendingVods: {} }), pendingVods: { ...((current && current.pendingVods) || {}) } };
+    const state = {
+      ...(current || { pendingVods: {}, pendingViewerAnalyses: {} }),
+      pendingVods: { ...((current && current.pendingVods) || {}) },
+      pendingViewerAnalyses: { ...((current && current.pendingViewerAnalyses) || {}) },
+    };
     if (Number(meta.memberCount) <= 0) return;
     if (state.monitoringEnabled !== true) {
       state.monitorGeneration = (Number(state.monitorGeneration) || 0) + 1;
@@ -2617,7 +2754,12 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
 
   const checkedAt = now();
   const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
-  stateAtClaim = { ...stateAtClaim, pendingVods: { ...(stateAtClaim.pendingVods || {}) }, soopId };
+  stateAtClaim = {
+    ...stateAtClaim,
+    pendingVods: { ...(stateAtClaim.pendingVods || {}) },
+    pendingViewerAnalyses: { ...(stateAtClaim.pendingViewerAnalyses || {}) },
+    soopId,
+  };
   const updates = {};
   const liveCheckDue = !Number(stateAtClaim.nextLiveCheckAt) || Number(stateAtClaim.nextLiveCheckAt) <= checkedAt;
   if (liveCheckDue) {
@@ -2646,8 +2788,17 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
     .filter((pending) => pending && Number(pending.nextLookupAt) <= checkedAt)
     .sort((a, b) => Number(a.nextLookupAt) - Number(b.nextLookupAt))[0];
   if (dueVod) await updatePendingBroadcastVod(roomId, dueVod, stateAtClaim, updates, checkedAt);
+  const dueViewerAnalysis = Object.values(stateAtClaim.pendingViewerAnalyses)
+    .filter((pending) => pending && Number(pending.nextCheckAt) <= checkedAt)
+    .sort((a, b) => Number(a.nextCheckAt) - Number(b.nextCheckAt))[0];
+  if (dueViewerAnalysis) {
+    await processPendingBroadcastViewerAnalysis(roomId, dueViewerAnalysis, stateAtClaim, updates, checkedAt);
+  }
   for (const [broadcastId, pending] of Object.entries(stateAtClaim.pendingVods)) {
     if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete stateAtClaim.pendingVods[broadcastId];
+  }
+  for (const [broadcastId, pending] of Object.entries(stateAtClaim.pendingViewerAnalyses)) {
+    if (!pending || checkedAt - Number(pending.createdAt || 0) > 48 * 60 * 60 * 1000) delete stateAtClaim.pendingViewerAnalyses[broadcastId];
   }
   stateAtClaim.updatedAt = checkedAt;
 
@@ -2676,7 +2827,11 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
   const savedState = stateSave.snapshot.val();
   if (!stateSave.committed || !savedState || savedState.runningTaskId !== taskId || Number(savedState.monitorGeneration) !== generation) return;
 
-  const dueTimes = [Number(savedState.nextLiveCheckAt), ...Object.values(savedState.pendingVods || {}).map((pending) => Number(pending && pending.nextLookupAt))]
+  const dueTimes = [
+    Number(savedState.nextLiveCheckAt),
+    ...Object.values(savedState.pendingVods || {}).map((pending) => Number(pending && pending.nextLookupAt)),
+    ...Object.values(savedState.pendingViewerAnalyses || {}).map((pending) => Number(pending && pending.nextCheckAt)),
+  ]
     .filter((value) => value > 0);
   const nextDueAt = dueTimes.length ? Math.min(...dueTimes) : checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
   await enqueueBroadcastHistoryTask(roomId, generation, nextDueAt, taskId);
