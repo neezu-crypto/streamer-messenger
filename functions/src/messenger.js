@@ -2798,7 +2798,22 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
     if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete stateAtClaim.pendingVods[broadcastId];
   }
   for (const [broadcastId, pending] of Object.entries(stateAtClaim.pendingViewerAnalyses)) {
-    if (!pending || checkedAt - Number(pending.createdAt || 0) > 48 * 60 * 60 * 1000) delete stateAtClaim.pendingViewerAnalyses[broadcastId];
+    if (!pending) {
+      delete stateAtClaim.pendingViewerAnalyses[broadcastId];
+      continue;
+    }
+    if (checkedAt - Number(pending.createdAt || 0) <= 48 * 60 * 60 * 1000) continue;
+    const messagePath = broadcastHistoryMessagePath(roomId, pending.messageId);
+    const messageSnapshot = await db().ref(messagePath).get();
+    const message = updates[messagePath] || messageSnapshot.val();
+    if (message && message.viewerAnalysis && message.viewerAnalysis.status === 'pending') {
+      addBroadcastHistoryMessageUpdates(updates, roomId, {
+        ...message,
+        viewerAnalysis: { status: 'unavailable', checkedAt },
+        updatedAt: checkedAt,
+      });
+    }
+    delete stateAtClaim.pendingViewerAnalyses[broadcastId];
   }
   stateAtClaim.updatedAt = checkedAt;
 
