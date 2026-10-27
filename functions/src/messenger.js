@@ -2449,15 +2449,11 @@ const messengerSyncStreamerBroadcastHistory = onSchedule({
     const updates = {};
     const memberCount = await getBroadcastHistoryMemberCount(roomId, room);
     const hasParticipants = memberCount > 0;
-    const hasTrackedBroadcast = !!state.activeBroadcastId;
-    const hasPendingVods = Object.keys(state.pendingVods).length > 0;
-    const hasDueVod = Object.values(state.pendingVods).some((pending) => pending && Number(pending.nextLookupAt) <= checkedAt);
-    const hasExpiredVod = Object.values(state.pendingVods).some((pending) => !pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000);
 
-    // With no approved participants, don't discover new broadcasts. Keep draining
-    // an already tracked live broadcast and its VOD lookup retries to completion.
-    if (!hasParticipants && !hasTrackedBroadcast && !hasPendingVods) {
-      if (monitors[roomId] && monitors[roomId].monitoringEnabled !== false) {
+    // A room without approved participants does no broadcast-history work at all.
+    // Preserve any in-progress state so it can resume immediately if someone joins.
+    if (!hasParticipants) {
+      if (monitors[roomId] && (monitors[roomId].monitoringEnabled !== false || Number(monitors[roomId].nextLiveCheckAt) !== 0)) {
         state.monitoringEnabled = false;
         state.nextLiveCheckAt = 0;
         state.updatedAt = checkedAt;
@@ -2466,13 +2462,10 @@ const messengerSyncStreamerBroadcastHistory = onSchedule({
       }
       return;
     }
-    if (!hasParticipants && !hasTrackedBroadcast && hasPendingVods && !hasDueVod && !hasExpiredVod) return;
 
     const resumedMonitoring = hasParticipants && state.monitoringEnabled !== true;
-    if (hasParticipants) state.monitoringEnabled = true;
-    else state.monitoringEnabled = false;
-    const liveCheckDue = (hasParticipants && (resumedMonitoring || !Number(state.nextLiveCheckAt) || Number(state.nextLiveCheckAt) <= checkedAt))
-      || (!hasParticipants && hasTrackedBroadcast && (!Number(state.nextLiveCheckAt) || Number(state.nextLiveCheckAt) <= checkedAt));
+    state.monitoringEnabled = true;
+    const liveCheckDue = resumedMonitoring || !Number(state.nextLiveCheckAt) || Number(state.nextLiveCheckAt) <= checkedAt;
     if (liveCheckDue) {
       try {
         const status = await getStationStatus(soopId);
@@ -2480,16 +2473,16 @@ const messengerSyncStreamerBroadcastHistory = onSchedule({
           if (state.activeBroadcastId && state.activeBroadcastId !== status.broadcastId) {
             await endTrackedBroadcast(roomId, state, checkedAt, updates);
           }
-          if (!state.activeBroadcastId && hasParticipants) await startTrackedBroadcast(roomId, room, soopId, status, state, checkedAt, updates);
-          state.nextLiveCheckAt = state.activeBroadcastId ? checkedAt + BROADCAST_HISTORY_LIVE_POLL_MS : 0;
+          if (!state.activeBroadcastId) await startTrackedBroadcast(roomId, room, soopId, status, state, checkedAt, updates);
+          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_LIVE_POLL_MS;
         } else {
           if (state.activeBroadcastId) await endTrackedBroadcast(roomId, state, checkedAt, updates);
-          state.nextLiveCheckAt = hasParticipants ? checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS : 0;
+          state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_IDLE_POLL_MS;
         }
         state.lastSuccessfulCheckAt = checkedAt;
         state.lastErrorAt = 0;
       } catch (error) {
-        state.nextLiveCheckAt = hasParticipants || state.activeBroadcastId ? checkedAt + BROADCAST_HISTORY_ERROR_POLL_MS : 0;
+        state.nextLiveCheckAt = checkedAt + BROADCAST_HISTORY_ERROR_POLL_MS;
         state.lastErrorAt = checkedAt;
         logger.warn('SOOP broadcaster status sync failed', {
           roomId,
@@ -2508,7 +2501,6 @@ const messengerSyncStreamerBroadcastHistory = onSchedule({
     for (const [broadcastId, pending] of pendingEntries) {
       if (!pending || checkedAt - Number(pending.endedAt || 0) > 48 * 60 * 60 * 1000) delete state.pendingVods[broadcastId];
     }
-    if (!hasParticipants && !state.activeBroadcastId && !Object.keys(state.pendingVods).length) state.nextLiveCheckAt = 0;
     state.updatedAt = checkedAt;
     updates[`${ROOT}/broadcastMonitor/${roomId}`] = state;
     await db().ref().update(updates);
