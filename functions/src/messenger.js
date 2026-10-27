@@ -54,7 +54,7 @@ const BROADCAST_HISTORY_LIVE_POLL_MS = 5 * 60 * 1000;
 const BROADCAST_HISTORY_IDLE_POLL_MS = 10 * 60 * 1000;
 const BROADCAST_HISTORY_ERROR_POLL_MS = 5 * 60 * 1000;
 const BROADCAST_HISTORY_VOD_RETRY_AFTER_MS = [
-  2 * 60 * 1000,
+  5 * 60 * 1000,
   10 * 60 * 1000,
   30 * 60 * 1000,
   90 * 60 * 1000,
@@ -2414,7 +2414,7 @@ async function updatePendingBroadcastVod(roomId, pending, state, updates, checke
 }
 
 const messengerSyncStreamerBroadcastHistory = onSchedule({
-  schedule: '* * * * *',
+  schedule: '*/5 * * * *',
   timeZone: 'Asia/Seoul',
   region: 'us-central1',
   timeoutSeconds: 540,
