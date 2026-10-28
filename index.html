@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261028-broadcast-history">
+  <link rel="stylesheet" href="styles.css?v=20261029-usage-analytics">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -229,7 +229,7 @@
     <section class="admin-view glass-card" id="admin-view" hidden>
       <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2>메신저 운영 관리</h2></div><button class="button button-quiet" id="close-admin" type="button">닫기</button></div>
       <div class="admin-summary" aria-live="polite"><article><span>대기 신고 전체</span><strong id="admin-pending-count">—</strong></article><article><span>메신저 전용 정지</span><strong id="admin-ban-count">—</strong></article></div>
-      <nav class="admin-tabs" aria-label="관리 기능"><button class="active" type="button" data-admin-tab="reports" title="메신저 신고를 확인하고 처리합니다">신고 검토</button><button type="button" data-admin-tab="accounts" title="메신저 이용 제한 계정을 관리합니다">계정 제한</button><button type="button" data-admin-tab="visitors" title="메신저 접속자 추이를 확인합니다">접속 통계</button><button type="button" data-admin-tab="audit" title="메신저 관리자 작업 기록을 봅니다">관리 기록</button><button type="button" data-admin-tab="test" title="테스트방과 테스트 계정을 관리합니다">테스트 환경</button></nav>
+      <nav class="admin-tabs" aria-label="관리 기능"><button class="active" type="button" data-admin-tab="reports" title="메신저 신고를 확인하고 처리합니다">신고 검토</button><button type="button" data-admin-tab="accounts" title="메신저 이용 제한 계정을 관리합니다">계정 제한</button><button type="button" data-admin-tab="visitors" title="메신저 접속자 추이를 확인합니다">접속 통계</button><button type="button" data-admin-tab="usage" title="메신저 데이터 사용량과 공개 단가 기준 비용 추정치를 확인합니다">데이터·비용</button><button type="button" data-admin-tab="audit" title="메신저 관리자 작업 기록을 봅니다">관리 기록</button><button type="button" data-admin-tab="test" title="테스트방과 테스트 계정을 관리합니다">테스트 환경</button></nav>
       <section class="admin-pane" id="admin-pane-reports">
         <div class="admin-list-toolbar"><label class="field-label" for="admin-report-status">신고 상태</label><select class="text-input" id="admin-report-status"><option value="pending">대기</option><option value="reviewed">확인 완료</option><option value="dismissed">기각</option><option value="all">전체</option></select><button class="button button-quiet" id="admin-report-refresh" type="button">새로고침</button></div>
         <div id="admin-report-list" class="admin-report-list"><p class="muted">신고 목록을 불러옵니다.</p></div>
@@ -252,6 +252,30 @@
           <div class="admin-visitor-chart-heading"><strong>최근 24시간 시간대별 최고 동시 접속</strong><small id="admin-visitor-updated">집계 정보를 불러옵니다.</small></div>
           <div class="admin-visitor-chart-scroll"><div class="admin-visitor-chart" id="admin-visitor-chart" role="img" aria-label="최근 24시간 시간대별 최고 동시 접속자 수"></div></div>
           <p class="admin-visitor-footnote">접속 집계는 5분 간격 샘플의 시간별 최고값입니다. 일별 값은 그 날짜의 시간별 최고값 중 최대치이며, 일간 고유 방문자 수와는 다릅니다. 시간 구분은 한국 시간 기준입니다. 최근 60분 내 접속은 새로고침 또는 페이지 복귀 시 남긴 기록을 기준으로 합니다.</p>
+        </div>
+      </section>
+      <section class="admin-pane" id="admin-pane-usage" hidden>
+        <div class="admin-tool-card admin-usage-tool">
+          <div class="admin-list-heading"><div><h3>메신저 데이터 사용량·비용 추정</h3><p>집계 결과는 매일 비공개 정적 파일로 저장하며, 새로고침 때마다 원본 측정 API를 다시 조회하지 않습니다.</p></div><button class="button button-quiet" id="admin-usage-refresh" type="button" title="비공개 정적 집계 파일을 다시 불러옵니다">집계 다시 불러오기</button></div>
+          <div class="admin-usage-toolbar"><label class="field-label" for="admin-usage-days">표시 기간</label><select class="text-input" id="admin-usage-days" title="최근 1일부터 30일까지의 일별 사용량을 선택합니다"><option value="1">최근 1일</option><option value="7" selected>최근 7일</option><option value="14">최근 14일</option><option value="30">최근 30일</option></select></div>
+          <p class="admin-usage-updated" id="admin-usage-updated" role="status" aria-live="polite">비공개 사용량 집계를 불러옵니다.</p>
+          <div class="admin-usage-summary" aria-live="polite">
+            <article><span>Realtime Database 다운로드</span><strong id="admin-usage-rtdb-download">—</strong><small>공용 DB 전체 · 전송량 기준</small></article>
+            <article><span>Realtime Database 저장 처리</span><strong id="admin-usage-rtdb-write">—</strong><small>공용 DB 전체 · 기록된 처리량</small></article>
+            <article><span>메신저 Functions 응답량</span><strong id="admin-usage-functions-egress">—</strong><small>messenger 함수 이름 기준</small></article>
+            <article><span>메신저 Functions 요청</span><strong id="admin-usage-functions-requests">—</strong><small>선택 기간 측정값</small></article>
+          </div>
+          <div class="admin-usage-cost-grid" aria-live="polite">
+            <article><span>선택 기간 변동 비용 추정</span><strong id="admin-usage-variable-cost">—</strong><small id="admin-usage-variable-cost-note">RTDB 전송 + 메신저 Functions 계산 가능분</small></article>
+            <article><span>현재 저장량 월 환산 추정</span><strong id="admin-usage-storage-cost">—</strong><small id="admin-usage-storage-cost-note">공용 RTDB + 메신저 R2</small></article>
+          </div>
+          <div class="admin-usage-storage" aria-live="polite">
+            <div><span>현재 Realtime Database 저장량</span><strong id="admin-usage-rtdb-storage">—</strong><small id="admin-usage-rtdb-storage-time">측정 시각 확인 중</small></div>
+            <div><span>현재 메신저 비공개 R2 저장량</span><strong id="admin-usage-r2-storage">—</strong><small id="admin-usage-r2-storage-time">측정 시각 확인 중</small></div>
+          </div>
+          <div class="admin-usage-table-scroll"><table class="admin-usage-table"><thead><tr><th scope="col">날짜</th><th scope="col">RTDB 다운로드</th><th scope="col">RTDB 저장 처리</th><th scope="col">Functions 요청</th><th scope="col">Functions 응답량</th><th scope="col">변동 비용 추정</th></tr></thead><tbody id="admin-usage-table-body"><tr><td colspan="6">집계 자료를 불러옵니다.</td></tr></tbody></table></div>
+          <p class="admin-usage-footnote" id="admin-usage-footnote">공개 단가 기준의 USD 추정치이며 실제 청구액이 아닙니다. Firebase/Google 공용 무료 사용량·할인·세금은 적용하지 않습니다. RTDB 값은 자매 서비스와 공유되어 메신저만의 사용량으로 분리할 수 없습니다. R2 요청 비용, GitHub Pages 전송량, 외부 SOOP·YouTube·Discord 트래픽은 집계에 포함하지 않습니다.</p>
+          <p class="admin-usage-sources">단가 기준일 <span id="admin-usage-price-date">—</span> · <a href="https://firebase.google.com/pricing" target="_blank" rel="noopener noreferrer" title="Firebase 서비스 가격표를 새 탭에서 엽니다">Firebase</a> · <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener noreferrer" title="Cloud Run 가격표를 새 탭에서 엽니다">Cloud Run</a> · <a href="https://developers.cloudflare.com/r2/pricing/" target="_blank" rel="noopener noreferrer" title="Cloudflare R2 가격표를 새 탭에서 엽니다">R2</a></p>
         </div>
       </section>
       <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
@@ -540,6 +564,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261028-broadcast-history"></script>
+  <script type="module" src="js/app.js?v=20261029-usage-analytics"></script>
 </body>
 </html>

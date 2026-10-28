@@ -16,6 +16,7 @@ const { defineSecret } = require('firebase-functions/params');
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getPrincipal, getVerifiedStreamer, requireAdmin, SERVICE_ID } = require('./auth');
+const usageAnalytics = require('./usage-analytics');
 const stickerCatalog = require('../catalog/stickers.json');
 
 const scrypt = promisify(crypto.scrypt);
@@ -83,6 +84,7 @@ for (const product of stickerCatalog.products || []) {
 const R2_ACCOUNT_ID = '8fe39a69fb377472a64192f9c1b4666e';
 const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
+const USAGE_SNAPSHOT_LOCK_PATH = `${ROOT}/admin/usageAnalyticsSnapshotLock`;
 
 const db = () => getDatabase();
 const now = () => Date.now();
@@ -238,6 +240,7 @@ const userRoomIndexPath = (uid, roomId) => `${ROOT}/userRoomIndex/${uid}/${roomI
 const testAccountsRef = () => db().ref(`${ROOT}/admin/testAccounts`);
 const testAccountRef = (uid) => testAccountsRef().child(uid);
 const roomselfS3 = () => new S3Client({ region: 'auto', endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, credentials: { accessKeyId: roomselfAccessKeyId.value(), secretAccessKey: roomselfSecretAccessKey.value() } });
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const roomselfKey = (id, ext) => `roomself/${id.slice(0, 2)}/${id}.${ext}`;
 const roomselfDateShard = (time) => new Date(time).toISOString().slice(0, 10).replaceAll('-', '');
 const archiveDateShard = (time) => new Date(Number(time) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10).replaceAll('-', '');
@@ -3219,6 +3222,63 @@ const messengerAdminGetVisitorAnalytics = onCall(async (request) => {
   return { recentCount, sampledAt: at, recentWindowMs: windowMs, hourly, peakHour, days: requestedDays, daily };
 });
 
+async function withUsageSnapshotLock(operation) {
+  const lockRef = db().ref(USAGE_SNAPSHOT_LOCK_PATH);
+  const token = crypto.randomBytes(16).toString('hex');
+  const lockResult = await lockRef.transaction((current) => {
+    if (current && Number(current.expiresAt) > now()) return;
+    return { token, expiresAt: now() + 15 * 60 * 1000 };
+  });
+  if (!lockResult.committed) return { acquired: false, value: null };
+  try {
+    return { acquired: true, value: await operation() };
+  } finally {
+    await lockRef.transaction((current) => current && current.token === token ? null : undefined).catch((error) => {
+      logger.warn('메신저 사용량 집계 잠금을 해제하지 못했습니다.', { code: error && error.code });
+    });
+  }
+}
+
+async function readUsageSnapshot(s3) {
+  try {
+    return await usageAnalytics.readSnapshot(s3, roomselfSecretAccessKey.value());
+  } catch (error) {
+    logger.warn('메신저 사용량 정적 집계를 읽지 못했습니다.', { code: error && (error.code || error.name) });
+    return null;
+  }
+}
+
+const messengerAdminGetUsageAnalytics = onCall({
+  region: 'us-central1',
+  secrets: [roomselfAccessKeyId, roomselfSecretAccessKey],
+  timeoutSeconds: 540,
+  memory: '1GiB',
+}, async (request) => {
+  await requireAdmin(request);
+  const s3 = roomselfS3();
+  let report = await readUsageSnapshot(s3);
+  if (!report) {
+    const result = await withUsageSnapshotLock(async () => {
+      const current = await readUsageSnapshot(s3);
+      if (current) return current;
+      const generated = await usageAnalytics.collectUsageSnapshot(s3, roomselfSecretAccessKey.value(), {
+        logError: (metric, code, message) => logger.warn('Cloud Monitoring 사용량을 읽지 못했습니다.', { metric, code, message: String(message || '').slice(0, 160) }),
+      });
+      await usageAnalytics.writeSnapshot(s3, generated, roomselfSecretAccessKey.value());
+      return generated;
+    });
+    report = result.value;
+    if (!result.acquired && !report) {
+      for (let attempt = 0; attempt < 20 && !report; attempt += 1) {
+        await sleep(1000);
+        report = await readUsageSnapshot(s3);
+      }
+    }
+    if (!report) throw new HttpsError('unavailable', '사용량 집계 파일을 준비 중입니다. 잠시 후 다시 열어 주세요.');
+  }
+  return report;
+});
+
 const messengerAdminGetBanStatus = onCall(async (request) => {
   const p = await requireAdmin(request);
   const uid = String((request.data || {}).uid || '').trim();
@@ -3416,6 +3476,25 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
   }
 });
 
+const messengerCollectDailyUsageAnalytics = onSchedule({
+  schedule: '20 2 * * *',
+  timeZone: 'Asia/Seoul',
+  region: 'us-central1',
+  secrets: [roomselfAccessKeyId, roomselfSecretAccessKey],
+  timeoutSeconds: 540,
+  memory: '1GiB',
+}, async () => {
+  const result = await withUsageSnapshotLock(async () => {
+    const report = await usageAnalytics.collectUsageSnapshot(roomselfS3(), roomselfSecretAccessKey.value(), {
+      logError: (metric, code, message) => logger.warn('Cloud Monitoring 사용량을 읽지 못했습니다.', { metric, code, message: String(message || '').slice(0, 160) }),
+    });
+    const bytes = await usageAnalytics.writeSnapshot(roomselfS3(), report, roomselfSecretAccessKey.value());
+    logger.info('메신저 사용량 정적 집계를 저장했습니다.', { from: report.historyFrom, through: report.historyThrough, bytes });
+    return report;
+  });
+  if (!result.acquired) logger.info('다른 메신저 사용량 집계가 진행 중이어서 이번 실행을 건너뜁니다.');
+});
+
 module.exports = {
   messengerGetSession, messengerAdminListTestAccounts, messengerAdminCreateTestAccount, messengerAdminJoinTestRoom, messengerAdminIssueTestAccountToken,
   messengerGetRoomState, messengerListMyRooms, messengerEnsureRoom, messengerAutoCreateVerifiedStreamerRoom, messengerAdminBackfillVerifiedRooms, messengerUpdateRoom, messengerDiscardRoom, messengerApplyToRoom,
@@ -3424,7 +3503,7 @@ module.exports = {
   messengerSendMessage, messengerLoadArchivedMessages, messengerGetLinkPreview, messengerGetStreamerLiveStatus, messengerSearchStreamerClips, messengerGetGalleryImages, messengerGetGalleryImage, messengerSubmitReport,
   messengerRequestRoomselfUpload, messengerFinalizeRoomselfUpload, messengerGetRoomselfImage,
   messengerAdminGetDashboard, messengerAdminGetReportDetail, messengerAdminUpdateReport, messengerAdminSetBan,
-  messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics,
-  messengerExpireRequests, messengerPurgeExpiredData,
+  messengerAdminGetBanStatus, messengerAdminGetReportRoomselfImage, messengerAdminGetVisitorAnalytics, messengerAdminGetUsageAnalytics,
+  messengerExpireRequests, messengerPurgeExpiredData, messengerCollectDailyUsageAnalytics,
   messengerScheduleStreamerBroadcastHistory, messengerProcessStreamerBroadcastHistory,
 };

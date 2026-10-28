@@ -43,8 +43,10 @@ module.exports = {
   messengerAdminSetBan: messenger.messengerAdminSetBan,
   messengerAdminGetBanStatus: messenger.messengerAdminGetBanStatus,
   messengerAdminGetVisitorAnalytics: messenger.messengerAdminGetVisitorAnalytics,
+  messengerAdminGetUsageAnalytics: messenger.messengerAdminGetUsageAnalytics,
   messengerExpireRequests: messenger.messengerExpireRequests,
   messengerPurgeExpiredData: messenger.messengerPurgeExpiredData,
+  messengerCollectDailyUsageAnalytics: messenger.messengerCollectDailyUsageAnalytics,
   messengerScheduleStreamerBroadcastHistory: messenger.messengerScheduleStreamerBroadcastHistory,
   messengerProcessStreamerBroadcastHistory: messenger.messengerProcessStreamerBroadcastHistory,
 };
