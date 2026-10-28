@@ -5028,7 +5028,7 @@ function formatUsageCost(value) {
   if (value === null || value === undefined || value === '') return '자료 부족';
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0
-    ? `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 }).format(amount)}`
+    ? `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 8 }).format(amount)}`
     : '자료 부족';
 }
 
