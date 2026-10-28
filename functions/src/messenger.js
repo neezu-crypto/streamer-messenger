@@ -5,7 +5,7 @@ const net = require('node:net');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const { promisify } = require('util');
 const { getAuth } = require('firebase-admin/auth');
-const { getDatabase } = require('firebase-admin/database');
+const { getDatabase, ServerValue } = require('firebase-admin/database');
 const { getFunctions } = require('firebase-admin/functions');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
@@ -970,8 +970,32 @@ async function ensureGalleryLink(roomId, meta) {
   return nextMeta;
 }
 
+async function logVerifiedMessengerVisit(principal) {
+  if (!principal.streamer || principal.testAccount) return;
+  const database = db();
+  if ((await database.ref(`users/${principal.uid}/streamerVerified`).get()).val() !== true) return;
+  const dateKey = new Date(now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dedupRef = database.ref(`verifiedStreamerVisitDedup/streamerMessenger/${principal.uid}/${dateKey}`);
+  const result = await dedupRef.transaction((current) => current ? undefined : true);
+  if (!result.committed) return;
+  try {
+    await database.ref('verifiedStreamerVisits').push({
+      uid: principal.uid,
+      nickname: principal.streamer.nickname || '',
+      soopId: principal.streamer.soopId || '',
+      market: 'streamerMessenger',
+      visitedAt: ServerValue.TIMESTAMP,
+    });
+  } catch (error) {
+    await dedupRef.remove().catch(() => {});
+    throw error;
+  }
+}
+
 const messengerGetSession = onCall(async (request) => {
   const p = await getPrincipal(request);
+  try { await logVerifiedMessengerVisit(p); }
+  catch (error) { logger.warn('인증 스트리머 메신저 접속 기록 실패', { error: String(error && error.message || error) }); }
   const profile = p.trusted ? await profileFor(p.uid) : null;
   let testAccount = null;
   let testRoom = null;
