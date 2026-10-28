@@ -20,10 +20,12 @@ const firebaseConfig = {
   messagingSenderId: '997788925900',
   appId: '1:997788925900:web:8fa090a599797eb6a3a769',
 };
+const messengerDatabaseUrl = 'https://streamer-messenger-rtdb.firebaseio.com';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getDatabase(app);
+const db = getDatabase(app, messengerDatabaseUrl);
+const sharedDb = getDatabase(app);
 const functions = getFunctions(app);
 const googleProvider = new GoogleAuthProvider();
 const call = (name, data) => httpsCallable(functions, name)(data || {}).then((result) => result.data);
@@ -108,7 +110,7 @@ auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
   const uid = user.uid;
   let hasInitialVerifiedValue = false;
   let previousVerifiedValue = false;
-  streamerVerifiedUnsubscribe = onValue(ref(db, `users/${uid}/streamerVerified`), async (snapshot) => {
+  streamerVerifiedUnsubscribe = onValue(ref(sharedDb, `users/${uid}/streamerVerified`), async (snapshot) => {
     if (auth.currentUser?.uid !== uid) return;
     const verified = snapshot.val() === true;
     if (hasInitialVerifiedValue && previousVerifiedValue !== verified) {
@@ -118,7 +120,7 @@ auth.authStateReady().then(() => onAuthStateChanged(auth, async (user) => {
     previousVerifiedValue = verified;
     hasInitialVerifiedValue = true;
   }, (error) => console.error('스트리머 인증 상태 구독 실패:', error));
-  switchApprovalUnsubscribe = onValue(ref(db, `users/${uid}/streamerVerificationSwitchApproval`), (snapshot) => {
+  switchApprovalUnsubscribe = onValue(ref(sharedDb, `users/${uid}/streamerVerificationSwitchApproval`), (snapshot) => {
     const requestId = snapshot.val() && snapshot.val().requestId;
     if (requestId) handleMessengerStreamerSwitchApproval(uid, String(requestId));
   }, (error) => console.error('계정 전환 승인 신호 구독 실패:', error));
@@ -192,7 +194,7 @@ async function requestStreamerVerification(data) {
 }
 
 window.messenger = {
-  auth, db, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
+  auth, db, sharedDb, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
   call, waitForSession, refreshSession, loginGoogle, loginKakao, confirmDialog,
   requestStreamerVerification, signOut: () => signOut(auth),
@@ -215,7 +217,8 @@ async function enterTestAccount(uid) {
   const testAuth = getAuth(testApp);
   await setPersistence(testAuth, browserLocalPersistence);
   await signInWithCustomToken(testAuth, issued.customToken);
-  const testDb = getDatabase(testApp);
+  const testDb = getDatabase(testApp, messengerDatabaseUrl);
+  const testSharedDb = getDatabase(testApp);
   const testFunctions = getFunctions(testApp);
   const testCall = (name, data) => httpsCallable(testFunctions, name)(data || {}).then((result) => result.data);
   // The room stock panel reads the shared game's personal balance. Create the
@@ -239,6 +242,7 @@ async function enterTestAccount(uid) {
     ...defaultMessenger,
     auth: testAuth,
     db: testDb,
+    sharedDb: testSharedDb,
     state: testState,
     ref, get, set, push, onValue, query, orderByKey, orderByChild,
     limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,

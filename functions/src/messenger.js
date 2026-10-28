@@ -4,14 +4,15 @@ const https = require('node:https');
 const net = require('node:net');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const { promisify } = require('util');
+const { getApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase, ServerValue } = require('firebase-admin/database');
 const { getFunctions } = require('firebase-admin/functions');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall: firebaseOnCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
-const { onTaskDispatched } = require('firebase-functions/v2/tasks');
+const { onTaskDispatched: firebaseOnTaskDispatched } = require('firebase-functions/v2/tasks');
 const logger = require('firebase-functions/logger');
-const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onSchedule: firebaseOnSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -21,6 +22,10 @@ const stickerCatalog = require('../catalog/stickers.json');
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
+const MESSENGER_DATABASE_URL = 'https://streamer-messenger-rtdb.firebaseio.com';
+const MAIN_DATABASE_INSTANCE = 'soop-stock-market-default-rtdb';
+const MESSENGER_DATABASE_INSTANCE = 'streamer-messenger-rtdb';
+const MIGRATION_STATE_PATH = 'messengerDatabaseMigration/state';
 const TEST_ROOM_ID = 'messengertestroom';
 const MESSAGE_MAX = 1000;
 const INTRO_MAX = 500;
@@ -86,7 +91,36 @@ const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
 const USAGE_SNAPSHOT_LOCK_PATH = `${ROOT}/admin/usageAnalyticsSnapshotLock`;
 
-const db = () => getDatabase();
+const db = () => getDatabase(getApp(), MESSENGER_DATABASE_URL);
+const sharedDb = () => getDatabase(getApp());
+let messengerMigrationStateCache = { paused: false, expiresAt: 0 };
+
+async function isMessengerDatabaseMigrationPaused() {
+  if (Date.now() < messengerMigrationStateCache.expiresAt) return messengerMigrationStateCache.paused;
+  const state = (await sharedDb().ref(MIGRATION_STATE_PATH).get()).val() || {};
+  messengerMigrationStateCache = {
+    paused: !!state.phase && state.phase !== 'ready',
+    expiresAt: Date.now() + 3000,
+  };
+  return messengerMigrationStateCache.paused;
+}
+
+function wrapFunction(factory, kind, args) {
+  const callback = args.pop();
+  args.push(async (...callbackArgs) => {
+    if (await isMessengerDatabaseMigrationPaused()) {
+      if (kind === 'call') throw new HttpsError('unavailable', '메신저 데이터베이스 전환 중입니다. 잠시 후 다시 시도해 주세요.');
+      if (kind === 'task' || kind === 'trigger') throw new Error('Messenger database migration is paused.');
+      return null;
+    }
+    return callback(...callbackArgs);
+  });
+  return factory(...args);
+}
+
+const onCall = (...args) => wrapFunction(firebaseOnCall, 'call', args);
+const onSchedule = (...args) => wrapFunction(firebaseOnSchedule, 'schedule', args);
+const onTaskDispatched = (...args) => wrapFunction(firebaseOnTaskDispatched, 'task', args);
 const now = () => Date.now();
 function principalRoomId(principal) {
   if (principal.streamer && /^[a-z0-9]{2,30}$/.test(principal.streamer.soopId || '')) return principal.streamer.soopId;
@@ -485,7 +519,7 @@ async function loadArchivedMessagePage(roomId, generation, scopeKey, uid, rawCur
 }
 
 async function profileFor(uid) {
-  const snap = await db().ref(`gallery/profiles/${uid}`).get();
+  const snap = await sharedDb().ref(`gallery/profiles/${uid}`).get();
   const p = snap.val() || {};
   return { nickname: String(p.nickname || '').slice(0, 30), soopId: String(p.soopId || '').slice(0, 30), avatarUrl: String(p.avatarUrl || '').slice(0, 500) };
 }
@@ -635,7 +669,7 @@ async function ensureMessengerBanIndex() {
     // One-time, key-paged backfill from the shared ban tree. Dashboard reads
     // after this use only the service-scoped index and counter.
     await adminRef.child('banIndex').set(null);
-    const source = db().ref('bannedAccounts').orderByKey();
+    const source = sharedDb().ref('bannedAccounts').orderByKey();
     let cursor = null;
     let count = 0;
     while (true) {
@@ -875,9 +909,9 @@ async function assertEmoteAvailable(request, uid, sticker) {
   const provider = request.auth && request.auth.token && request.auth.token.firebase
     ? request.auth.token.firebase.sign_in_provider : null;
   let eligible = !!provider && provider !== 'anonymous';
-  if (!eligible) eligible = (await db().ref(`users/${uid}/streamerVerified`).get()).val() === true;
+  if (!eligible) eligible = (await sharedDb().ref(`users/${uid}/streamerVerified`).get()).val() === true;
   if (sticker.freeForAuthenticated && eligible) return;
-  const ownership = await db().ref(`gameSeriesShop/ownership/${uid}/${sticker.productId}`).get();
+  const ownership = await sharedDb().ref(`gameSeriesShop/ownership/${uid}/${sticker.productId}`).get();
   if (!activeStickerOwnership(ownership.val())) {
     throw new HttpsError('permission-denied', '로그인 유저 또는 인증 스트리머만 무료로 사용할 수 있는 스티커입니다.');
   }
@@ -948,12 +982,12 @@ async function ensureUserRoomIndex(uid) {
 async function resolveGalleryStreamerId(streamerSoopId, streamerNickname) {
   const normalizedId = String(streamerSoopId || '').trim().toLowerCase();
   if (/^[a-z0-9]{2,30}$/.test(normalizedId)) {
-    const byId = await db().ref(`streamerNames/${normalizedId}`).get();
+    const byId = await sharedDb().ref(`streamerNames/${normalizedId}`).get();
     if (byId.exists()) return normalizedId;
   }
   const wanted = String(streamerNickname || '').trim().toLocaleLowerCase();
   if (!wanted) return '';
-  const snap = await db().ref('streamerNames').get();
+  const snap = await sharedDb().ref('streamerNames').get();
   const matches = [];
   snap.forEach((child) => {
     if (String(child.val() || '').trim().toLocaleLowerCase() === wanted) matches.push(child.key);
@@ -975,7 +1009,7 @@ async function ensureGalleryLink(roomId, meta) {
 
 async function logVerifiedMessengerVisit(principal) {
   if (!principal.streamer || principal.testAccount) return;
-  const database = db();
+  const database = sharedDb();
   if ((await database.ref(`users/${principal.uid}/streamerVerified`).get()).val() !== true) return;
   const dateKey = new Date(now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const dedupRef = database.ref(`verifiedStreamerVisitDedup/streamerMessenger/${principal.uid}/${dateKey}`);
@@ -1248,14 +1282,20 @@ async function ensureOwnedRoom(uid, streamerRoomId, streamer = null) {
 // integrated admin center's approval flow (and sibling verification flows).
 // Creating the room here keeps approval server-side and idempotent; it does not
 // add members or approve any fan applications.
-const messengerAutoCreateVerifiedStreamerRoom = onValueWritten('/streamerVerifications/{recordId}', { retry: true }, async (event) => {
+const messengerAutoCreateVerifiedStreamerRoom = onValueWritten({
+  ref: '/streamerVerifications/{recordId}',
+  instance: MAIN_DATABASE_INSTANCE,
+  region: 'us-central1',
+  retry: true,
+}, async (event) => {
+  if (await isMessengerDatabaseMigrationPaused()) throw new Error('Messenger database migration is paused.');
   const before = event.data.before.val() || null;
   const after = event.data.after.val() || null;
   if (!after || !after.uid) return null;
   if (before && before.uid === after.uid && before.nickname === after.nickname && before.soopId === after.soopId) return null;
 
   const uid = String(after.uid);
-  const recordRef = db().ref(`streamerVerifications/${event.params.recordId}`);
+  const recordRef = sharedDb().ref(`streamerVerifications/${event.params.recordId}`);
   const currentRecord = (await recordRef.get()).val() || {};
   if (String(currentRecord.uid || '') !== uid) return null;
   const verified = await getVerifiedStreamer(uid);
@@ -1290,7 +1330,7 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
   }
 
   try {
-    const records = await db().ref('streamerVerifications').get();
+    const records = await sharedDb().ref('streamerVerifications').get();
     const uids = new Set();
     records.forEach((child) => {
       const value = child.val() || {};
@@ -1506,7 +1546,7 @@ const messengerSetMemberStatus = onCall(async (request) => {
   const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
   if (!result.isOwner || typeof uid !== 'string' || !['blocked', 'active'].includes(status)) throw new HttpsError('permission-denied', '요청을 처리할 수 없습니다.');
-  if (result.meta.roomType === 'test' && (await db().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) {
+  if (result.meta.roomType === 'test' && (await sharedDb().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) {
     throw new HttpsError('failed-precondition', '테스트방을 관리하는 관리자 계정은 차단할 수 없습니다.');
   }
   const memberSnap = await roomRef(roomId).child(`members/${uid}`).get();
@@ -1556,8 +1596,8 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
     return { action, removed: true };
   }
 
-  const publicStockSnap = await db().ref(`stocksPublic/${stockId}`).get();
-  const stockSnap = await db().ref(`stocks/${stockId}`).get();
+  const publicStockSnap = await sharedDb().ref(`stocksPublic/${stockId}`).get();
+  const stockSnap = await sharedDb().ref(`stocks/${stockId}`).get();
   if (!publicStockSnap.exists() || !stockSnap.exists()) throw new HttpsError('not-found', '현재 거래할 수 있는 종목이 아닙니다.');
   const stock = stockSnap.val() || {};
   if (!isRoomMarketStockNameForStreamer(stock.name, meta.streamerNickname)) {
@@ -2048,13 +2088,13 @@ async function galleryImageForChat(roomId, imageId) {
   const rawMeta = (await roomRef(roomId).child('meta').get()).val() || {};
   const meta = await ensureGalleryLink(roomId, rawMeta);
   if (!meta.galleryStreamerId) throw new HttpsError('failed-precondition', '인증된 스트리머 닉네임과 갤러리 스트리머를 연결할 수 없습니다. 갤러리의 스트리머 이름을 확인해 주세요.');
-  const imageSnap = await db().ref(`gallery/imagesPublic/${imageId}`).get();
+  const imageSnap = await sharedDb().ref(`gallery/imagesPublic/${imageId}`).get();
   if (!imageSnap.exists()) throw new HttpsError('not-found', '갤러리 이미지가 없거나 삭제되었습니다.');
   const image = imageSnap.val() || {};
   if (String(image.streamerId || '') !== String(meta.galleryStreamerId || '')) throw new HttpsError('permission-denied', '이 채팅방 스트리머의 갤러리 이미지만 보낼 수 있습니다.');
   const [firstUpload, unlockedUntil] = await Promise.all([
-    db().ref(`gallery/streamerFirstUpload/${meta.galleryStreamerId}`).get(),
-    db().ref(`gallery/streamerUnlockedUntil/${meta.galleryStreamerId}`).get(),
+    sharedDb().ref(`gallery/streamerFirstUpload/${meta.galleryStreamerId}`).get(),
+    sharedDb().ref(`gallery/streamerUnlockedUntil/${meta.galleryStreamerId}`).get(),
   ]);
   const first = Number(firstUpload.val()) || 0;
   const until = Number(unlockedUntil.val()) || 0;
@@ -2070,18 +2110,18 @@ const messengerGetGalleryImages = onCall(async (request) => {
   const meta = await ensureGalleryLink(roomId, rawMeta);
   if (!meta.galleryStreamerId) return { locked: false, linked: false, streamerId: '', images: [] };
   const [firstUpload, unlockedUntil] = await Promise.all([
-    db().ref(`gallery/streamerFirstUpload/${meta.galleryStreamerId}`).get(),
-    db().ref(`gallery/streamerUnlockedUntil/${meta.galleryStreamerId}`).get(),
+    sharedDb().ref(`gallery/streamerFirstUpload/${meta.galleryStreamerId}`).get(),
+    sharedDb().ref(`gallery/streamerUnlockedUntil/${meta.galleryStreamerId}`).get(),
   ]);
   const first = Number(firstUpload.val()) || 0;
   const until = Number(unlockedUntil.val()) || 0;
   const unlocked = (first > 0 && now() < first + 30 * 24 * 60 * 60 * 1000) || (until > 0 && now() < until);
   if (!unlocked) {
-    const hasImages = (await db().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToFirst(1).get()).exists();
+    const hasImages = (await sharedDb().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToFirst(1).get()).exists();
     if (hasImages) return { locked: true, linked: true, streamerId: meta.galleryStreamerId, images: [] };
     return { locked: false, linked: true, streamerId: meta.galleryStreamerId, images: [] };
   }
-  const snap = await db().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToLast(100).get();
+  const snap = await sharedDb().ref('gallery/imagesPublic').orderByChild('streamerId').equalTo(meta.galleryStreamerId).limitToLast(100).get();
   const images = [];
   snap.forEach((child) => { const image = child.val() || {}; images.push({ imageId: child.key, thumbUrl: image.thumbUrl || '', imageUrl: image.imageUrl || '', createdAt: image.createdAt || 0, width: image.width || null, height: image.height || null }); });
   images.sort((a, b) => b.createdAt - a.createdAt);
@@ -2309,7 +2349,7 @@ function addBroadcastHistoryMessageUpdates(updates, roomId, message) {
 }
 
 function broadcastHistoryViewerStatsCacheRef(soopId, vodId) {
-  return db().ref(`streamerFanPageViewerStatsCache/${soopId}/${vodId}`);
+  return sharedDb().ref(`streamerFanPageViewerStatsCache/${soopId}/${vodId}`);
 }
 
 function broadcastHistoryViewerStatsTaskQueue() {
@@ -2694,9 +2734,11 @@ async function pauseBroadcastHistoryMonitor(roomId) {
 
 const messengerScheduleStreamerBroadcastHistory = onValueWritten({
   ref: '/streamerMessenger/rooms/{roomId}/meta/memberCount',
+  instance: MESSENGER_DATABASE_INSTANCE,
   region: 'us-central1',
   retry: true,
 }, async (event) => {
+  if (await isMessengerDatabaseMigrationPaused()) throw new Error('Messenger database migration is paused.');
   const roomId = String(event.params.roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(roomId) || roomId === TEST_ROOM_ID) return;
   // Re-read the authoritative count because RTDB trigger deliveries may arrive out of order.
@@ -3132,7 +3174,7 @@ const messengerSubmitReport = onCall(async (request) => {
   const imageMessages = visible.filter((m) => m.kind === 'image' && m.galleryImageId);
   for (let offset = 0; offset < imageMessages.length; offset += 25) {
     await Promise.all(imageMessages.slice(offset, offset + 25).map(async (message) => {
-      const imageSnap = await db().ref(`gallery/imagesPublic/${message.galleryImageId}`).get();
+      const imageSnap = await sharedDb().ref(`gallery/imagesPublic/${message.galleryImageId}`).get();
       const image = imageSnap.val() || {};
       if (image.imageUrl) evidence[message.id] = { ...message, reportImageUrl: image.imageUrl, reportThumbUrl: image.thumbUrl || '' };
     }));
@@ -3284,10 +3326,10 @@ const messengerAdminGetBanStatus = onCall(async (request) => {
   const uid = String((request.data || {}).uid || '').trim();
   if (!/^[A-Za-z0-9:_-]{1,128}$/.test(uid)) throw new HttpsError('invalid-argument', '계정 UID를 확인해 주세요.');
   const [snap, accountSnap] = await Promise.all([
-    db().ref(`bannedAccounts/${uid}/games/${SERVICE_ID}`).get(),
-    db().ref(`bannedAccounts/${uid}`).get(),
+    sharedDb().ref(`bannedAccounts/${uid}/games/${SERVICE_ID}`).get(),
+    sharedDb().ref(`bannedAccounts/${uid}`).get(),
   ]);
-  const adminSnap = await db().ref(`adminCenter/adminUids/${uid}`).get();
+  const adminSnap = await sharedDb().ref(`adminCenter/adminUids/${uid}`).get();
   const account = accountSnap.val() || {};
   const globalBan = account.all === true ? {
     reason: String(account.allReason || ''),
@@ -3354,12 +3396,12 @@ const messengerAdminSetBan = onCall(async (request) => {
   const { uid, banned, reason } = request.data || {};
   if (typeof uid !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(uid) || typeof banned !== 'boolean') throw new HttpsError('invalid-argument', '계정 정지 정보가 올바르지 않습니다.');
   if (uid === p.uid) throw new HttpsError('failed-precondition', '현재 로그인한 관리자 계정은 이 화면에서 정지할 수 없습니다.');
-  if ((await db().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) throw new HttpsError('failed-precondition', '관리자 계정은 이 화면에서 정지할 수 없습니다.');
+  if ((await sharedDb().ref(`adminCenter/adminUids/${uid}`).get()).val() === true) throw new HttpsError('failed-precondition', '관리자 계정은 이 화면에서 정지할 수 없습니다.');
   const cleanReason = banned ? safeText(String(reason || ''), 200, true) : '';
   await ensureMessengerBanIndex();
   const path = `bannedAccounts/${uid}/games/${SERVICE_ID}`;
   const ban = banned ? { reason: cleanReason, at: now(), by: p.uid } : null;
-  const sourceRef = db().ref(path);
+  const sourceRef = sharedDb().ref(path);
   if (banned) await sourceRef.set(ban);
   else await sourceRef.remove();
 

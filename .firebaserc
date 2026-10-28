@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "soop-stock-market"
-  }
+  },
+  "targets": {
+    "soop-stock-market": {
+      "database": {
+        "main": [
+          "soop-stock-market-default-rtdb"
+        ],
+        "messenger": [
+          "streamer-messenger-rtdb"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
