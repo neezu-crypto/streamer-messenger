@@ -1,7 +1,14 @@
 {
-  "database": {
-    "rules": "database.rules.json"
-  },
+  "database": [
+    {
+      "target": "main",
+      "rules": "database.rules.json"
+    },
+    {
+      "target": "messenger",
+      "rules": "messenger.database.rules.json"
+    }
+  ],
   "functions": [
     {
       "source": "functions",

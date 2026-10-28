@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   aggregateDailyValues,
+  buildMonitoringFilter,
   calculateStorageMonthlyEstimate,
   decryptSnapshot,
   encryptSnapshot,
@@ -35,8 +36,13 @@ test('hourly totals are bucketed by KST day including midnight boundary', () => 
 test('usage monitoring only requests Messenger-owned Cloud Run metrics', () => {
   assert.deepEqual(Object.keys(MONITORING_METRICS).sort(), [
     'functionCpuVcpuSeconds', 'functionMemoryGibibyteSeconds', 'functionRequests', 'functionSentBytes',
+    'messengerRtdbSentBytes', 'messengerRtdbStoredBytes',
   ]);
-  assert.ok(Object.values(MONITORING_METRICS).every((metric) => metric.messengerFunctions === true));
+  assert.ok(Object.values(MONITORING_METRICS).filter((metric) => metric.resourceType === 'cloud_run_revision').every((metric) => metric.messengerFunctions === true));
+  assert.equal(MONITORING_METRICS.messengerRtdbSentBytes.resourceType, 'firebase_namespace');
+  assert.equal(MONITORING_METRICS.messengerRtdbStoredBytes.resourceType, 'firebase_namespace');
+  assert.match(buildMonitoringFilter(MONITORING_METRICS.messengerRtdbSentBytes), /resource\.labels\.table_name = "streamer-messenger-rtdb"/);
+  assert.match(buildMonitoringFilter(MONITORING_METRICS.messengerRtdbStoredBytes), /metric\.type = "firebasedatabase\.googleapis\.com\/storage\/total_bytes"/);
 });
 
 test('legacy shared RTDB metrics are stripped from each newly generated day', () => {
@@ -52,25 +58,43 @@ test('legacy shared RTDB metrics are stripped from each newly generated day', ()
     functionCpuVcpuSeconds: null,
     functionMemoryGibibyteSeconds: null,
     functionSentBytes: null,
+    messengerRtdbSentBytes: null,
+    messengerRtdbStoredBytes: null,
   });
 });
 
-test('variable cost uses Messenger Functions request and compute meters only', () => {
+test('database storage gauge keeps the latest daily sample per database', () => {
+  const values = aggregateDailyValues([{
+    resource: { labels: { table_name: 'streamer-messenger-rtdb' } },
+    points: [
+      { interval: { endTime: '2026-10-27T02:00:00.000Z' }, value: { int64Value: '100' } },
+      { interval: { endTime: '2026-10-27T03:00:00.000Z' }, value: { int64Value: '125' } },
+      { interval: { endTime: '2026-10-28T03:00:00.000Z' }, value: { int64Value: '150' } },
+    ],
+  }], { gauge: true });
+  assert.equal(values.get('2026-10-27'), 125);
+  assert.equal(values.get('2026-10-28'), 150);
+});
+
+test('variable cost includes Messenger Functions and dedicated RTDB network transfer', () => {
   const row = estimateVariableCost({
     functionRequests: 1_000_000,
     functionCpuVcpuSeconds: 100,
     functionMemoryGibibyteSeconds: 100,
+    messengerRtdbSentBytes: 1_000_000_000,
   });
   assert.ok(Math.abs(row.cloudRunFunctionsUsd - 0.40265) < 1e-12);
-  assert.ok(Math.abs(row.trackedVariableUsd - 0.40265) < 1e-12);
+  assert.equal(row.rtdbNetworkUsd, 1);
+  assert.ok(Math.abs(row.trackedVariableUsd - 1.40265) < 1e-12);
   assert.equal(Object.hasOwn(row, 'rtdbDownloadUsd'), false);
   assert.equal(estimateVariableCost({ functionRequests: null }).trackedVariableUsd, null);
 });
 
 test('monthly storage estimate applies the dedicated Messenger R2 rate only', () => {
-  const estimate = calculateStorageMonthlyEstimate(1_000_000_000);
+  const estimate = calculateStorageMonthlyEstimate(1_000_000_000, 1_000_000_000);
   assert.equal(estimate.r2UsdPerMonth, 0.015);
-  assert.equal(estimate.trackedUsdPerMonth, 0.015);
+  assert.equal(estimate.rtdbUsdPerMonth, 5);
+  assert.equal(estimate.trackedUsdPerMonth, 5.015);
   assert.equal(Object.hasOwn(estimate, 'rtdbSharedUsdPerMonth'), false);
 });
 

@@ -2878,7 +2878,7 @@ function subscribeRoomMarket() {
 }
 
 function syncRoomMarketQuoteListeners() {
-  const { db, ref, onValue } = api();
+  const { sharedDb, ref, onValue } = api();
   const roomId = state.room && state.room.roomId;
   const stockIds = new Set(getRoomStreamerMarketStockEntries().map(([stockId]) => stockId));
   for (const [stockId, unsubscribe] of state.roomMarketQuoteUnsubscribers) {
@@ -2891,7 +2891,7 @@ function syncRoomMarketQuoteListeners() {
   }
   for (const stockId of stockIds) {
     if (state.roomMarketQuoteUnsubscribers.has(stockId)) continue;
-    const unsubscribe = onValue(ref(db, `stocksPublic/${stockId}`), (snapshot) => {
+    const unsubscribe = onValue(ref(sharedDb, `stocksPublic/${stockId}`), (snapshot) => {
       if (!state.room || state.room.roomId !== roomId) return;
       state.roomMarketQuotes[stockId] = snapshot.val() || null;
       if (state.roomMarketQuotes[stockId] && !isRoomStreamerMarketStockName(state.roomMarketQuotes[stockId].name)) {
@@ -2934,9 +2934,9 @@ async function seedRoomMarketSparkline(stockId) {
   if (state.roomMarketSparklineSeeded.has(stockId)) return;
   state.roomMarketSparklineSeeded.add(stockId);
   const roomId = state.room?.roomId;
-  const { db, ref, get } = api();
+  const { sharedDb, ref, get } = api();
   try {
-    const snapshot = await get(ref(db, `sparklines/${stockId}`));
+    const snapshot = await get(ref(sharedDb, `sparklines/${stockId}`));
     if (!state.room || state.room.roomId !== roomId || !getRoomStreamerMarketStockEntries().some(([id]) => id === stockId)) return;
     const savedHistory = (Array.isArray(snapshot.val()) ? snapshot.val() : [])
       .map(Number).filter((price) => Number.isFinite(price) && price > 0)
@@ -3039,14 +3039,14 @@ async function openRoomMarketAddDialog() {
   openDialog('room-market-add-dialog');
   if (!state.roomMarketStockCatalog.length) {
     try {
-      const { db, ref, get } = api();
-      const snapshot = await get(ref(db, 'streamerNames'));
+      const { sharedDb, ref, get } = api();
+      const snapshot = await get(ref(sharedDb, 'streamerNames'));
       if (!state.room || state.room.roomId !== roomId) return;
       const matches = selectRoomStreamerMarketEntries(
         Object.entries(snapshot.val() || {}).map(([id, name]) => ({ id, name: String(name || '') })),
         (entry) => entry.name,
       );
-      const stockSnapshots = await Promise.all(matches.map((entry) => get(ref(db, `stocksPublic/${entry.id}`))));
+      const stockSnapshots = await Promise.all(matches.map((entry) => get(ref(sharedDb, `stocksPublic/${entry.id}`))));
       if (!state.room || state.room.roomId !== roomId) return;
       state.roomMarketStockCatalog = stockSnapshots.map((stockSnapshot, index) => ({ ...(stockSnapshot.val() || {}), id: matches[index].id }))
         .filter((stock) => stock.name && Number.isFinite(Number(stock.price)) && isRoomStreamerMarketStockName(stock.name));
@@ -3111,10 +3111,10 @@ async function loadRoomMarketPersonalPosition(stockId) {
   const uid = state.session && state.session.uid;
   if (!uid) return;
   try {
-    const { db, ref, get } = api();
+    const { sharedDb, ref, get } = api();
     const [cashSnap, positionSnap] = await Promise.all([
-      get(ref(db, `users/${uid}/cash`)),
-      get(ref(db, `users/${uid}/stocks/${stockId}`)),
+      get(ref(sharedDb, `users/${uid}/cash`)),
+      get(ref(sharedDb, `users/${uid}/stocks/${stockId}`)),
     ]);
     if (state.roomMarketSelectedStockId !== stockId || $('#room-market-trade-view').hidden) return;
     $('#room-market-personal-cash').textContent = `${Number(cashSnap.val() || 0).toLocaleString('ko-KR')}원`;
@@ -4716,7 +4716,7 @@ async function uploadGalleryImageFromPicker() {
     setProgress(64); status.textContent = '사진 미리보기를 업로드하고 있어요.';
     await uploadGalleryBlobWithProgress(prepared.thumbUploadUrl, thumb.blob, 'image/jpeg', (ratio) => setProgress(64 + ratio * 20));
     setProgress(85); status.textContent = '갤러리에 사진을 등록하고 있어요.';
-    const streamerNameSnapshot = await api().get(api().ref(api().db, `streamerNames/${streamerId}`)).catch(() => null);
+    const streamerNameSnapshot = await api().get(api().ref(api().sharedDb, `streamerNames/${streamerId}`)).catch(() => null);
     const streamerName = streamerNameSnapshot && streamerNameSnapshot.val() || room.streamerNickname || '스트리머';
     await registerGalleryImageWithRetry({
       imageId: prepared.imageId, key: prepared.key, thumbKey: prepared.thumbKey,
@@ -5055,27 +5055,39 @@ function renderAdminUsageAnalytics(report) {
   const functionRequests = sumUsageMetric(selected, 'functionRequests');
   const functionCpu = sumUsageMetric(selected, 'functionCpuVcpuSeconds');
   const functionMemory = sumUsageMetric(selected, 'functionMemoryGibibyteSeconds');
+  const messengerRtdbEgress = sumUsageMetric(selected, 'messengerRtdbSentBytes');
   const metricLabel = (metric) => `${metric.observedDays}/${expectedDays}일 측정`;
   $('#admin-usage-functions-egress').textContent = functionEgress.observedDays ? formatUsageBytes(functionEgress.total) : '자료 없음';
   $('#admin-usage-functions-requests').textContent = functionRequests.observedDays ? new Intl.NumberFormat('ko-KR').format(functionRequests.total) : '자료 없음';
   $('#admin-usage-functions-cpu').textContent = functionCpu.observedDays ? formatUsageQuantity(functionCpu.total, '초') : '자료 없음';
   $('#admin-usage-functions-memory').textContent = functionMemory.observedDays ? formatUsageQuantity(functionMemory.total, 'GiB·초') : '자료 없음';
+  $('#admin-usage-rtdb-egress').textContent = messengerRtdbEgress.observedDays ? formatUsageBytes(messengerRtdbEgress.total) : '자료 없음';
   $('#admin-usage-functions-egress').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionEgress)}`;
   $('#admin-usage-functions-requests').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionRequests)}`;
+  $('#admin-usage-rtdb-egress').nextElementSibling.textContent = `전용 DB Monitoring · ${metricLabel(messengerRtdbEgress)}`;
 
-  const variableValues = selected.map((row) => row && row.estimate && row.estimate.cloudRunFunctionsUsd !== null && row.estimate.cloudRunFunctionsUsd !== undefined ? Number(row.estimate.cloudRunFunctionsUsd) : NaN).filter(Number.isFinite);
+  const variableValues = selected.map((row) => row && row.estimate && row.estimate.trackedVariableUsd !== null && row.estimate.trackedVariableUsd !== undefined ? Number(row.estimate.trackedVariableUsd) : NaN).filter(Number.isFinite);
   const variableTotal = variableValues.reduce((sum, value) => sum + value, 0);
   $('#admin-usage-variable-cost').textContent = variableValues.length ? formatUsageCost(variableTotal) : '자료 부족';
-  $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · Functions 요청·CPU·메모리 공개 단가`;
+  $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · Functions 요청·CPU·메모리 + 전용 RTDB 송신량 공개 단가`;
   const current = report && report.current || {};
   const storageEstimate = current.storageMonthlyEstimate || {};
-  $('#admin-usage-storage-cost').textContent = storageEstimate.r2UsdPerMonth !== null && storageEstimate.r2UsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.r2UsdPerMonth)) ? `${formatUsageCost(storageEstimate.r2UsdPerMonth)}/월` : '자료 부족';
-  $('#admin-usage-storage-cost-note').textContent = storageEstimate.r2UsdPerMonth !== null && storageEstimate.r2UsdPerMonth !== undefined ? '메신저 전용 R2 저장료 기준' : 'R2 저장량 측정 자료 없음';
+  $('#admin-usage-storage-cost').textContent = storageEstimate.trackedUsdPerMonth !== null && storageEstimate.trackedUsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.trackedUsdPerMonth)) ? `${formatUsageCost(storageEstimate.trackedUsdPerMonth)}/월` : '자료 부족';
+  const r2StorageCost = storageEstimate.r2UsdPerMonth;
+  const rtdbStorageCost = storageEstimate.rtdbUsdPerMonth;
+  $('#admin-usage-storage-cost-note').textContent = r2StorageCost !== null && r2StorageCost !== undefined && rtdbStorageCost !== null && rtdbStorageCost !== undefined
+    ? `R2 ${formatUsageCost(r2StorageCost)} + RTDB ${formatUsageCost(rtdbStorageCost)} 공개 단가`
+    : 'R2 또는 RTDB 저장량 측정 자료 부족';
   const r2 = current.r2 || {};
   $('#admin-usage-r2-storage').textContent = r2.bytes !== undefined ? formatUsageBytes(r2.bytes) : '자료 없음';
   $('#admin-usage-r2-storage-time').textContent = r2.measuredAt
     ? `${new Date(r2.measuredAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} 측정${r2.complete === false ? ' · 페이지 상한으로 하한값' : ''}`
     : 'R2 저장량을 아직 측정하지 않았습니다.';
+  const messengerRtdbStorage = current.messengerRtdbStorage || {};
+  $('#admin-usage-rtdb-storage').textContent = messengerRtdbStorage.bytes !== undefined ? formatUsageBytes(messengerRtdbStorage.bytes) : '자료 없음';
+  $('#admin-usage-rtdb-storage-time').textContent = messengerRtdbStorage.sampledDay
+    ? `${messengerRtdbStorage.sampledDay} 표본 · 최대 하루 반영 지연 가능`
+    : 'RTDB 저장량 표본이 아직 없습니다.';
   $('#admin-usage-price-date').textContent = report && report.priceEffectiveDate || '—';
   const sourceStatus = report && report.sources || {};
   const unavailable = Object.entries(sourceStatus).filter(([, value]) => !value || value.available !== true).map(([key]) => key);
@@ -5087,7 +5099,7 @@ function renderAdminUsageAnalytics(report) {
   body.replaceChildren();
   const visibleRows = selected.slice().reverse();
   if (!visibleRows.length) {
-    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = '선택한 기간의 집계 자료가 없습니다.'; tr.appendChild(td); body.appendChild(tr);
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.textContent = '선택한 기간의 집계 자료가 없습니다.'; tr.appendChild(td); body.appendChild(tr);
     return;
   }
   for (const row of visibleRows) {
@@ -5096,7 +5108,8 @@ function renderAdminUsageAnalytics(report) {
       formatVisitorDay(row.day),
       row.functionRequests !== null && row.functionRequests !== undefined && Number.isFinite(Number(row.functionRequests)) ? new Intl.NumberFormat('ko-KR').format(Number(row.functionRequests)) : '자료 없음',
       formatUsageBytes(row.functionSentBytes),
-      formatUsageCost(row.estimate && row.estimate.cloudRunFunctionsUsd),
+      formatUsageBytes(row.messengerRtdbSentBytes),
+      formatUsageCost(row.estimate && row.estimate.trackedVariableUsd),
     ];
     for (const value of values) { const td = document.createElement('td'); td.textContent = value; tr.appendChild(td); }
     tr.firstElementChild.title = row.day || '';
@@ -5140,7 +5153,7 @@ async function loadAdminUsageAnalytics(force = false) {
   } catch (error) {
     $('#admin-usage-updated').textContent = error.message || '사용량 집계를 불러오지 못했습니다.';
     $('#admin-usage-table-body').replaceChildren();
-    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = '관리자 집계를 불러오지 못했습니다.'; tr.appendChild(td); $('#admin-usage-table-body').appendChild(tr);
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.textContent = '관리자 집계를 불러오지 못했습니다.'; tr.appendChild(td); $('#admin-usage-table-body').appendChild(tr);
   } finally {
     adminState.usageLoading = false;
     $('#admin-usage-refresh').disabled = false;

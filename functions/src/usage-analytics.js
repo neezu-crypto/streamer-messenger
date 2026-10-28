@@ -19,14 +19,16 @@ const COST_RATES = Object.freeze({
   cloudRunCpuUsdPerVcpuSecond: 0.000024,
   cloudRunMemoryUsdPerGibibyteSecond: 0.0000025,
   cloudRunRequestUsdPerMillion: 0.4,
+  rtdbDownloadUsdPerGb: 1,
+  rtdbStorageUsdPerGbMonth: 5,
   r2StorageUsdPerGbMonth: 0.015,
   r2ClassAUsdPerMillion: 4.5,
   notes: [
     'Google Cloud/Firebase 공용 무료 허용량, 할인, 세금은 반영하지 않은 공개 단가 기준 추정치입니다.',
-    '공유 Realtime Database의 프로젝트 전체 사용량은 메신저만 분리할 수 없어 집계와 비용 합계에서 제외했습니다.',
+    '메신저 전용 Realtime Database의 네트워크 sent_bytes_count와 저장량을 집계합니다. 전송량은 프로토콜·암호화 오버헤드를 포함하는 공개 단가 기준 추정치이며 실제 청구액과 다를 수 있습니다.',
     'Cloud Run Functions 값은 메신저 이름으로 배포된 Functions의 Monitoring 집계이며 응답 바이트는 표시만 하고 네트워크 전송료는 비용에 포함하지 않습니다.',
     'R2 비용은 현재 저장량 기준 저장료만 계산하며 애플리케이션 전체 R2 요청 수는 제공되지 않습니다.',
-    '메신저별 RTDB 경로 계측, GitHub Pages 정적 파일, 브라우저 캐시, SOOP/YouTube/Discord 등 외부 서비스 트래픽은 포함되지 않습니다.',
+    'RTDB 저장량 표본은 Cloud Monitoring 반영이 늦을 수 있습니다. Google/Firebase 공용 무료 허용량·할인·세금은 반영하지 않으며, GitHub Pages 정적 파일, 브라우저 캐시, SOOP/YouTube/Discord 등 외부 서비스 트래픽은 포함하지 않습니다.',
   ],
   sources: {
     firebasePricing: 'https://firebase.google.com/pricing',
@@ -61,6 +63,18 @@ const MONITORING_METRICS = Object.freeze({
     messengerFunctions: true,
     align: true,
   },
+  messengerRtdbSentBytes: {
+    type: 'firebasedatabase.googleapis.com/network/sent_bytes_count',
+    resourceType: 'firebase_namespace',
+    databaseTableName: 'streamer-messenger-rtdb',
+    align: true,
+  },
+  messengerRtdbStoredBytes: {
+    type: 'firebasedatabase.googleapis.com/storage/total_bytes',
+    resourceType: 'firebase_namespace',
+    databaseTableName: 'streamer-messenger-rtdb',
+    gauge: true,
+  },
 });
 
 function kstDayKey(epochMs) {
@@ -92,6 +106,8 @@ function makeDailyRow(day, previous) {
     functionCpuVcpuSeconds: finiteOrNull(old.functionCpuVcpuSeconds),
     functionMemoryGibibyteSeconds: finiteOrNull(old.functionMemoryGibibyteSeconds),
     functionSentBytes: finiteOrNull(old.functionSentBytes),
+    messengerRtdbSentBytes: finiteOrNull(old.messengerRtdbSentBytes),
+    messengerRtdbStoredBytes: finiteOrNull(old.messengerRtdbStoredBytes),
   };
 }
 
@@ -122,7 +138,7 @@ function aggregateDailyValues(seriesList, { gauge = false } = {}) {
   const values = new Map();
   const latestByDayAndResource = new Map();
   for (const series of seriesList || []) {
-    const resourceKey = String((series.resource && series.resource.labels && (series.resource.labels.database_id || series.resource.labels.project_id || series.resource.labels.service_name)) || 'resource');
+    const resourceKey = String((series.resource && series.resource.labels && (series.resource.labels.table_name || series.resource.labels.database_id || series.resource.labels.project_id || series.resource.labels.service_name)) || 'resource');
     for (const point of series.points || []) {
       const end = pointEndTime(point);
       const value = parsePointValue(point.value);
@@ -148,6 +164,7 @@ function aggregateDailyValues(seriesList, { gauge = false } = {}) {
 function buildMonitoringFilter(metric) {
   const parts = [`metric.type = "${metric.type}"`, `resource.type = "${metric.resourceType}"`];
   if (metric.messengerFunctions) parts.push('resource.labels.service_name = starts_with("messenger")');
+  if (metric.databaseTableName) parts.push(`resource.labels.table_name = "${metric.databaseTableName}"`);
   return parts.join(' AND ');
 }
 
@@ -159,7 +176,7 @@ async function queryTimeSeries(metric, interval, authClient) {
   endpoint.searchParams.set('pageSize', '10000');
   if (metric.align) {
     endpoint.searchParams.set('aggregation.alignmentPeriod', '3600s');
-    endpoint.searchParams.set('aggregation.perSeriesAligner', 'ALIGN_SUM');
+    endpoint.searchParams.set('aggregation.perSeriesAligner', metric.aligner || 'ALIGN_SUM');
     endpoint.searchParams.set('aggregation.crossSeriesReducer', 'REDUCE_SUM');
   }
   const series = [];
@@ -190,7 +207,7 @@ async function collectMonitoringMetrics(interval, logError = () => {}) {
   const entries = await Promise.all(Object.entries(MONITORING_METRICS).map(async ([key, metric]) => {
     try {
       const series = await queryTimeSeries(metric, interval, client);
-      const values = aggregateDailyValues(series);
+      const values = aggregateDailyValues(series, { gauge: metric.gauge === true });
       return [key, { ok: true, values: Object.fromEntries(values), seriesCount: series.length }];
     } catch (error) {
       const code = Number(error && (error.code || error.response && error.response.status)) || null;
@@ -247,17 +264,21 @@ function estimateVariableCost(row) {
   const cpu = numericCost(row.functionCpuVcpuSeconds, COST_RATES.cloudRunCpuUsdPerVcpuSecond);
   const memory = numericCost(row.functionMemoryGibibyteSeconds, COST_RATES.cloudRunMemoryUsdPerGibibyteSecond);
   const functionCost = requests === null || cpu === null || memory === null ? null : requests + cpu + memory;
+  const rtdbNetworkCost = numericCost(row.messengerRtdbSentBytes, COST_RATES.rtdbDownloadUsdPerGb / 1e9);
   return {
     cloudRunFunctionsUsd: functionCost,
-    trackedVariableUsd: functionCost,
+    rtdbNetworkUsd: rtdbNetworkCost,
+    trackedVariableUsd: functionCost === null || rtdbNetworkCost === null ? null : functionCost + rtdbNetworkCost,
   };
 }
 
-function calculateStorageMonthlyEstimate(r2Bytes) {
+function calculateStorageMonthlyEstimate(r2Bytes, rtdbBytes) {
   const r2 = numericCost(r2Bytes, COST_RATES.r2StorageUsdPerGbMonth / 1e9);
+  const rtdb = numericCost(rtdbBytes, COST_RATES.rtdbStorageUsdPerGbMonth / 1e9);
   return {
     r2UsdPerMonth: r2,
-    trackedUsdPerMonth: r2,
+    rtdbUsdPerMonth: rtdb,
+    trackedUsdPerMonth: r2 === null || rtdb === null ? null : r2 + rtdb,
   };
 }
 
@@ -294,7 +315,7 @@ function decryptSnapshot(buffer, secret) {
   decipher.setAuthTag(tag);
   const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
   const value = JSON.parse(plain);
-  if (!value || ![1, 2].includes(value.schemaVersion) || !Array.isArray(value.daily)) throw new Error('사용량 집계 파일 버전이 올바르지 않습니다.');
+  if (!value || ![1, 2, 3].includes(value.schemaVersion) || !Array.isArray(value.daily)) throw new Error('사용량 집계 파일 버전이 올바르지 않습니다.');
   return value;
 }
 
@@ -348,16 +369,21 @@ async function collectUsageSnapshot(s3, encryptionSecret, { nowMs = Date.now(), 
     .slice(-HISTORY_DAYS);
   const daily = [...rows.values()].map((row) => ({ ...row, estimate: estimateVariableCost(row) }));
   const r2Latest = todayR2 || previous && previous.current && previous.current.r2 || null;
+  const rtdbStoragePoint = daily.slice().reverse().find((row) => row.messengerRtdbStoredBytes !== null);
+  const rtdbStorage = rtdbStoragePoint
+    ? { bytes: rtdbStoragePoint.messengerRtdbStoredBytes, sampledDay: rtdbStoragePoint.day }
+    : previous && previous.current && previous.current.messengerRtdbStorage || null;
   const sources = {};
   for (const [key, result] of Object.entries(metricResults)) sources[key] = { available: result.ok, seriesCount: result.seriesCount || 0, errorCode: result.errorCode || null };
   sources.r2Storage = { available: !!todayR2, complete: todayR2 ? todayR2.complete : !!(r2Latest && r2Latest.complete), errorCode: todayR2 ? null : 'unavailable' };
   const current = {
     day: interval.today,
     r2: r2Latest,
-    storageMonthlyEstimate: calculateStorageMonthlyEstimate(r2Latest && r2Latest.bytes),
+    messengerRtdbStorage: rtdbStorage,
+    storageMonthlyEstimate: calculateStorageMonthlyEstimate(r2Latest && r2Latest.bytes, rtdbStorage && rtdbStorage.bytes),
   };
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date(nowMs).toISOString(),
     priceEffectiveDate: COST_RATES.effectiveDate,
     historyFrom: interval.from,
@@ -380,6 +406,7 @@ module.exports = {
   SNAPSHOT_KEY,
   aggregateDailyValues,
   addDays,
+  buildMonitoringFilter,
   calculateStorageMonthlyEstimate,
   collectMonitoringMetrics,
   collectUsageSnapshot,

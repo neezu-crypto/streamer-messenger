@@ -264,17 +264,19 @@
             <article><span>메신저 Functions 응답량</span><strong id="admin-usage-functions-egress">—</strong><small>messenger 함수 이름 기준</small></article>
             <article><span>메신저 Functions CPU</span><strong id="admin-usage-functions-cpu">—</strong><small>vCPU 사용 초</small></article>
             <article><span>메신저 Functions 메모리</span><strong id="admin-usage-functions-memory">—</strong><small>GiB 사용 초</small></article>
+            <article><span>메신저 RTDB 전송량</span><strong id="admin-usage-rtdb-egress">—</strong><small>전용 DB sent_bytes_count</small></article>
           </div>
           <div class="admin-usage-cost-grid" aria-live="polite">
-            <article><span>선택 기간 Functions 비용 추정</span><strong id="admin-usage-variable-cost">—</strong><small id="admin-usage-variable-cost-note">요청·CPU·메모리 공개 단가 기준</small></article>
-            <article><span>현재 메신저 저장량 월 환산</span><strong id="admin-usage-storage-cost">—</strong><small id="admin-usage-storage-cost-note">메신저 전용 R2 저장료</small></article>
+            <article><span>선택 기간 변동 비용 추정</span><strong id="admin-usage-variable-cost">—</strong><small id="admin-usage-variable-cost-note">Functions와 메신저 전용 RTDB 송신량</small></article>
+            <article><span>현재 저장량 월 환산</span><strong id="admin-usage-storage-cost">—</strong><small id="admin-usage-storage-cost-note">메신저 전용 RTDB와 R2 저장료</small></article>
           </div>
           <div class="admin-usage-storage" aria-live="polite">
             <div><span>현재 메신저 비공개 R2 저장량</span><strong id="admin-usage-r2-storage">—</strong><small id="admin-usage-r2-storage-time">측정 시각 확인 중</small></div>
+            <div><span>현재 메신저 RTDB 저장량</span><strong id="admin-usage-rtdb-storage">—</strong><small id="admin-usage-rtdb-storage-time">Monitoring 표본 확인 중</small></div>
           </div>
-          <div class="admin-usage-table-scroll"><table class="admin-usage-table"><thead><tr><th scope="col">날짜</th><th scope="col">Functions 요청</th><th scope="col">Functions 응답량</th><th scope="col">Functions 비용 추정</th></tr></thead><tbody id="admin-usage-table-body"><tr><td colspan="4">집계 자료를 불러옵니다.</td></tr></tbody></table></div>
-          <p class="admin-usage-footnote" id="admin-usage-footnote">공개 단가 기준의 USD 추정치이며 실제 청구액이 아닙니다. Firebase/Google 공용 무료 사용량·할인·세금은 적용하지 않습니다. 공유 RTDB는 메신저만 분리할 수 없어 사용량·비용 합계에서 제외합니다. Functions 응답량은 별도 표시하되 네트워크 전송료는 추정 비용에 넣지 않습니다. R2 요청 비용, GitHub Pages 전송량, 외부 SOOP·YouTube·Discord 트래픽도 포함하지 않습니다.</p>
-          <p class="admin-usage-sources">단가 기준일 <span id="admin-usage-price-date">—</span> · <a href="https://firebase.google.com/pricing" target="_blank" rel="noopener noreferrer" title="Firebase 서비스 가격표를 새 탭에서 엽니다">Firebase</a> · <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener noreferrer" title="Cloud Run 가격표를 새 탭에서 엽니다">Cloud Run</a> · <a href="https://developers.cloudflare.com/r2/pricing/" target="_blank" rel="noopener noreferrer" title="Cloudflare R2 가격표를 새 탭에서 엽니다">R2</a></p>
+          <div class="admin-usage-table-scroll"><table class="admin-usage-table"><thead><tr><th scope="col">날짜</th><th scope="col">Functions 요청</th><th scope="col">Functions 응답량</th><th scope="col">RTDB 송신량</th><th scope="col">변동 비용 추정</th></tr></thead><tbody id="admin-usage-table-body"><tr><td colspan="5">집계 자료를 불러옵니다.</td></tr></tbody></table></div>
+          <p class="admin-usage-footnote" id="admin-usage-footnote">공개 단가 기준의 USD 추정치이며 실제 청구액이 아닙니다. Functions와 메신저 전용 RTDB 사용량만 포함하며 Firebase/Google 공용 무료 사용량·할인·세금은 적용하지 않습니다. RTDB 송신량은 프로토콜·암호화 오버헤드를 포함하는 전송 지표이며 실제 청구와 차이가 날 수 있고, 저장량 표본은 최대 하루 늦게 보일 수 있습니다. Functions 응답량은 별도 표시하며 비용에는 넣지 않습니다. R2 요청 비용, GitHub Pages 전송량, 외부 SOOP·YouTube·Discord 트래픽도 포함하지 않습니다.</p>
+          <p class="admin-usage-sources">단가 기준일 <span id="admin-usage-price-date">—</span> · <a href="https://firebase.google.com/pricing" target="_blank" rel="noopener noreferrer" title="Firebase 서비스 가격표를 새 탭에서 엽니다">Firebase</a> · <a href="https://firebase.google.com/docs/database/usage/billing" target="_blank" rel="noopener noreferrer" title="Realtime Database 과금 기준을 새 탭에서 엽니다">RTDB 과금</a> · <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener noreferrer" title="Cloud Run 가격표를 새 탭에서 엽니다">Cloud Run</a> · <a href="https://developers.cloudflare.com/r2/pricing/" target="_blank" rel="noopener noreferrer" title="Cloudflare R2 가격표를 새 탭에서 엽니다">R2</a></p>
         </div>
       </section>
       <section class="admin-pane" id="admin-pane-audit" hidden><div id="admin-audit-list" class="admin-audit-list"><p class="muted">관리 기록을 불러옵니다.</p></div></section>
