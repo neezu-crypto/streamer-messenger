@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261029-usage-analytics">
+  <link rel="stylesheet" href="styles.css?v=20261029-messenger-only-usage">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -260,21 +260,20 @@
           <div class="admin-usage-toolbar"><label class="field-label" for="admin-usage-days">표시 기간</label><select class="text-input" id="admin-usage-days" title="최근 1일부터 30일까지의 일별 사용량을 선택합니다"><option value="1">최근 1일</option><option value="7" selected>최근 7일</option><option value="14">최근 14일</option><option value="30">최근 30일</option></select></div>
           <p class="admin-usage-updated" id="admin-usage-updated" role="status" aria-live="polite">비공개 사용량 집계를 불러옵니다.</p>
           <div class="admin-usage-summary" aria-live="polite">
-            <article><span>Realtime Database 다운로드</span><strong id="admin-usage-rtdb-download">—</strong><small>공용 DB 전체 · 전송량 기준</small></article>
-            <article><span>Realtime Database 저장 처리</span><strong id="admin-usage-rtdb-write">—</strong><small>공용 DB 전체 · 기록된 처리량</small></article>
+            <article><span>메신저 Functions 요청</span><strong id="admin-usage-functions-requests">—</strong><small>messenger 함수 이름 기준</small></article>
             <article><span>메신저 Functions 응답량</span><strong id="admin-usage-functions-egress">—</strong><small>messenger 함수 이름 기준</small></article>
-            <article><span>메신저 Functions 요청</span><strong id="admin-usage-functions-requests">—</strong><small>선택 기간 측정값</small></article>
+            <article><span>메신저 Functions CPU</span><strong id="admin-usage-functions-cpu">—</strong><small>vCPU 사용 초</small></article>
+            <article><span>메신저 Functions 메모리</span><strong id="admin-usage-functions-memory">—</strong><small>GiB 사용 초</small></article>
           </div>
           <div class="admin-usage-cost-grid" aria-live="polite">
-            <article><span>선택 기간 변동 비용 추정</span><strong id="admin-usage-variable-cost">—</strong><small id="admin-usage-variable-cost-note">RTDB 전송 + 메신저 Functions 계산 가능분</small></article>
-            <article><span>현재 저장량 월 환산 추정</span><strong id="admin-usage-storage-cost">—</strong><small id="admin-usage-storage-cost-note">공용 RTDB + 메신저 R2</small></article>
+            <article><span>선택 기간 Functions 비용 추정</span><strong id="admin-usage-variable-cost">—</strong><small id="admin-usage-variable-cost-note">요청·CPU·메모리 공개 단가 기준</small></article>
+            <article><span>현재 메신저 저장량 월 환산</span><strong id="admin-usage-storage-cost">—</strong><small id="admin-usage-storage-cost-note">메신저 전용 R2 저장료</small></article>
           </div>
           <div class="admin-usage-storage" aria-live="polite">
-            <div><span>현재 Realtime Database 저장량</span><strong id="admin-usage-rtdb-storage">—</strong><small id="admin-usage-rtdb-storage-time">측정 시각 확인 중</small></div>
             <div><span>현재 메신저 비공개 R2 저장량</span><strong id="admin-usage-r2-storage">—</strong><small id="admin-usage-r2-storage-time">측정 시각 확인 중</small></div>
           </div>
-          <div class="admin-usage-table-scroll"><table class="admin-usage-table"><thead><tr><th scope="col">날짜</th><th scope="col">RTDB 다운로드</th><th scope="col">RTDB 저장 처리</th><th scope="col">Functions 요청</th><th scope="col">Functions 응답량</th><th scope="col">변동 비용 추정</th></tr></thead><tbody id="admin-usage-table-body"><tr><td colspan="6">집계 자료를 불러옵니다.</td></tr></tbody></table></div>
-          <p class="admin-usage-footnote" id="admin-usage-footnote">공개 단가 기준의 USD 추정치이며 실제 청구액이 아닙니다. Firebase/Google 공용 무료 사용량·할인·세금은 적용하지 않습니다. RTDB 값은 자매 서비스와 공유되어 메신저만의 사용량으로 분리할 수 없습니다. R2 요청 비용, GitHub Pages 전송량, 외부 SOOP·YouTube·Discord 트래픽은 집계에 포함하지 않습니다.</p>
+          <div class="admin-usage-table-scroll"><table class="admin-usage-table"><thead><tr><th scope="col">날짜</th><th scope="col">Functions 요청</th><th scope="col">Functions 응답량</th><th scope="col">Functions 비용 추정</th></tr></thead><tbody id="admin-usage-table-body"><tr><td colspan="4">집계 자료를 불러옵니다.</td></tr></tbody></table></div>
+          <p class="admin-usage-footnote" id="admin-usage-footnote">공개 단가 기준의 USD 추정치이며 실제 청구액이 아닙니다. Firebase/Google 공용 무료 사용량·할인·세금은 적용하지 않습니다. 공유 RTDB는 메신저만 분리할 수 없어 사용량·비용 합계에서 제외합니다. Functions 응답량은 별도 표시하되 네트워크 전송료는 추정 비용에 넣지 않습니다. R2 요청 비용, GitHub Pages 전송량, 외부 SOOP·YouTube·Discord 트래픽도 포함하지 않습니다.</p>
           <p class="admin-usage-sources">단가 기준일 <span id="admin-usage-price-date">—</span> · <a href="https://firebase.google.com/pricing" target="_blank" rel="noopener noreferrer" title="Firebase 서비스 가격표를 새 탭에서 엽니다">Firebase</a> · <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener noreferrer" title="Cloud Run 가격표를 새 탭에서 엽니다">Cloud Run</a> · <a href="https://developers.cloudflare.com/r2/pricing/" target="_blank" rel="noopener noreferrer" title="Cloudflare R2 가격표를 새 탭에서 엽니다">R2</a></p>
         </div>
       </section>
@@ -564,6 +563,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261029-usage-analytics"></script>
+  <script type="module" src="js/app.js?v=20261029-messenger-only-usage"></script>
 </body>
 </html>

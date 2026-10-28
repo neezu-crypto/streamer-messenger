@@ -5009,7 +5009,7 @@ function formatVisitorDay(day) {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(5, 7)}/${day.slice(8, 10)}` : '--/--';
 }
 
-const ADMIN_USAGE_CACHE_KEY = 'streamerMessenger.adminUsage.v1';
+const ADMIN_USAGE_CACHE_KEY = 'streamerMessenger.adminUsage.v2';
 const ADMIN_USAGE_CACHE_TTL = 15 * 60 * 1000;
 
 function formatUsageBytes(value) {
@@ -5037,6 +5037,12 @@ function sumUsageMetric(rows, key) {
   return { total: values.reduce((sum, value) => sum + value, 0), observedDays: values.length };
 }
 
+function formatUsageQuantity(value, suffix) {
+  return Number.isFinite(Number(value))
+    ? `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(Number(value))} ${suffix}`
+    : '자료 없음';
+}
+
 function renderAdminUsageAnalytics(report) {
   const daysInput = $('#admin-usage-days');
   const rawDays = Number(daysInput.value);
@@ -5045,33 +5051,26 @@ function renderAdminUsageAnalytics(report) {
   const daily = Array.isArray(report && report.daily) ? report.daily : [];
   const selected = daily.slice(-days);
   const expectedDays = Math.min(days, daily.length);
-  const rtdbDownloads = sumUsageMetric(selected, 'rtdbDownloadedBytes');
-  const rtdbWrites = sumUsageMetric(selected, 'rtdbPersistedBytes');
   const functionEgress = sumUsageMetric(selected, 'functionSentBytes');
   const functionRequests = sumUsageMetric(selected, 'functionRequests');
+  const functionCpu = sumUsageMetric(selected, 'functionCpuVcpuSeconds');
+  const functionMemory = sumUsageMetric(selected, 'functionMemoryGibibyteSeconds');
   const metricLabel = (metric) => `${metric.observedDays}/${expectedDays}일 측정`;
-  $('#admin-usage-rtdb-download').textContent = rtdbDownloads.observedDays ? formatUsageBytes(rtdbDownloads.total) : '자료 없음';
-  $('#admin-usage-rtdb-write').textContent = rtdbWrites.observedDays ? formatUsageBytes(rtdbWrites.total) : '자료 없음';
   $('#admin-usage-functions-egress').textContent = functionEgress.observedDays ? formatUsageBytes(functionEgress.total) : '자료 없음';
   $('#admin-usage-functions-requests').textContent = functionRequests.observedDays ? new Intl.NumberFormat('ko-KR').format(functionRequests.total) : '자료 없음';
-  $('#admin-usage-rtdb-download').nextElementSibling.textContent = `공용 DB 전체 · ${metricLabel(rtdbDownloads)}`;
-  $('#admin-usage-rtdb-write').nextElementSibling.textContent = `공용 DB 전체 · ${metricLabel(rtdbWrites)}`;
+  $('#admin-usage-functions-cpu').textContent = functionCpu.observedDays ? formatUsageQuantity(functionCpu.total, '초') : '자료 없음';
+  $('#admin-usage-functions-memory').textContent = functionMemory.observedDays ? formatUsageQuantity(functionMemory.total, 'GiB·초') : '자료 없음';
   $('#admin-usage-functions-egress').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionEgress)}`;
-  $('#admin-usage-functions-requests').nextElementSibling.textContent = `${metricLabel(functionRequests)} · 요청 도달 기준`;
+  $('#admin-usage-functions-requests').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionRequests)}`;
 
   const variableValues = selected.map((row) => row && row.estimate && row.estimate.trackedVariableUsd !== null && row.estimate.trackedVariableUsd !== undefined ? Number(row.estimate.trackedVariableUsd) : NaN).filter(Number.isFinite);
   const variableTotal = variableValues.reduce((sum, value) => sum + value, 0);
   $('#admin-usage-variable-cost').textContent = variableValues.length ? formatUsageCost(variableTotal) : '자료 부족';
-  $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · RTDB 다운로드 + Functions 요청/연산`;
+  $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · Functions 요청·CPU·메모리 공개 단가`;
   const current = report && report.current || {};
   const storageEstimate = current.storageMonthlyEstimate || {};
   $('#admin-usage-storage-cost').textContent = storageEstimate.trackedUsdPerMonth !== null && storageEstimate.trackedUsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.trackedUsdPerMonth)) ? `${formatUsageCost(storageEstimate.trackedUsdPerMonth)}/월` : '자료 부족';
-  const knownStorageCosts = [storageEstimate.rtdbSharedUsdPerMonth, storageEstimate.r2UsdPerMonth].filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
-  $('#admin-usage-storage-cost-note').textContent = `${knownStorageCosts.length}/2개 저장소 계산 가능 · 공용 사용량 미차감`;
-  $('#admin-usage-rtdb-storage').textContent = formatUsageBytes(current.rtdbStoredBytes);
-  $('#admin-usage-rtdb-storage-time').textContent = current.rtdbStorageSampledAt
-    ? `Cloud Monitoring 측정 ${new Date(current.rtdbStorageSampledAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
-    : 'Cloud Monitoring에서 측정 자료를 기다리는 중';
+  $('#admin-usage-storage-cost-note').textContent = storageEstimate.r2UsdPerMonth !== null && storageEstimate.r2UsdPerMonth !== undefined ? '메신저 전용 R2 저장료 기준' : 'R2 저장량 측정 자료 없음';
   const r2 = current.r2 || {};
   $('#admin-usage-r2-storage').textContent = r2.bytes !== undefined ? formatUsageBytes(r2.bytes) : '자료 없음';
   $('#admin-usage-r2-storage-time').textContent = r2.measuredAt
@@ -5088,15 +5087,13 @@ function renderAdminUsageAnalytics(report) {
   body.replaceChildren();
   const visibleRows = selected.slice().reverse();
   if (!visibleRows.length) {
-    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = '선택한 기간의 집계 자료가 없습니다.'; tr.appendChild(td); body.appendChild(tr);
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = '선택한 기간의 집계 자료가 없습니다.'; tr.appendChild(td); body.appendChild(tr);
     return;
   }
   for (const row of visibleRows) {
     const tr = document.createElement('tr');
     const values = [
       formatVisitorDay(row.day),
-      formatUsageBytes(row.rtdbDownloadedBytes),
-      formatUsageBytes(row.rtdbPersistedBytes),
       row.functionRequests !== null && row.functionRequests !== undefined && Number.isFinite(Number(row.functionRequests)) ? new Intl.NumberFormat('ko-KR').format(Number(row.functionRequests)) : '자료 없음',
       formatUsageBytes(row.functionSentBytes),
       formatUsageCost(row.estimate && row.estimate.trackedVariableUsd),
@@ -5143,7 +5140,7 @@ async function loadAdminUsageAnalytics(force = false) {
   } catch (error) {
     $('#admin-usage-updated').textContent = error.message || '사용량 집계를 불러오지 못했습니다.';
     $('#admin-usage-table-body').replaceChildren();
-    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = '관리자 집계를 불러오지 못했습니다.'; tr.appendChild(td); $('#admin-usage-table-body').appendChild(tr);
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = '관리자 집계를 불러오지 못했습니다.'; tr.appendChild(td); $('#admin-usage-table-body').appendChild(tr);
   } finally {
     adminState.usageLoading = false;
     $('#admin-usage-refresh').disabled = false;
