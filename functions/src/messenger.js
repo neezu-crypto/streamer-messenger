@@ -3257,10 +3257,10 @@ const messengerAdminGetUsageAnalytics = onCall({
   await requireAdmin(request);
   const s3 = roomselfS3();
   let report = await readUsageSnapshot(s3);
-  if (!report) {
+  if (!report || Number(report.schemaVersion) < 2) {
     const result = await withUsageSnapshotLock(async () => {
       const current = await readUsageSnapshot(s3);
-      if (current) return current;
+      if (current && Number(current.schemaVersion) >= 2) return current;
       const generated = await usageAnalytics.collectUsageSnapshot(s3, roomselfSecretAccessKey.value(), {
         logError: (metric, code, message) => logger.warn('Cloud Monitoring 사용량을 읽지 못했습니다.', { metric, code, message: String(message || '').slice(0, 160) }),
       });
