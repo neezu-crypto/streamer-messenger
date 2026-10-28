@@ -40,7 +40,7 @@ state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferen
 let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
-const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false, visitorsLoading: false };
+const adminState = { reportStatus: 'pending', reportCursor: null, reportHasMore: false, reports: [], reportsLoading: false, banCursor: null, banHasMore: false, bans: [], bansLoaded: false, bansLoading: false, currentReport: null, testAccounts: [], testRoom: null, testAccountsLoaded: false, testAccountsLoading: false, visitorsLoading: false, usageLoading: false, usageReport: null, usageCachedAt: 0 };
 const dialogs = ['auth-dialog', 'profile-dialog', 'application-dialog', 'room-settings-dialog', 'image-picker-dialog', 'emote-picker-dialog', 'room-clips-dialog', 'room-watch-party-dialog', 'image-viewer-dialog', 'roomself-dialog', 'verification-dialog', 'generic-dialog', 'notice-dialog', 'my-rooms-dialog'];
 let roomClipSearchTimer = 0;
 let roomClipRequestToken = 0;
@@ -5009,6 +5009,147 @@ function formatVisitorDay(day) {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(5, 7)}/${day.slice(8, 10)}` : '--/--';
 }
 
+const ADMIN_USAGE_CACHE_KEY = 'streamerMessenger.adminUsage.v1';
+const ADMIN_USAGE_CACHE_TTL = 15 * 60 * 1000;
+
+function formatUsageBytes(value) {
+  if (value === null || value === undefined || value === '') return '자료 없음';
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return '자료 없음';
+  if (bytes < 1000) return `${Math.round(bytes)} B`;
+  const units = ['kB', 'MB', 'GB', 'TB'];
+  let amount = bytes / 1000;
+  let unit = 0;
+  while (amount >= 1000 && unit < units.length - 1) { amount /= 1000; unit += 1; }
+  return `${new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }).format(amount)} ${units[unit]}`;
+}
+
+function formatUsageCost(value) {
+  if (value === null || value === undefined || value === '') return '자료 부족';
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0
+    ? `$${new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 }).format(amount)}`
+    : '자료 부족';
+}
+
+function sumUsageMetric(rows, key) {
+  const values = rows.map((row) => row && row[key] !== null && row[key] !== undefined ? Number(row[key]) : NaN).filter(Number.isFinite);
+  return { total: values.reduce((sum, value) => sum + value, 0), observedDays: values.length };
+}
+
+function renderAdminUsageAnalytics(report) {
+  const daysInput = $('#admin-usage-days');
+  const rawDays = Number(daysInput.value);
+  const days = Math.min(30, Math.max(1, Number.isInteger(rawDays) ? rawDays : 7));
+  daysInput.value = String(days);
+  const daily = Array.isArray(report && report.daily) ? report.daily : [];
+  const selected = daily.slice(-days);
+  const expectedDays = Math.min(days, daily.length);
+  const rtdbDownloads = sumUsageMetric(selected, 'rtdbDownloadedBytes');
+  const rtdbWrites = sumUsageMetric(selected, 'rtdbPersistedBytes');
+  const functionEgress = sumUsageMetric(selected, 'functionSentBytes');
+  const functionRequests = sumUsageMetric(selected, 'functionRequests');
+  const metricLabel = (metric) => `${metric.observedDays}/${expectedDays}일 측정`;
+  $('#admin-usage-rtdb-download').textContent = rtdbDownloads.observedDays ? formatUsageBytes(rtdbDownloads.total) : '자료 없음';
+  $('#admin-usage-rtdb-write').textContent = rtdbWrites.observedDays ? formatUsageBytes(rtdbWrites.total) : '자료 없음';
+  $('#admin-usage-functions-egress').textContent = functionEgress.observedDays ? formatUsageBytes(functionEgress.total) : '자료 없음';
+  $('#admin-usage-functions-requests').textContent = functionRequests.observedDays ? new Intl.NumberFormat('ko-KR').format(functionRequests.total) : '자료 없음';
+  $('#admin-usage-rtdb-download').nextElementSibling.textContent = `공용 DB 전체 · ${metricLabel(rtdbDownloads)}`;
+  $('#admin-usage-rtdb-write').nextElementSibling.textContent = `공용 DB 전체 · ${metricLabel(rtdbWrites)}`;
+  $('#admin-usage-functions-egress').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionEgress)}`;
+  $('#admin-usage-functions-requests').nextElementSibling.textContent = `${metricLabel(functionRequests)} · 요청 도달 기준`;
+
+  const variableValues = selected.map((row) => row && row.estimate && row.estimate.trackedVariableUsd !== null && row.estimate.trackedVariableUsd !== undefined ? Number(row.estimate.trackedVariableUsd) : NaN).filter(Number.isFinite);
+  const variableTotal = variableValues.reduce((sum, value) => sum + value, 0);
+  $('#admin-usage-variable-cost').textContent = variableValues.length ? formatUsageCost(variableTotal) : '자료 부족';
+  $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · RTDB 다운로드 + Functions 요청/연산`;
+  const current = report && report.current || {};
+  const storageEstimate = current.storageMonthlyEstimate || {};
+  $('#admin-usage-storage-cost').textContent = storageEstimate.trackedUsdPerMonth !== null && storageEstimate.trackedUsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.trackedUsdPerMonth)) ? `${formatUsageCost(storageEstimate.trackedUsdPerMonth)}/월` : '자료 부족';
+  const knownStorageCosts = [storageEstimate.rtdbSharedUsdPerMonth, storageEstimate.r2UsdPerMonth].filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
+  $('#admin-usage-storage-cost-note').textContent = `${knownStorageCosts.length}/2개 저장소 계산 가능 · 공용 사용량 미차감`;
+  $('#admin-usage-rtdb-storage').textContent = formatUsageBytes(current.rtdbStoredBytes);
+  $('#admin-usage-rtdb-storage-time').textContent = current.rtdbStorageSampledAt
+    ? `Cloud Monitoring 측정 ${new Date(current.rtdbStorageSampledAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+    : 'Cloud Monitoring에서 측정 자료를 기다리는 중';
+  const r2 = current.r2 || {};
+  $('#admin-usage-r2-storage').textContent = r2.bytes !== undefined ? formatUsageBytes(r2.bytes) : '자료 없음';
+  $('#admin-usage-r2-storage-time').textContent = r2.measuredAt
+    ? `${new Date(r2.measuredAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} 측정${r2.complete === false ? ' · 페이지 상한으로 하한값' : ''}`
+    : 'R2 저장량을 아직 측정하지 않았습니다.';
+  $('#admin-usage-price-date').textContent = report && report.priceEffectiveDate || '—';
+  const sourceStatus = report && report.sources || {};
+  const unavailable = Object.entries(sourceStatus).filter(([, value]) => !value || value.available !== true).map(([key]) => key);
+  const generatedAt = report && report.generatedAt ? new Date(report.generatedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '확인 불가';
+  const historyText = report && report.historyFrom && report.historyThrough ? ` · 일별 ${report.historyFrom}~${report.historyThrough}` : '';
+  $('#admin-usage-updated').textContent = `정적 집계 생성 ${generatedAt}${historyText}${unavailable.length ? ` · 측정 대기/실패 ${unavailable.length}개 항목` : ''}`;
+
+  const body = $('#admin-usage-table-body');
+  body.replaceChildren();
+  const visibleRows = selected.slice().reverse();
+  if (!visibleRows.length) {
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = '선택한 기간의 집계 자료가 없습니다.'; tr.appendChild(td); body.appendChild(tr);
+    return;
+  }
+  for (const row of visibleRows) {
+    const tr = document.createElement('tr');
+    const values = [
+      formatVisitorDay(row.day),
+      formatUsageBytes(row.rtdbDownloadedBytes),
+      formatUsageBytes(row.rtdbPersistedBytes),
+      row.functionRequests !== null && row.functionRequests !== undefined && Number.isFinite(Number(row.functionRequests)) ? new Intl.NumberFormat('ko-KR').format(Number(row.functionRequests)) : '자료 없음',
+      formatUsageBytes(row.functionSentBytes),
+      formatUsageCost(row.estimate && row.estimate.trackedVariableUsd),
+    ];
+    for (const value of values) { const td = document.createElement('td'); td.textContent = value; tr.appendChild(td); }
+    tr.firstElementChild.title = row.day || '';
+    body.appendChild(tr);
+  }
+}
+
+function readAdminUsageCache(uid) {
+  try {
+    const cache = JSON.parse(sessionStorage.getItem(ADMIN_USAGE_CACHE_KEY) || 'null');
+    if (!cache || cache.uid !== uid || !cache.report || Date.now() - Number(cache.cachedAt) > ADMIN_USAGE_CACHE_TTL) return null;
+    return cache;
+  } catch (_) { return null; }
+}
+
+async function loadAdminUsageAnalytics(force = false) {
+  if (!state.session?.isAdmin || adminState.usageLoading) return;
+  const uid = state.session.uid;
+  const cached = !force && readAdminUsageCache(uid);
+  if (cached) {
+    adminState.usageReport = cached.report;
+    adminState.usageCachedAt = Number(cached.cachedAt) || 0;
+    renderAdminUsageAnalytics(cached.report);
+    $('#admin-usage-updated').textContent += ' · 이 탭에서 15분간 캐시';
+    return;
+  }
+  adminState.usageLoading = true;
+  $('#admin-usage-refresh').disabled = true;
+  $('#admin-usage-updated').textContent = '비공개 정적 집계를 불러옵니다.';
+  try {
+    const report = await call('messengerAdminGetUsageAnalytics', {});
+    if (!state.session?.isAdmin || state.session.uid !== uid) return;
+    adminState.usageReport = report || null;
+    adminState.usageCachedAt = Date.now();
+    if (report) {
+      try { sessionStorage.setItem(ADMIN_USAGE_CACHE_KEY, JSON.stringify({ uid, cachedAt: adminState.usageCachedAt, report })); } catch (_) { /* cache is optional */ }
+      renderAdminUsageAnalytics(report);
+    } else {
+      $('#admin-usage-updated').textContent = '사용량 집계가 아직 준비되지 않았습니다.';
+    }
+  } catch (error) {
+    $('#admin-usage-updated').textContent = error.message || '사용량 집계를 불러오지 못했습니다.';
+    $('#admin-usage-table-body').replaceChildren();
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.textContent = '관리자 집계를 불러오지 못했습니다.'; tr.appendChild(td); $('#admin-usage-table-body').appendChild(tr);
+  } finally {
+    adminState.usageLoading = false;
+    $('#admin-usage-refresh').disabled = false;
+  }
+}
+
 function renderVisitorChart(chart, items, period) {
   chart.replaceChildren();
   if (!items.length) {
@@ -5078,9 +5219,10 @@ async function loadAdminVisitorAnalytics() {
 
 function switchAdminTab(tab) {
   document.querySelectorAll('[data-admin-tab]').forEach((button) => button.classList.toggle('active', button.dataset.adminTab === tab));
-  ['reports', 'accounts', 'visitors', 'audit', 'test'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
+  ['reports', 'accounts', 'visitors', 'usage', 'audit', 'test'].forEach((name) => { $(`#admin-pane-${name}`).hidden = name !== tab; });
   if (tab === 'accounts' && !adminState.bansLoaded && !adminState.bansLoading) loadAdminBanPage(true);
   if (tab === 'visitors') loadAdminVisitorAnalytics();
+  if (tab === 'usage') loadAdminUsageAnalytics();
   if (tab === 'test' && !adminState.testAccountsLoading) loadAdminTestAccounts();
 }
 
@@ -5564,6 +5706,8 @@ function bindEvents() {
   $('#admin-report-refresh').addEventListener('click', () => loadAdminReportPage(true));
   $('#admin-report-load-more').addEventListener('click', () => loadAdminReportPage(false));
   $('#admin-visitor-refresh').addEventListener('click', loadAdminVisitorAnalytics);
+  $('#admin-usage-refresh').addEventListener('click', () => loadAdminUsageAnalytics(true));
+  $('#admin-usage-days').addEventListener('change', () => { if (adminState.usageReport) renderAdminUsageAnalytics(adminState.usageReport); });
   $('#admin-ban-refresh').addEventListener('click', () => loadAdminBanPage(true));
   $('#admin-ban-load-more').addEventListener('click', () => loadAdminBanPage(false));
   $('#admin-ban-search').addEventListener('input', renderAdminBans);
