@@ -5063,13 +5063,13 @@ function renderAdminUsageAnalytics(report) {
   $('#admin-usage-functions-egress').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionEgress)}`;
   $('#admin-usage-functions-requests').nextElementSibling.textContent = `messenger 함수 이름 기준 · ${metricLabel(functionRequests)}`;
 
-  const variableValues = selected.map((row) => row && row.estimate && row.estimate.trackedVariableUsd !== null && row.estimate.trackedVariableUsd !== undefined ? Number(row.estimate.trackedVariableUsd) : NaN).filter(Number.isFinite);
+  const variableValues = selected.map((row) => row && row.estimate && row.estimate.cloudRunFunctionsUsd !== null && row.estimate.cloudRunFunctionsUsd !== undefined ? Number(row.estimate.cloudRunFunctionsUsd) : NaN).filter(Number.isFinite);
   const variableTotal = variableValues.reduce((sum, value) => sum + value, 0);
   $('#admin-usage-variable-cost').textContent = variableValues.length ? formatUsageCost(variableTotal) : '자료 부족';
   $('#admin-usage-variable-cost-note').textContent = `${variableValues.length}/${expectedDays}일 계산 가능 · Functions 요청·CPU·메모리 공개 단가`;
   const current = report && report.current || {};
   const storageEstimate = current.storageMonthlyEstimate || {};
-  $('#admin-usage-storage-cost').textContent = storageEstimate.trackedUsdPerMonth !== null && storageEstimate.trackedUsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.trackedUsdPerMonth)) ? `${formatUsageCost(storageEstimate.trackedUsdPerMonth)}/월` : '자료 부족';
+  $('#admin-usage-storage-cost').textContent = storageEstimate.r2UsdPerMonth !== null && storageEstimate.r2UsdPerMonth !== undefined && Number.isFinite(Number(storageEstimate.r2UsdPerMonth)) ? `${formatUsageCost(storageEstimate.r2UsdPerMonth)}/월` : '자료 부족';
   $('#admin-usage-storage-cost-note').textContent = storageEstimate.r2UsdPerMonth !== null && storageEstimate.r2UsdPerMonth !== undefined ? '메신저 전용 R2 저장료 기준' : 'R2 저장량 측정 자료 없음';
   const r2 = current.r2 || {};
   $('#admin-usage-r2-storage').textContent = r2.bytes !== undefined ? formatUsageBytes(r2.bytes) : '자료 없음';
@@ -5096,7 +5096,7 @@ function renderAdminUsageAnalytics(report) {
       formatVisitorDay(row.day),
       row.functionRequests !== null && row.functionRequests !== undefined && Number.isFinite(Number(row.functionRequests)) ? new Intl.NumberFormat('ko-KR').format(Number(row.functionRequests)) : '자료 없음',
       formatUsageBytes(row.functionSentBytes),
-      formatUsageCost(row.estimate && row.estimate.trackedVariableUsd),
+      formatUsageCost(row.estimate && row.estimate.cloudRunFunctionsUsd),
     ];
     for (const value of values) { const td = document.createElement('td'); td.textContent = value; tr.appendChild(td); }
     tr.firstElementChild.title = row.day || '';
