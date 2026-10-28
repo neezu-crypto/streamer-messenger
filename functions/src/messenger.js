@@ -6,7 +6,7 @@ const { gzipSync, gunzipSync } = require('node:zlib');
 const { promisify } = require('util');
 const { getApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getDatabase, ServerValue } = require('firebase-admin/database');
+const { getDatabase, getDatabaseWithUrl, ServerValue } = require('firebase-admin/database');
 const { getFunctions } = require('firebase-admin/functions');
 const { onCall: firebaseOnCall, HttpsError } = require('firebase-functions/v2/https');
 const { onValueWritten } = require('firebase-functions/v2/database');
@@ -91,7 +91,7 @@ const roomselfAccessKeyId = defineSecret('MESSENGER_R2_ACCESS_KEY_ID');
 const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
 const USAGE_SNAPSHOT_LOCK_PATH = `${ROOT}/admin/usageAnalyticsSnapshotLock`;
 
-const db = () => getDatabase(getApp(), MESSENGER_DATABASE_URL);
+const db = () => getDatabaseWithUrl(MESSENGER_DATABASE_URL, getApp());
 const sharedDb = () => getDatabase(getApp());
 let messengerMigrationStateCache = { paused: false, expiresAt: 0 };
 
