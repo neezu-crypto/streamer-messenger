@@ -408,6 +408,17 @@ async function archiveExpiredMessagePage(roomId, generation, entries, s3) {
   return { indexUpdates };
 }
 
+function expiredMessageLivePathUpdates(roomId, entries) {
+  const updates = {};
+  for (const { id, message } of entries) {
+    updates[`${ROOT}/chat/${roomId}/streamerTimeline/${id}`] = null;
+    updates[`${ROOT}/chat/${roomId}/broadcast/${id}`] = null;
+    const privateUid = archiveMessageScopeUid(message);
+    if (privateUid) updates[`${ROOT}/chat/${roomId}/private/${privateUid}/${id}`] = null;
+  }
+  return updates;
+}
+
 async function readMessageArchiveObject(s3, key, roomId) {
   const object = await s3.send(new GetObjectCommand({ Bucket: ROOMSELF_BUCKET, Key: key }));
   const compressed = Buffer.from(await object.Body.transformToByteArray());
@@ -3334,19 +3345,20 @@ const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 
         last = { createdAt: Number(msg.createdAt) || 0, key: id };
         entries.push({ id, message: msg });
       });
-      if (!archiveGeneration) archiveGeneration = await ensureMessageArchiveGeneration(roomId);
-      const archived = await archiveExpiredMessagePage(roomId, archiveGeneration, entries, s3);
-      const pageUpdates = { ...archived.indexUpdates };
-      for (const { id, message } of entries) {
-        pageUpdates[`${ROOT}/chat/${roomId}/streamerTimeline/${id}`] = null;
-        pageUpdates[`${ROOT}/chat/${roomId}/broadcast/${id}`] = null;
-        const privateUid = archiveMessageScopeUid(message);
-        if (privateUid) pageUpdates[`${ROOT}/chat/${roomId}/private/${privateUid}/${id}`] = null;
-        if (message.kind === 'roomself' && message.roomselfImageId) {
-          pageUpdates[`${ROOT}/privateImages/${message.roomselfImageId}/archived`] = true;
-          pageUpdates[`${archivedRoomselfImagesPath(roomId, archiveGeneration)}/${message.roomselfImageId}`] = true;
+      const memberCountValue = Number((await roomRef(roomId).child('meta/memberCount').get()).val());
+      const hasActiveParticipants = Number.isFinite(memberCountValue) && memberCountValue > 0;
+      let pageUpdates;
+      if (hasActiveParticipants) {
+        if (!archiveGeneration) archiveGeneration = await ensureMessageArchiveGeneration(roomId);
+        const archived = await archiveExpiredMessagePage(roomId, archiveGeneration, entries, s3);
+        pageUpdates = { ...archived.indexUpdates, ...expiredMessageLivePathUpdates(roomId, entries) };
+        for (const { message } of entries) {
+          if (message.kind === 'roomself' && message.roomselfImageId) {
+            pageUpdates[`${ROOT}/privateImages/${message.roomselfImageId}/archived`] = true;
+            pageUpdates[`${archivedRoomselfImagesPath(roomId, archiveGeneration)}/${message.roomselfImageId}`] = true;
+          }
         }
-      }
+      } else pageUpdates = expiredMessageLivePathUpdates(roomId, entries);
       await db().ref().update(pageUpdates);
       cursor = last;
       if (page.numChildren() < ARCHIVE_WRITE_PAGE_SIZE || !cursor) break;
