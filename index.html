@@ -351,6 +351,7 @@
       <label class="field-label" for="room-visibility">방 공개 설정</label><select class="text-input" id="room-visibility"><option value="public">공개방</option><option value="private">비공개방</option></select>
       <div id="room-password-wrap"><label class="field-label">비공개방 비밀번호</label><p class="dialog-copy" id="room-password-help">비공개방으로 저장하면 안전한 비밀번호를 자동 발급합니다.</p><button class="button button-quiet full-width" id="regenerate-room-password" type="button" hidden>새 비밀번호 발급</button><div class="generated-password-row" id="generated-password-wrap" hidden><input class="text-input" id="generated-room-password" type="text" readonly aria-label="생성된 비공개방 비밀번호" autocomplete="off" spellcheck="false"><button class="button button-primary" id="copy-room-password" type="button">복사</button></div><p class="copy-status" id="room-password-copy-status" aria-live="polite" hidden></p></div>
       <label class="switch-row"><input id="room-locked" type="checkbox"><span>채팅방 잠금</span><small>잠금 중에는 스트리머만 메시지를 보낼 수 있어요.</small></label>
+      <label class="switch-row" id="room-broadcast-history-row"><input id="room-broadcast-history-enabled" type="checkbox" title="이 채팅방의 방송 시작·종료와 다시보기 분석 카드 기록을 켜거나 끕니다"><span>방송 이력 카드</span><small>끄면 방송 확인과 새 카드 갱신을 멈춥니다. 기존 카드는 채팅 내역에 남고, 다시 켜면 감시를 재개합니다.</small></label>
       <label class="field-label" for="room-repeat-text-delay">같은 문구 반복 차단 시간(초)</label><input class="text-input" id="room-repeat-text-delay" type="number" min="0" max="3600" step="1" value="0"><p class="dialog-copy">설정한 시간 안에 같은 문구를 다시 보내면 차단합니다. 0초는 허용입니다.</p>
       <label class="field-label" for="room-repeat-link-delay">같은 링크 반복 차단 시간(초)</label><input class="text-input" id="room-repeat-link-delay" type="number" min="0" max="3600" step="1" value="0"><p class="dialog-copy">설정한 시간 안에 같은 링크를 다시 보내면 차단합니다. 0초는 허용입니다.</p>
       <div id="room-member-policy-wrap" hidden><label class="field-label" for="room-member-policy">비밀번호 변경 시 기존 팬</label><select class="text-input" id="room-member-policy"><option value="keep">기존 참여 팬 유지</option><option value="remove">기존 참여 팬 퇴장</option></select></div>
@@ -565,6 +566,6 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261029-messenger-usage-cost8"></script>
+  <script type="module" src="js/app.js?v=20261029-broadcast-history-toggle"></script>
 </body>
 </html>
