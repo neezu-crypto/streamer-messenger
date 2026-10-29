@@ -951,6 +951,7 @@ function publicRoom(meta, includeOperational = false) {
     room.galleryLinked = !!meta.galleryStreamerId;
     room.repeatTextDelaySeconds = Number(meta.repeatTextDelaySeconds) || 0;
     room.repeatLinkDelaySeconds = Number(meta.repeatLinkDelaySeconds) || 0;
+    room.broadcastHistoryEnabled = meta.broadcastHistoryEnabled !== false;
   }
   return room;
 }
@@ -1254,6 +1255,7 @@ async function ensureOwnedRoom(uid, streamerRoomId, streamer = null) {
     streamerAvatarUrl: profile.avatarUrl || '',
     visibility: 'public',
     locked: false,
+    broadcastHistoryEnabled: true,
     memberCount: 0,
     createdAt,
     updatedAt: createdAt,
@@ -1387,7 +1389,24 @@ const messengerUpdateRoom = onCall(async (request) => {
   const repeatTextDelaySeconds = data.repeatTextDelaySeconds === undefined ? Number(meta.repeatTextDelaySeconds) || 0 : Number(data.repeatTextDelaySeconds);
   const repeatLinkDelaySeconds = data.repeatLinkDelaySeconds === undefined ? Number(meta.repeatLinkDelaySeconds) || 0 : Number(data.repeatLinkDelaySeconds);
   if (![repeatTextDelaySeconds, repeatLinkDelaySeconds].every((value) => Number.isInteger(value) && value >= 0 && value <= 3600)) throw new HttpsError('invalid-argument', '반복 차단 시간은 0~3600초 사이의 정수로 입력해 주세요.');
-  const metaPatch = { visibility, locked: locked === true, repeatTextDelaySeconds, repeatLinkDelaySeconds, updatedAt: now() };
+  if (data.broadcastHistoryEnabled !== undefined && typeof data.broadcastHistoryEnabled !== 'boolean') {
+    throw new HttpsError('invalid-argument', '방송 이력 카드 설정이 올바르지 않습니다.');
+  }
+  if ((meta.roomType || 'streamer') === 'test' && data.broadcastHistoryEnabled !== undefined) {
+    throw new HttpsError('failed-precondition', '테스트방에서는 방송 이력 카드를 설정할 수 없습니다.');
+  }
+  const wasBroadcastHistoryEnabled = meta.broadcastHistoryEnabled !== false;
+  const broadcastHistoryEnabled = data.broadcastHistoryEnabled === undefined
+    ? wasBroadcastHistoryEnabled
+    : data.broadcastHistoryEnabled;
+  const metaPatch = {
+    visibility,
+    locked: locked === true,
+    repeatTextDelaySeconds,
+    repeatLinkDelaySeconds,
+    broadcastHistoryEnabled,
+    updatedAt: now(),
+  };
   const updates = {};
   let passwordChanged = false;
   let generatedPassword = '';
@@ -1421,6 +1440,19 @@ const messengerUpdateRoom = onCall(async (request) => {
   updates[`${ROOT}/rooms/${roomId}/meta`] = nextMeta;
   if (meta.roomType !== 'test') updates[`${ROOT}/publicRooms/${roomId}`] = publicRoom(nextMeta);
   await db().ref().update(updates);
+  if (broadcastHistoryEnabled !== wasBroadcastHistoryEnabled) {
+    try {
+      if (broadcastHistoryEnabled) await ensureBroadcastHistoryMonitor(roomId);
+      else await pauseBroadcastHistoryMonitor(roomId);
+    } catch (error) {
+      // The metadata trigger retries monitor synchronization independently of this settings save.
+      logger.error('Could not immediately sync the broadcast-history monitor after a room setting change.', {
+        roomId,
+        enabled: broadcastHistoryEnabled,
+        message: String(error && error.message || error).slice(0, 160),
+      });
+    }
+  }
   await writeAudit(p.uid, 'room.update', roomId);
   return { room: publicRoom(nextMeta, true), generatedPassword: generatedPassword || null };
 });
@@ -2674,8 +2706,15 @@ async function enqueueBroadcastHistoryTask(roomId, generation, dueAt, expectedRu
 async function ensureBroadcastHistoryMonitor(roomId) {
   const meta = (await roomRef(roomId).child('meta').get()).val();
   if (!isBroadcastHistoryRoom(roomId, meta)) return;
+  if (meta.broadcastHistoryEnabled === false) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
   const memberCount = Number(meta.memberCount) || 0;
-  if (memberCount <= 0) return;
+  if (memberCount <= 0) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
 
   const monitorRef = broadcastHistoryMonitorRef(roomId);
   const startedAt = now();
@@ -2733,7 +2772,7 @@ async function pauseBroadcastHistoryMonitor(roomId) {
 }
 
 const messengerScheduleStreamerBroadcastHistory = onValueWritten({
-  ref: '/streamerMessenger/rooms/{roomId}/meta/memberCount',
+  ref: '/streamerMessenger/rooms/{roomId}/meta',
   instance: MESSENGER_DATABASE_INSTANCE,
   region: 'us-central1',
   retry: true,
@@ -2741,9 +2780,9 @@ const messengerScheduleStreamerBroadcastHistory = onValueWritten({
   if (await isMessengerDatabaseMigrationPaused()) throw new Error('Messenger database migration is paused.');
   const roomId = String(event.params.roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(roomId) || roomId === TEST_ROOM_ID) return;
-  // Re-read the authoritative count because RTDB trigger deliveries may arrive out of order.
-  const currentCount = Number((await roomRef(roomId).child('meta/memberCount').get()).val()) || 0;
-  if (currentCount <= 0) {
+  // Re-read the authoritative settings because RTDB trigger deliveries may arrive out of order.
+  const meta = (await roomRef(roomId).child('meta').get()).val() || {};
+  if (meta.broadcastHistoryEnabled === false || (Number(meta.memberCount) || 0) <= 0) {
     await pauseBroadcastHistoryMonitor(roomId);
     return;
   }
@@ -2822,6 +2861,10 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
   const meta = metaSnapshot.val();
   const projectedRoom = roomSnapshot.val();
   const room = { ...(projectedRoom || {}), ...(meta || {}) };
+  if (meta && meta.broadcastHistoryEnabled === false) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
   if (!isBroadcastHistoryRoom(roomId, room)) {
     await pauseBroadcastHistoryMonitor(roomId);
     return;
@@ -2898,8 +2941,18 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
   stateAtClaim.updatedAt = checkedAt;
 
   // Do not publish a result if the last participant left while an external request was in flight.
-  const latestMemberCount = await getBroadcastHistoryMemberCount(roomId, (await db().ref(`${ROOT}/publicRooms/${roomId}`).get()).val());
-  const latestMonitor = (await monitorRef.get()).val();
+  const [latestRoomSnapshot, latestMetaSnapshot, latestMonitorSnapshot] = await Promise.all([
+    db().ref(`${ROOT}/publicRooms/${roomId}`).get(),
+    roomRef(roomId).child('meta').get(),
+    monitorRef.get(),
+  ]);
+  const latestMeta = latestMetaSnapshot.val() || {};
+  const latestMemberCount = await getBroadcastHistoryMemberCount(roomId, latestRoomSnapshot.val());
+  const latestMonitor = latestMonitorSnapshot.val();
+  if (latestMeta.broadcastHistoryEnabled === false) {
+    await pauseBroadcastHistoryMonitor(roomId);
+    return;
+  }
   if (latestMemberCount <= 0) {
     await pauseBroadcastHistoryMonitor(roomId);
     return;

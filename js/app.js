@@ -4794,14 +4794,16 @@ async function saveRoomSettings() {
     if (![repeatTextDelaySeconds, repeatLinkDelaySeconds].every((value) => Number.isInteger(value) && value >= 0 && value <= 3600)) {
       throw new Error('반복 차단 시간은 0~3600초 사이의 정수로 입력해 주세요.');
     }
-    const result = await call('messengerUpdateRoom', { roomId: state.room.roomId, visibility, regeneratePassword: state.regenerateRoomPassword, locked: $('#room-locked').checked, repeatTextDelaySeconds, repeatLinkDelaySeconds, memberPolicy: $('#room-member-policy').value });
+    const settings = { roomId: state.room.roomId, visibility, regeneratePassword: state.regenerateRoomPassword, locked: $('#room-locked').checked, repeatTextDelaySeconds, repeatLinkDelaySeconds, memberPolicy: $('#room-member-policy').value };
+    if (state.room.roomType !== 'test') settings.broadcastHistoryEnabled = $('#room-broadcast-history-enabled').checked;
+    const result = await call('messengerUpdateRoom', settings);
     state.room = result.room; state.regenerateRoomPassword = false; renderRoomState(state.room); upsertRoom(result.room);
     if (result.generatedPassword) {
       $('#generated-room-password').value = result.generatedPassword;
       $('#generated-password-wrap').hidden = false;
       $('#room-password-copy-status').textContent = '비밀번호를 복사해 팬에게 전달하세요. 이 창을 닫으면 다시 확인할 수 없습니다.';
       $('#room-password-copy-status').hidden = false;
-      $('#room-visibility').disabled = true; $('#room-locked').disabled = true; $('#room-repeat-text-delay').disabled = true; $('#room-repeat-link-delay').disabled = true; $('#room-member-policy').disabled = true; $('#regenerate-room-password').disabled = true;
+      $('#room-visibility').disabled = true; $('#room-locked').disabled = true; $('#room-broadcast-history-enabled').disabled = true; $('#room-repeat-text-delay').disabled = true; $('#room-repeat-link-delay').disabled = true; $('#room-member-policy').disabled = true; $('#regenerate-room-password').disabled = true;
       saveButton.textContent = '완료'; saveButton.dataset.saved = 'true';
       updateRoomPasswordControls();
     } else {
@@ -4832,10 +4834,12 @@ function updateRoomPasswordControls() {
 function prepareRoomSettings() {
   $('#room-visibility').value = state.room.visibility || 'public';
   $('#room-locked').checked = state.room.locked === true;
+  $('#room-broadcast-history-row').hidden = state.room.roomType === 'test';
+  $('#room-broadcast-history-enabled').checked = state.room.broadcastHistoryEnabled !== false;
   $('#room-repeat-text-delay').value = String(Number(state.room.repeatTextDelaySeconds) || 0);
   $('#room-repeat-link-delay').value = String(Number(state.room.repeatLinkDelaySeconds) || 0);
   $('#room-member-policy').value = 'keep';
-  $('#room-visibility').disabled = false; $('#room-locked').disabled = false; $('#room-repeat-text-delay').disabled = false; $('#room-repeat-link-delay').disabled = false; $('#room-member-policy').disabled = false; $('#regenerate-room-password').disabled = false;
+  $('#room-visibility').disabled = false; $('#room-locked').disabled = false; $('#room-broadcast-history-enabled').disabled = false; $('#room-repeat-text-delay').disabled = false; $('#room-repeat-link-delay').disabled = false; $('#room-member-policy').disabled = false; $('#regenerate-room-password').disabled = false;
   state.regenerateRoomPassword = false;
   $('#generated-room-password').value = '';
   $('#generated-password-wrap').hidden = true;
