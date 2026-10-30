@@ -23,6 +23,7 @@ const stickerCatalog = require('../catalog/stickers.json');
 const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
 const MESSENGER_DATABASE_URL = 'https://streamer-messenger-rtdb.firebaseio.com';
+const FANPAGE_DATABASE_URL = 'https://streamer-fanpage-rtdb.firebaseio.com';
 const MAIN_DATABASE_INSTANCE = 'soop-stock-market-default-rtdb';
 const MESSENGER_DATABASE_INSTANCE = 'streamer-messenger-rtdb';
 const MIGRATION_STATE_PATH = 'messengerDatabaseMigration/state';
@@ -92,6 +93,7 @@ const roomselfSecretAccessKey = defineSecret('MESSENGER_R2_SECRET_ACCESS_KEY');
 const USAGE_SNAPSHOT_LOCK_PATH = `${ROOT}/admin/usageAnalyticsSnapshotLock`;
 
 const db = () => getDatabaseWithUrl(MESSENGER_DATABASE_URL, getApp());
+const fanpageDb = () => getDatabaseWithUrl(FANPAGE_DATABASE_URL, getApp());
 const sharedDb = () => getDatabase(getApp());
 let messengerMigrationStateCache = { paused: false, expiresAt: 0 };
 
@@ -2381,7 +2383,7 @@ function addBroadcastHistoryMessageUpdates(updates, roomId, message) {
 }
 
 function broadcastHistoryViewerStatsCacheRef(soopId, vodId) {
-  return sharedDb().ref(`streamerFanPageViewerStatsCache/${soopId}/${vodId}`);
+  return fanpageDb().ref(`streamerFanPageViewerStatsCache/${soopId}/${vodId}`);
 }
 
 function broadcastHistoryViewerStatsTaskQueue() {
