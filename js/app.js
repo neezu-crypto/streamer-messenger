@@ -1,4 +1,4 @@
-import './firebase-init.js?v=20261012-test-room';
+import './firebase-init.js?v=20261110-market-db';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
 
 const api = () => window.messenger;
@@ -2878,7 +2878,7 @@ function subscribeRoomMarket() {
 }
 
 function syncRoomMarketQuoteListeners() {
-  const { sharedDb, ref, onValue } = api();
+  const { marketDb, ref, onValue } = api();
   const roomId = state.room && state.room.roomId;
   const stockIds = new Set(getRoomStreamerMarketStockEntries().map(([stockId]) => stockId));
   for (const [stockId, unsubscribe] of state.roomMarketQuoteUnsubscribers) {
@@ -2891,7 +2891,7 @@ function syncRoomMarketQuoteListeners() {
   }
   for (const stockId of stockIds) {
     if (state.roomMarketQuoteUnsubscribers.has(stockId)) continue;
-    const unsubscribe = onValue(ref(sharedDb, `stocksPublic/${stockId}`), (snapshot) => {
+    const unsubscribe = onValue(ref(marketDb, `stocksPublic/${stockId}`), (snapshot) => {
       if (!state.room || state.room.roomId !== roomId) return;
       state.roomMarketQuotes[stockId] = snapshot.val() || null;
       if (state.roomMarketQuotes[stockId] && !isRoomStreamerMarketStockName(state.roomMarketQuotes[stockId].name)) {
@@ -2934,9 +2934,9 @@ async function seedRoomMarketSparkline(stockId) {
   if (state.roomMarketSparklineSeeded.has(stockId)) return;
   state.roomMarketSparklineSeeded.add(stockId);
   const roomId = state.room?.roomId;
-  const { sharedDb, ref, get } = api();
+  const { marketDb, ref, get } = api();
   try {
-    const snapshot = await get(ref(sharedDb, `sparklines/${stockId}`));
+    const snapshot = await get(ref(marketDb, `sparklines/${stockId}`));
     if (!state.room || state.room.roomId !== roomId || !getRoomStreamerMarketStockEntries().some(([id]) => id === stockId)) return;
     const savedHistory = (Array.isArray(snapshot.val()) ? snapshot.val() : [])
       .map(Number).filter((price) => Number.isFinite(price) && price > 0)
@@ -3039,14 +3039,14 @@ async function openRoomMarketAddDialog() {
   openDialog('room-market-add-dialog');
   if (!state.roomMarketStockCatalog.length) {
     try {
-      const { sharedDb, ref, get } = api();
+      const { marketDb, ref, get } = api();
       const snapshot = await get(ref(sharedDb, 'streamerNames'));
       if (!state.room || state.room.roomId !== roomId) return;
       const matches = selectRoomStreamerMarketEntries(
         Object.entries(snapshot.val() || {}).map(([id, name]) => ({ id, name: String(name || '') })),
         (entry) => entry.name,
       );
-      const stockSnapshots = await Promise.all(matches.map((entry) => get(ref(sharedDb, `stocksPublic/${entry.id}`))));
+      const stockSnapshots = await Promise.all(matches.map((entry) => get(ref(marketDb, `stocksPublic/${entry.id}`))));
       if (!state.room || state.room.roomId !== roomId) return;
       state.roomMarketStockCatalog = stockSnapshots.map((stockSnapshot, index) => ({ ...(stockSnapshot.val() || {}), id: matches[index].id }))
         .filter((stock) => stock.name && Number.isFinite(Number(stock.price)) && isRoomStreamerMarketStockName(stock.name));
@@ -3111,10 +3111,10 @@ async function loadRoomMarketPersonalPosition(stockId) {
   const uid = state.session && state.session.uid;
   if (!uid) return;
   try {
-    const { sharedDb, ref, get } = api();
+    const { sharedDb, marketDb, marketAccountPath, ref, get } = api();
     const [cashSnap, positionSnap] = await Promise.all([
       get(ref(sharedDb, `users/${uid}/cash`)),
-      get(ref(sharedDb, `users/${uid}/stocks/${stockId}`)),
+      get(ref(marketDb, `${marketAccountPath(uid)}/stocks/${stockId}`)),
     ]);
     if (state.roomMarketSelectedStockId !== stockId || $('#room-market-trade-view').hidden) return;
     $('#room-market-personal-cash').textContent = `${Number(cashSnap.val() || 0).toLocaleString('ko-KR')}원`;

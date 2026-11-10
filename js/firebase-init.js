@@ -21,11 +21,18 @@ const firebaseConfig = {
   appId: '1:997788925900:web:8fa090a599797eb6a3a769',
 };
 const messengerDatabaseUrl = 'https://streamer-messenger-rtdb.firebaseio.com';
+const stockMarketDatabaseUrl = 'https://soop-stock-market-rtdb.firebaseio.com';
+const STOCK_MARKET_DATABASE_PRIMARY = true;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getDatabase(app, messengerDatabaseUrl);
 const sharedDb = getDatabase(app);
+const stockDb = getDatabase(app, stockMarketDatabaseUrl);
+const marketDb = STOCK_MARKET_DATABASE_PRIMARY ? stockDb : sharedDb;
+const marketAccountPath = (uid) => (STOCK_MARKET_DATABASE_PRIMARY
+  ? `stockMarket/accounts/${uid}`
+  : `users/${uid}`);
 const functions = getFunctions(app);
 const googleProvider = new GoogleAuthProvider();
 const call = (name, data) => httpsCallable(functions, name)(data || {}).then((result) => result.data);
@@ -194,7 +201,7 @@ async function requestStreamerVerification(data) {
 }
 
 window.messenger = {
-  auth, db, sharedDb, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
+  auth, db, sharedDb, stockDb, marketDb, marketAccountPath, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
   call, waitForSession, refreshSession, loginGoogle, loginKakao, confirmDialog,
   requestStreamerVerification, signOut: () => signOut(auth),
@@ -219,6 +226,11 @@ async function enterTestAccount(uid) {
   await signInWithCustomToken(testAuth, issued.customToken);
   const testDb = getDatabase(testApp, messengerDatabaseUrl);
   const testSharedDb = getDatabase(testApp);
+  const testStockDb = getDatabase(testApp, stockMarketDatabaseUrl);
+  const testMarketDb = STOCK_MARKET_DATABASE_PRIMARY ? testStockDb : testSharedDb;
+  const testMarketAccountPath = (accountUid) => (STOCK_MARKET_DATABASE_PRIMARY
+    ? `stockMarket/accounts/${accountUid}`
+    : `users/${accountUid}`);
   const testFunctions = getFunctions(testApp);
   const testCall = (name, data) => httpsCallable(testFunctions, name)(data || {}).then((result) => result.data);
   // The room stock panel reads the shared game's personal balance. Create the
@@ -243,6 +255,9 @@ async function enterTestAccount(uid) {
     auth: testAuth,
     db: testDb,
     sharedDb: testSharedDb,
+    stockDb: testStockDb,
+    marketDb: testMarketDb,
+    marketAccountPath: testMarketAccountPath,
     state: testState,
     ref, get, set, push, onValue, query, orderByKey, orderByChild,
     limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
