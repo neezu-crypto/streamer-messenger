@@ -13,6 +13,7 @@ const { onValueWritten } = require('firebase-functions/v2/database');
 const { onTaskDispatched: firebaseOnTaskDispatched } = require('firebase-functions/v2/tasks');
 const logger = require('firebase-functions/logger');
 const { onSchedule: firebaseOnSchedule } = require('firebase-functions/v2/scheduler');
+const { isServicePaused } = require('./service-pause');
 const { defineSecret } = require('firebase-functions/params');
 const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -3482,6 +3483,8 @@ const messengerAdminSetBan = onCall(async (request) => {
 });
 
 const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'Asia/Seoul', region: 'us-central1' }, async () => {
+  // 서비스 일시정지 중에는 건너뛴다(관리자 센터 서비스 일시정지, 기본 상태: 일시정지).
+  if (await isServicePaused(sharedDb(), 'streamerMessenger', true)) return;
   const [snap, publicRoomsSnap] = await Promise.all([
     db().ref(`${ROOT}/rooms`).get(),
     db().ref(`${ROOT}/publicRooms`).get(),
@@ -3507,6 +3510,8 @@ const messengerExpireRequests = onSchedule({ schedule: '0 * * * *', timeZone: 'A
 });
 
 const messengerPurgeExpiredData = onSchedule({ schedule: '0 0 * * *', timeZone: 'Asia/Seoul', region: 'us-central1', secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async () => {
+  // 서비스 일시정지 중에는 건너뛴다(관리자 센터 서비스 일시정지, 기본 상태: 일시정지).
+  if (await isServicePaused(sharedDb(), 'streamerMessenger', true)) return;
   const t = now(); const cutoff = t - CHAT_RETENTION; const s3 = roomselfS3();
   await cleanMessageArchiveQueue(s3);
   const publicRoomsSnap = await db().ref(`${ROOT}/publicRooms`).get();
@@ -3589,6 +3594,7 @@ const messengerCollectDailyUsageAnalytics = onSchedule({
   timeoutSeconds: 540,
   memory: '1GiB',
 }, async () => {
+  if (await isServicePaused(sharedDb(), 'streamerMessenger', true)) return;
   const result = await withUsageSnapshotLock(async () => {
     const report = await usageAnalytics.collectUsageSnapshot(roomselfS3(), roomselfSecretAccessKey.value(), {
       logError: (metric, code, message) => logger.warn('Cloud Monitoring 사용량을 읽지 못했습니다.', { metric, code, message: String(message || '').slice(0, 160) }),
