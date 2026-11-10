@@ -24,6 +24,8 @@ const scrypt = promisify(crypto.scrypt);
 const ROOT = 'streamerMessenger';
 const MESSENGER_DATABASE_URL = 'https://streamer-messenger-rtdb.firebaseio.com';
 const FANPAGE_DATABASE_URL = 'https://streamer-fanpage-rtdb.firebaseio.com';
+const STOCK_MARKET_DATABASE_URL = 'https://soop-stock-market-rtdb.firebaseio.com';
+const STOCK_MARKET_MIGRATION_STATE_PATH = 'adminCenter/stockMarketDatabaseMigration/state';
 const MAIN_DATABASE_INSTANCE = 'soop-stock-market-default-rtdb';
 const MESSENGER_DATABASE_INSTANCE = 'streamer-messenger-rtdb';
 const MIGRATION_STATE_PATH = 'messengerDatabaseMigration/state';
@@ -95,6 +97,11 @@ const USAGE_SNAPSHOT_LOCK_PATH = `${ROOT}/admin/usageAnalyticsSnapshotLock`;
 const db = () => getDatabaseWithUrl(MESSENGER_DATABASE_URL, getApp());
 const fanpageDb = () => getDatabaseWithUrl(FANPAGE_DATABASE_URL, getApp());
 const sharedDb = () => getDatabase(getApp());
+const stockMarketDb = () => getDatabaseWithUrl(STOCK_MARKET_DATABASE_URL, getApp());
+async function marketStockDb() {
+  const state = (await sharedDb().ref(STOCK_MARKET_MIGRATION_STATE_PATH).get()).val() || {};
+  return state.phase === 'market-primary' ? stockMarketDb() : sharedDb();
+}
 let messengerMigrationStateCache = { paused: false, expiresAt: 0 };
 
 async function isMessengerDatabaseMigrationPaused() {
@@ -1630,8 +1637,9 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
     return { action, removed: true };
   }
 
-  const publicStockSnap = await sharedDb().ref(`stocksPublic/${stockId}`).get();
-  const stockSnap = await sharedDb().ref(`stocks/${stockId}`).get();
+  const marketDb = await marketStockDb();
+  const publicStockSnap = await marketDb.ref(`stocksPublic/${stockId}`).get();
+  const stockSnap = await marketDb.ref(`stocks/${stockId}`).get();
   if (!publicStockSnap.exists() || !stockSnap.exists()) throw new HttpsError('not-found', '현재 거래할 수 있는 종목이 아닙니다.');
   const stock = stockSnap.val() || {};
   if (!isRoomMarketStockNameForStreamer(stock.name, meta.streamerNickname)) {
