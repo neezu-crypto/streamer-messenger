@@ -1,4 +1,4 @@
-import './firebase-init.js?v=20261110-market-db';
+import './firebase-init.js?v=20261114-ac1';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
 
 const api = () => window.messenger;
