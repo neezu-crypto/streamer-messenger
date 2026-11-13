@@ -1040,7 +1040,7 @@ async function logVerifiedMessengerVisit(principal) {
   }
 }
 
-const messengerGetSession = onCall(async (request) => {
+const messengerGetSession = onCall({ enforceAppCheck: true }, async (request) => {
   const p = await getPrincipal(request);
   try { await logVerifiedMessengerVisit(p); }
   catch (error) { logger.warn('인증 스트리머 메신저 접속 기록 실패', { error: String(error && error.message || error) }); }
@@ -1187,7 +1187,7 @@ const messengerAdminIssueTestAccountToken = onCall(async (request) => {
   return { uid, customToken };
 });
 
-const messengerGetRoomState = onCall(async (request) => {
+const messengerGetRoomState = onCall({ enforceAppCheck: true }, async (request) => {
   const roomId = String((request.data || {}).roomId || '');
   if (!/^[a-z0-9]{2,30}$/.test(roomId)) throw new HttpsError('invalid-argument', '채팅방 정보가 올바르지 않습니다.');
   const p = await requireRoomPrincipal(request, roomId);
@@ -1202,7 +1202,7 @@ const messengerGetRoomState = onCall(async (request) => {
   return { room: publicRoom(meta, meta.ownerUid === p.uid), isOwner: meta.ownerUid === p.uid, member: memberSnap.val() || null, application: applicationSnap.val() || null, blocked: blockedSnap.exists() };
 });
 
-const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => {
+const messengerListMyRooms = onCall({ enforceAppCheck: true, timeoutSeconds: 120 }, async (request) => {
   const p = await getPrincipal(request);
   if (!p.trusted && !p.testAccount) throw new HttpsError('permission-denied', 'Google/카카오 로그인 또는 스트리머 인증 후 이용해 주세요.');
   if (p.testAccount && (await testAccountRef(p.uid).get()).val()?.active !== true) throw new HttpsError('permission-denied', '비활성화된 테스트 계정입니다.');
@@ -1236,7 +1236,7 @@ const messengerListMyRooms = onCall({ timeoutSeconds: 120 }, async (request) => 
   return { rooms };
 });
 
-const messengerEnsureRoom = onCall(async (request) => {
+const messengerEnsureRoom = onCall({ enforceAppCheck: true }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 일반 채팅방을 만들 수 없습니다.');
   const roomId = principalRoomId(p);
@@ -1388,7 +1388,7 @@ const messengerAdminBackfillVerifiedRooms = onCall(async (request) => {
   }
 });
 
-const messengerUpdateRoom = onCall(async (request) => {
+const messengerUpdateRoom = onCall({ enforceAppCheck: true }, async (request) => {
   const { roomId, visibility, password, regeneratePassword, locked, memberPolicy } = request.data || {};
   const data = request.data || {};
   const p = await requireRoomPrincipal(request, roomId);
@@ -1467,7 +1467,7 @@ const messengerUpdateRoom = onCall(async (request) => {
   return { room: publicRoom(nextMeta, true), generatedPassword: generatedPassword || null };
 });
 
-const messengerDiscardRoom = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
+const messengerDiscardRoom = onCall({ enforceAppCheck: true, secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정에서는 테스트방을 폐기할 수 없습니다.');
   const roomId = String((request.data || {}).roomId || '');
@@ -1504,7 +1504,7 @@ const messengerDiscardRoom = onCall({ secrets: [roomselfAccessKeyId, roomselfSec
   return { discarded: true, streamerNickname: meta.streamerNickname };
 });
 
-const messengerApplyToRoom = onCall(async (request) => {
+const messengerApplyToRoom = onCall({ enforceAppCheck: true }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정은 일반 채팅방에 대화를 신청할 수 없습니다.');
   const roomId = String((request.data || {}).roomId || '');
@@ -1530,7 +1530,7 @@ const messengerApplyToRoom = onCall(async (request) => {
   return { status: 'pending', expiresAt: submittedAt + APPLICATION_EXPIRE };
 });
 
-const messengerListApplications = onCall(async (request) => {
+const messengerListApplications = onCall({ enforceAppCheck: true }, async (request) => {
   const roomId = String((request.data || {}).roomId || '');
   const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, roomId);
@@ -1540,7 +1540,7 @@ const messengerListApplications = onCall(async (request) => {
   return { applications: items.sort((a, b) => a.submittedAt - b.submittedAt) };
 });
 
-const messengerListFans = onCall(async (request) => {
+const messengerListFans = onCall({ enforceAppCheck: true }, async (request) => {
   const roomId = String((request.data || {}).roomId || '');
   const p = await requireRoomPrincipal(request, roomId);
   const { isOwner } = await requireRoomMember(p, roomId);
@@ -1555,7 +1555,7 @@ const messengerListFans = onCall(async (request) => {
   return { fans };
 });
 
-const messengerReviewApplication = onCall(async (request) => {
+const messengerReviewApplication = onCall({ enforceAppCheck: true }, async (request) => {
   const { roomId, uid, decision } = request.data || {};
   const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
@@ -1583,7 +1583,7 @@ const messengerReviewApplication = onCall(async (request) => {
   return { status: decision };
 });
 
-const messengerSetMemberStatus = onCall(async (request) => {
+const messengerSetMemberStatus = onCall({ enforceAppCheck: true }, async (request) => {
   const { roomId, uid, status } = request.data || {};
   const p = await requireRoomPrincipal(request, roomId);
   const result = await requireRoomMember(p, String(roomId || ''));
@@ -1619,7 +1619,7 @@ function isRoomMarketStockNameForStreamer(stockName, streamerName) {
   return !!crewPrefixedName && normalize(crewPrefixedName[1]) === streamer;
 }
 
-const messengerRoomMarketUpdate = onCall(async (request) => {
+const messengerRoomMarketUpdate = onCall({ enforceAppCheck: true }, async (request) => {
   const { roomId: rawRoomId, stockId: rawStockId, action } = request.data || {};
   const roomId = String(rawRoomId || '');
   const stockId = String(rawStockId || '');
@@ -1660,7 +1660,7 @@ const messengerRoomMarketUpdate = onCall(async (request) => {
   return { action, stock: result.snapshot.child(stockId).val(), alreadyAdded };
 });
 
-const messengerSetPinnedMessage = onCall({ maxInstances: 20 }, async (request) => {
+const messengerSetPinnedMessage = onCall({ enforceAppCheck: true, maxInstances: 20 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const messageId = data.messageId;
@@ -1797,7 +1797,7 @@ function ladderResultText(game) {
   return `사다리타기 결과:\n${pairs.join('\n')}`;
 }
 
-const messengerMiniGameUpdate = onCall({ maxInstances: 20 }, async (request) => {
+const messengerMiniGameUpdate = onCall({ enforceAppCheck: true, maxInstances: 20 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
@@ -2025,7 +2025,7 @@ function parseWatchPartyVideo(value) {
   throw new HttpsError('invalid-argument', 'YouTube 또는 SOOP VOD·클립 링크만 같이볼 수 있습니다.');
 }
 
-const messengerWatchPartyUpdate = onCall({ maxInstances: 20 }, async (request) => {
+const messengerWatchPartyUpdate = onCall({ enforceAppCheck: true, maxInstances: 20 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const action = String(data.action || '');
@@ -2146,7 +2146,7 @@ async function galleryImageForChat(roomId, imageId) {
   return { imageId, streamerId: image.streamerId, thumbUrl: image.thumbUrl || '', imageUrl: image.imageUrl || '', width: image.width || null, height: image.height || null, createdAt: image.createdAt || 0 };
 }
 
-const messengerGetGalleryImages = onCall(async (request) => {
+const messengerGetGalleryImages = onCall({ enforceAppCheck: true }, async (request) => {
   const roomId = String((request.data || {}).roomId || '');
   const p = await requireRoomPrincipal(request, roomId);
   const { meta: rawMeta } = await requireRoomMember(p, roomId);
@@ -2171,14 +2171,14 @@ const messengerGetGalleryImages = onCall(async (request) => {
   return { locked: false, linked: true, streamerId: meta.galleryStreamerId, images };
 });
 
-const messengerGetGalleryImage = onCall(async (request) => {
+const messengerGetGalleryImage = onCall({ enforceAppCheck: true }, async (request) => {
   const { roomId, imageId } = request.data || {};
   const p = await requireRoomPrincipal(request, roomId);
   await requireRoomMember(p, String(roomId || ''));
   return await galleryImageForChat(String(roomId), String(imageId || ''));
 });
 
-const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+const messengerRequestRoomselfUpload = onCall({ enforceAppCheck: true, secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
   const { roomId, recipientUid, contentType, size } = request.data || {};
   const room = String(roomId || ''); const recipient = String(recipientUid || '');
   const p = await requireRoomPrincipal(request, room);
@@ -2203,7 +2203,7 @@ const messengerRequestRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, r
   return { imageId: id, uploadUrl, expiresAt: at + 5 * 60 * 1000, streamerName: meta.streamerNickname || '' };
 });
 
-const messengerFinalizeRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+const messengerFinalizeRoomselfUpload = onCall({ enforceAppCheck: true, secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
   const p = await getPrincipal(request);
   const imageId = String((request.data || {}).imageId || '');
   if (!/^[a-f0-9]{32}$/.test(imageId)) throw new HttpsError('invalid-argument', '이미지 정보가 올바르지 않습니다.');
@@ -2222,7 +2222,7 @@ const messengerFinalizeRoomselfUpload = onCall({ secrets: [roomselfAccessKeyId, 
   return { imageId, ready: true };
 });
 
-const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
+const messengerGetRoomselfImage = onCall({ enforceAppCheck: true, secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20 }, async (request) => {
   const { roomId, imageId } = request.data || {}; const room = String(roomId || ''); const id = String(imageId || '');
   const p = await requireRoomPrincipal(request, room);
   const { meta, isOwner, member } = await requireRoomMember(p, room);
@@ -2240,7 +2240,7 @@ const messengerGetRoomselfImage = onCall({ secrets: [roomselfAccessKeyId, roomse
   return { contentType: record.contentType, data: Buffer.from(bytes).toString('base64'), streamerName: meta.streamerNickname || '' };
 });
 
-const messengerLoadArchivedMessages = onCall({ secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20, timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
+const messengerLoadArchivedMessages = onCall({ enforceAppCheck: true, secrets: [roomselfAccessKeyId, roomselfSecretAccessKey], maxInstances: 20, timeoutSeconds: 120, memory: '512MiB' }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const principal = await requireRoomPrincipal(request, roomId);
@@ -2265,7 +2265,7 @@ const messengerLoadArchivedMessages = onCall({ secrets: [roomselfAccessKeyId, ro
   return { pages };
 });
 
-const messengerGetLinkPreview = onCall({ maxInstances: 10 }, async (request) => {
+const messengerGetLinkPreview = onCall({ enforceAppCheck: true, maxInstances: 10 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const principal = await requireRoomPrincipal(request, roomId);
@@ -3000,7 +3000,7 @@ const messengerProcessStreamerBroadcastHistory = onTaskDispatched({
   });
 });
 
-const messengerGetStreamerLiveStatus = onCall({ maxInstances: 10 }, async (request) => {
+const messengerGetStreamerLiveStatus = onCall({ enforceAppCheck: true, maxInstances: 10 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const principal = await requireRoomPrincipal(request, roomId);
@@ -3029,7 +3029,7 @@ const messengerGetStreamerLiveStatus = onCall({ maxInstances: 10 }, async (reque
   return value;
 });
 
-const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request) => {
+const messengerSearchStreamerClips = onCall({ enforceAppCheck: true, maxInstances: 10 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const principal = await requireRoomPrincipal(request, roomId);
@@ -3097,7 +3097,7 @@ const messengerSearchStreamerClips = onCall({ maxInstances: 10 }, async (request
   return result;
 });
 
-const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
+const messengerSendMessage = onCall({ enforceAppCheck: true, maxInstances: 30 }, async (request) => {
   const data = request.data || {};
   const roomId = String(data.roomId || '');
   const access = await requireRoomSendAccess(request, roomId);
@@ -3186,7 +3186,7 @@ const messengerSendMessage = onCall({ maxInstances: 30 }, async (request) => {
   return { message };
 });
 
-const messengerSubmitReport = onCall(async (request) => {
+const messengerSubmitReport = onCall({ enforceAppCheck: true }, async (request) => {
   const p = await getPrincipal(request, { requireTrusted: true });
   if (p.testAccount) throw new HttpsError('permission-denied', '테스트 계정에서는 대화 신고를 접수할 수 없습니다.');
   const { roomId, startAt, endAt, reasonCategory, reason } = request.data || {};
