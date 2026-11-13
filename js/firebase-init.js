@@ -9,6 +9,7 @@ import {
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js';
 
 // Firebase Web App 설정은 기존 streamer-gallery Web App과 공유해 UID와 로그인 계정이 동일하게 유지된다.
 const firebaseConfig = {
@@ -25,6 +26,16 @@ const stockMarketDatabaseUrl = 'https://soop-stock-market-rtdb.firebaseio.com';
 const STOCK_MARKET_DATABASE_PRIMARY = true;
 
 const app = initializeApp(firebaseConfig);
+// 메신저 callable은 서버가 App Check를 강제한다(2026-11-14). 앱마다 한 번만 붙인다.
+function ensureAppCheck(target) {
+  const done = (window.__messengerAppCheck ||= new Set());
+  if (done.has(target.name)) return;
+  try {
+    initializeAppCheck(target, { provider: new ReCaptchaEnterpriseProvider('6Ld0AfAtAAAAABcCio4_5AoiCdrjfM7_4riWiYXR'), isTokenAutoRefreshEnabled: true });
+    done.add(target.name);
+  } catch (error) { console.warn('App Check 초기화 실패', error); }
+}
+ensureAppCheck(app);
 const auth = getAuth(app);
 const db = getDatabase(app, messengerDatabaseUrl);
 const sharedDb = getDatabase(app);
@@ -221,6 +232,7 @@ async function enterTestAccount(uid) {
   const issued = await defaultMessenger.call('messengerAdminIssueTestAccountToken', { uid: testUid });
   const appName = `messenger-test-${testUid}`;
   const testApp = getApps().some((item) => item.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+  ensureAppCheck(testApp);
   const testAuth = getAuth(testApp);
   await setPersistence(testAuth, browserLocalPersistence);
   await signInWithCustomToken(testAuth, issued.customToken);
