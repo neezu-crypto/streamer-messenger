@@ -49,7 +49,8 @@ let roomClipHasMore = false;
 let roomClipLoading = false;
 let roomClipQuery = '';
 let roomClipItems = [];
-const call = (...args) => api().call(...args);
+// 관리자 고스트 모드면 이 방의 호출에 ghost:true를 붙인다(서버가 관리자인지 다시 확인, 읽기 전용 기능만 통과).
+const call = (name, data) => api().call(name, state.ghost && data && state.room && data.roomId === state.room.roomId ? { ...data, ghost: true } : data);
 const escapeText = (v) => String(v == null ? '' : v);
 const TOOLTIP_SELECTOR = 'button, a, input:not([type="hidden"]), select, textarea, [role="button"], [role="tab"], [role="menuitem"], summary, [tabindex]:not([tabindex="-1"])';
 let toastTimer = 0;
@@ -1148,6 +1149,21 @@ async function openLinkedStreamerRoomFast() {
   }
 }
 
+// 관리자 고스트 입장: 멤버로 참여하지 않고 대화 없이 기능만 확인한다(서버 감사 기록에 남음).
+async function enterGhostRoom(room) {
+  if (!state.session || !state.session.isAdmin || !room) return;
+  closeDialog('application-dialog');
+  setRoomEntryLoading(true);
+  try {
+    const snap = await api().call('messengerAdminGhostRoom', { roomId: room.roomId });
+    state.ghostSnapshot = snap;
+    await openChat(snap.room || room, false, true);
+  } catch (error) {
+    state.ghost = false; state.ghostSnapshot = null;
+    showError(error);
+  } finally { setRoomEntryLoading(false); }
+}
+
 async function selectRoom(room, resolvedRoomState = null) {
   if (!state.session || (!state.session.trusted && !state.session.isTestAccount)) { openDialog('auth-dialog'); return; }
   // requestFullscreen must run directly in the room-selection gesture, before the server check awaits.
@@ -1183,6 +1199,7 @@ async function selectRoom(room, resolvedRoomState = null) {
     $('#application-password').value = '';
     $('#application-intro').value = '';
     $('#application-error').hidden = true;
+    $('#ghost-enter').hidden = !(state.session && state.session.isAdmin && (room.roomType || 'streamer') === 'streamer');
     openDialog('application-dialog');
   } catch (error) {
     await settleChatFullscreenRequest(fullscreenAttempt, false);
@@ -1191,7 +1208,8 @@ async function selectRoom(room, resolvedRoomState = null) {
   finally { setRoomEntryLoading(false); }
 }
 
-async function openChat(room, isOwner) {
+async function openChat(room, isOwner, ghost = false) {
+  state.ghost = !!ghost; if (!ghost) state.ghostSnapshot = null;
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
   if (state.session?.uid && (state.session.trusted || state.session.isVerifiedStreamer || state.session.isTestAccount)) {
     loadOwnedEmoteIds(state.session.uid).catch((error) => console.warn('보유 스티커를 미리 불러오지 못했습니다.', error));
@@ -1263,8 +1281,18 @@ async function openChat(room, isOwner) {
   state.newMessagePreview = null;
   renderNewMessagePreview();
   if (isOwner) await loadStreamerLists();
-  subscribeTimeline();
-  subscribeRoomMarket();
+  $('#ghost-banner').hidden = !state.ghost;
+  if (state.ghost) {
+    clearSubscriptions();
+    renderTimeline();
+    const snap = state.ghostSnapshot || {};
+    applyMiniGameState(snap.miniGame || null); renderMiniGame();
+    applyWatchPartyState(normalizeWatchParty(snap.watchParty || null));
+    subscribeRoomMarket(snap.market || {});
+  } else {
+    subscribeTimeline();
+    subscribeRoomMarket();
+  }
   state.activeView = 'chat';
   syncMobileQuickActionPlacement();
   renderChatFullscreenButton();
@@ -1283,6 +1311,10 @@ function renderRoomState(room) {
   $('#open-emote-picker').disabled = room.locked && !state.isOwner;
   $('#composer-hint').textContent = room.locked && !state.isOwner ? '채팅방이 잠겨 있어 메시지를 보낼 수 없어요.' : '오래된 대화도 같은 채팅방에서 이어 볼 수 있어요.';
   $('#streamer-compose-options').hidden = !state.isOwner;
+  if (state.ghost) {
+    ['#message-input', '#send-message', '#open-image-picker', '#open-emote-picker'].forEach((sel) => { $(sel).disabled = true; });
+    $('#composer-hint').textContent = '👻 고스트 모드에서는 메시지를 보낼 수 없어요.';
+  }
 }
 
 function renderEmotePicker(stickers) {
@@ -2840,7 +2872,7 @@ function getRoomStreamerMarketStockEntries() {
   ).filter(([stockId]) => !state.roomMarketInvalidStockIds.has(stockId));
 }
 
-function subscribeRoomMarket() {
+function subscribeRoomMarket(ghostStocks = null) {
   const panel = $('#room-market-panel');
   const marketSlide = $('#room-tool-market-slide');
   const roomId = state.room && state.room.roomId;
@@ -2859,7 +2891,9 @@ function subscribeRoomMarket() {
   $('#room-market-trade-view').hidden = true;
   $('#room-market-stock-list').innerHTML = '<p class="room-market-empty">공유 종목을 불러오는 중…</p>';
   const { db, ref, onValue } = api();
-  state.unsubscribers.push(onValue(ref(db, `streamerMessenger/roomMarkets/${roomId}/stocks`), (snapshot) => {
+  // 고스트 모드는 DB를 구독하지 않고 서버가 넘긴 한 번의 상태로 그린다.
+  const listen = ghostStocks ? (_ref, cb) => { cb({ val: () => ghostStocks }); return () => {}; } : onValue;
+  state.unsubscribers.push(listen(ghostStocks ? null : ref(db, `streamerMessenger/roomMarkets/${roomId}/stocks`), (snapshot) => {
     if (!state.room || state.room.roomId !== roomId) return;
     state.roomMarketStocks = snapshot.val() || {};
     state.roomMarketInvalidStockIds = new Set();
@@ -3466,6 +3500,13 @@ function renderTimeline({ preservePosition = false } = {}) {
   const oldTop = host.scrollTop;
   const wasAtBottom = oldHeight - oldTop - host.clientHeight < 56;
   host.replaceChildren();
+  if (state.ghost) {
+    const empty = document.createElement('div');
+    empty.className = 'timeline-empty';
+    empty.textContent = '👻 고스트 모드: 대화는 불러오지 않아요. 채팅방 기능만 확인할 수 있어요.';
+    host.appendChild(empty);
+    return;
+  }
   const historyReady = state.isOwner ? state.timelineLoaded && state.timelineLoaded.owner : state.timelineLoaded && state.timelineLoaded.private && state.timelineLoaded.broadcast;
   if (historyReady) {
     const status = document.createElement('div');
@@ -4553,6 +4594,7 @@ function setReply(message) {
 }
 
 async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null, stickerId = '') {
+  if (state.ghost) { showError({ message: '고스트 모드에서는 메시지를 보낼 수 없어요.' }); return; }
   if (!state.room || !state.session) return false;
   const preserveDraft = messageText !== null;
   const text = String(preserveDraft ? messageText : $('#message-input').value).trim();
@@ -4877,6 +4919,8 @@ async function discardRoom() {
 
 function leaveChat() {
   document.dispatchEvent(new CustomEvent('messenger:room-closed'));
+  state.ghost = false; state.ghostSnapshot = null;
+  $('#ghost-banner').hidden = true;
   setMobileQuickMenuOpen(false, false);
   setAsideDrawerOpen(false, false);
   closeDialog('room-clips-dialog');
@@ -5754,6 +5798,7 @@ function bindEvents() {
   $('#export-text').addEventListener('click', () => exportConversation('text'));
   $('#export-image').addEventListener('click', () => exportConversation('image'));
   $('#submit-application').addEventListener('click', submitApplication);
+  $('#ghost-enter').addEventListener('click', () => enterGhostRoom(state.room));
   $('#toggle-attachment-tools').addEventListener('click', () => setAttachmentToolsOpen($('#attachment-tools-panel').hidden));
   $('#attachment-tools-panel').addEventListener('click', (event) => {
     if (event.target.closest('.attachment-tool-option')) setAttachmentToolsOpen(false);

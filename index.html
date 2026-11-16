@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261029-messenger-only-usage">
+  <link rel="stylesheet" href="styles.css?v=20261117-ghost1">
   <link rel="stylesheet" href="tutorial.css?v=20261116-tutorial2">
   <link rel="stylesheet" href="tamagotchi-care.css?v=20261116-pet1">
   <link rel="stylesheet" href="messenger-pet.css?v=20261116-pet1">
@@ -197,6 +197,7 @@
             <button class="icon-button chat-fullscreen-button" id="toggle-chat-fullscreen" type="button" aria-label="채팅방 전체화면으로 보기" title="채팅방 전체화면으로 보기" hidden><span aria-hidden="true">⛶</span></button>
             <div class="chat-header-actions"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="사다리 미니게임 시작 또는 진행 중인 게임으로 이동" title="방 소유자는 게임을 시작하고, 모든 참여자는 진행 중인 게임으로 이동합니다"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
           </div>
+          <div class="lock-banner ghost-banner" id="ghost-banner" hidden><span>👻</span><span>관리자 고스트 모드 · 대화 읽기·쓰기 없이 기능만 확인해요. 쓰기 기능은 서버가 막아요.</span></div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
           <section class="pinned-message-panel" id="pinned-message-panel" aria-label="채팅방 상단 고정 메시지" aria-live="polite" hidden></section>
           <div class="chat-body" id="timeline" aria-live="polite"><div class="timeline-empty">대화가 시작되면 여기에 표시됩니다.</div></div>
@@ -344,6 +345,7 @@
       <div id="application-password-wrap" hidden><label class="field-label" for="application-password">방 비밀번호</label><input class="text-input" id="application-password" type="password" autocomplete="off"></div>
       <label class="field-label" for="application-intro">소개 또는 신청 사유 <span class="optional">선택</span></label><textarea class="text-input" id="application-intro" maxlength="500" rows="4" placeholder="스트리머에게 전할 내용을 적어주세요"></textarea>
       <button class="button button-primary full-width" id="submit-application" type="button">신청 보내기</button>
+      <button class="button button-quiet full-width" id="ghost-enter" type="button" hidden title="참여 기록 없이 대화 읽기·쓰기 없이 채팅방 기능만 확인합니다">👻 관리자 고스트로 기능만 보기</button>
       <p class="dialog-error" id="application-error" hidden></p>
     </form>
   </dialog>
@@ -570,7 +572,7 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261114-ac1"></script>
+  <script type="module" src="js/app.js?v=20261117-ghost1"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
