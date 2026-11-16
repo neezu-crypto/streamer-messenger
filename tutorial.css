@@ -1,0 +1,67 @@
+/* 메신저 체험 튜토리얼(js/tutorial.js). 기존 styles.css의 버튼·말풍선 클래스를 그대로 쓰고 체험 전용 배치만 정의한다. */
+.tutorial-entry{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:16px}
+.tutorial-dialog{width:min(520px,calc(100% - 20px))}
+.tutorial-card{display:flex;flex-direction:column;gap:12px;max-height:min(88vh,760px);max-height:min(88dvh,760px);overflow:auto}
+.tutorial-head h2{margin:2px 0 0}
+.tutorial-progress{display:flex;gap:6px;margin:0;padding:0;list-style:none}
+.tutorial-progress li{flex:1;height:5px;border-radius:999px;background:#e3e9f5}
+.tutorial-progress li.done{background:#9fb2f6}
+.tutorial-progress li.current{background:#5d79e4}
+.tutorial-hint{margin:0;padding:11px 13px;border-radius:13px;background:#eef3ff;color:#4a5d8f;font-size:12px;line-height:1.6}
+.tutorial-stage{display:flex;flex-direction:column;gap:12px;min-height:220px}
+.tutorial-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.tutorial-foot .button{margin-top:0}
+.tutorial-target{animation:tutorial-pulse 1.6s ease-in-out infinite}
+@keyframes tutorial-pulse{0%,100%{box-shadow:0 0 0 0 rgba(93,121,228,.45)}50%{box-shadow:0 0 0 6px rgba(93,121,228,0)}}
+.tutorial-shake{animation:tutorial-shake .35s ease}
+@keyframes tutorial-shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.tutorial-room-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.tutorial-room-card{display:grid;justify-items:start;gap:4px;padding:13px;border:1px solid var(--line);border-radius:16px;background:#fff;text-align:left}
+.tutorial-room-icon{font-size:24px}
+.tutorial-form,.tutorial-requests{display:grid;gap:10px}
+.tutorial-profile,.tutorial-request{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.tutorial-profile{flex-direction:column;align-items:flex-start;gap:3px}
+.tutorial-request>div:first-child{display:grid;gap:2px}
+.tutorial-request-actions{display:flex;gap:6px}
+.tutorial-request-actions .button{margin-top:0;height:34px;padding:0 12px}
+.tutorial-status{margin:0;color:#5d6d8c;font-size:12px}
+.tutorial-badge{font-size:12px;font-weight:700;color:#4c66c9}
+.tutorial-choice{display:grid;gap:9px}
+.tutorial-choice-option{display:grid;gap:4px;padding:14px;border:1px solid var(--line);border-radius:15px;background:#fff;text-align:left}
+.tutorial-choice-option[aria-pressed=true]{border-color:#7c95f2;background:#f1f5ff}
+.tutorial-chat{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;background:#f9fbff;overflow:hidden}
+.tutorial-chat-header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#fff}
+.tutorial-chat-header .chat-avatar{width:34px;height:34px;display:grid;place-items:center;font-size:18px}
+.tutorial-chat-titles{display:grid}
+.tutorial-pinned{padding:8px 12px;border-bottom:1px solid var(--line);background:#fffaf0;color:#7a6431;font-size:11px;overflow-wrap:anywhere}
+.tutorial-timeline{display:flex;flex-direction:column;gap:9px;height:230px;padding:12px;overflow-y:auto}
+.tutorial-row{display:flex;gap:7px;max-width:88%}
+.tutorial-row .message-avatar{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#fff;font-size:15px}
+.tutorial-message-body{display:grid;gap:3px;min-width:0}
+.tutorial-row .message-bubble{padding:9px 12px;border:1px solid var(--line);border-radius:16px 16px 16px 5px;background:#fff;font-size:12px;line-height:1.55;overflow-wrap:anywhere;white-space:pre-wrap}
+.tutorial-sticker{font-size:34px;line-height:1}
+.tutorial-composer{position:relative;display:flex;align-items:flex-end;gap:7px;padding:9px;border-top:1px solid var(--line);background:#fff}
+.tutorial-input{flex:1;min-height:38px;max-height:90px;padding:9px 11px;border:1px solid rgba(126,148,185,.25);border-radius:12px;font:inherit;font-size:12px;resize:none}
+.tutorial-composer .send-button{flex:none}
+.tutorial-composer .button{margin-top:0}
+.tutorial-compose-options{display:flex;gap:6px;padding:8px 9px 0;background:#fff}
+.tutorial-compose-options select{height:32px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:12px}
+.tutorial-emote-picker{position:absolute;left:9px;bottom:52px;display:flex;gap:6px;padding:8px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 10px 26px rgba(35,54,91,.14)}
+.tutorial-emote-picker[hidden]{display:none}
+.tutorial-emote{width:40px;height:40px;border:0;border-radius:11px;background:#f2f5fc;font-size:22px}
+.tutorial-roomself{display:grid;min-width:180px}
+.tutorial-roomself-cover{padding:22px 12px;border:0;border-radius:12px;background:linear-gradient(135deg,#d9e2ff,#f3e6ff);color:#4b5b8d;font-size:12px;font-weight:700}
+.tutorial-roomself-photo{display:grid;place-items:center;height:120px;border-radius:12px;background:linear-gradient(135deg,#ffe9f2,#e6f0ff);font-size:40px}
+.tutorial-pin{justify-self:start;border:0;border-radius:9px;padding:5px 9px;background:#eef2ff;color:#5873df;font-size:11px}
+.tutorial-roomself-send{display:grid;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:#fff}.tutorial-roomself-send .button{margin-top:0;height:36px}.tutorial-roomself-label{font-size:12px;color:#5d6d8c}.tutorial-roomself-label select{height:30px;margin-left:4px;border:1px solid var(--line);border-radius:9px;background:#fff}.tutorial-photo-picks{display:flex;gap:8px}.tutorial-photo-pick{width:54px;height:54px;border:2px solid transparent;border-radius:12px;background:linear-gradient(135deg,#ffe9f2,#e6f0ff);font-size:24px}.tutorial-photo-pick[aria-pressed=true]{border-color:#5d79e4}.tutorial-roomself small{margin-top:5px;font-size:10px}
+.tutorial-ladder{display:flex;gap:6px;flex-wrap:wrap}
+.tutorial-ladder span{padding:6px 9px;border-radius:9px;background:#eef2ff;color:#4c66c9;font-size:11px;font-weight:700}
+.tutorial-done{padding:14px;border-radius:15px;background:#effaf3;color:#2f6b45}
+.tutorial-done strong{font-size:14px}
+.tutorial-done .dialog-copy{margin:6px 0 0;color:#467456}
+@media (max-width:560px){
+  .tutorial-card{padding:22px 16px}
+  .tutorial-room-grid{grid-template-columns:1fr}
+  .tutorial-timeline{height:200px}
+}
+@media (prefers-reduced-motion:reduce){.tutorial-target,.tutorial-shake{animation:none}}
