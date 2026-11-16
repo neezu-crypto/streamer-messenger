@@ -330,6 +330,7 @@ function streamerStep(step, ctx = {}) {
       const card = el('div', 'tutorial-roomself');
       card.append(el('div', 'tutorial-roomself-photo', picked), el('small', 'muted', `🔒 ${recipient.value}에게만 보냄 · 공개 갤러리에 올라가지 않아요`));
       remember({ mine: true, node: card });
+      panel.remove();
       schedule(800, () => {
         remember({ name: recipient.value, avatar: '🙋', text: '방셀 받았어요!! 소중히 볼게요 🥹' });
         nextButton(foot, '다음', () => go(5, { history: ctx.history, pinned: ctx.pinned }));
