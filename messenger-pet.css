@@ -1,0 +1,21 @@
+/* 메신저 다마고치(js/messenger-pet.js): 화면을 돌아다니는 펫과 돌봄 창 */
+.messenger-pet{position:fixed;left:0;top:0;z-index:60;display:grid;justify-items:center;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;will-change:transform;filter:drop-shadow(0 6px 10px rgba(35,54,91,.18))}
+.messenger-pet.is-dragging{cursor:grabbing;filter:drop-shadow(0 12px 18px rgba(35,54,91,.28))}
+.messenger-pet:focus-visible{outline:3px solid #6f8cf1;outline-offset:4px;border-radius:16px}
+.messenger-pet-body{width:100%;height:100%;pointer-events:none}
+.messenger-pet-body svg{width:100%;height:100%;display:block;overflow:visible}
+.messenger-pet-name{margin-top:-6px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.9);color:#4a5d8f;font-size:11px;font-weight:700;white-space:nowrap;pointer-events:none}
+.messenger-pet-dialog{width:min(640px,calc(100% - 20px))}
+.messenger-pet-care{display:grid;gap:12px;max-height:min(90vh,820px);max-height:min(90dvh,820px);overflow:auto}
+.messenger-pet-care h2{margin:0}
+.messenger-pet-care-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:12px}
+.messenger-pet-toggle[hidden]{display:none}
+@media (max-width:560px){.messenger-pet-care{padding:20px 14px}}
+/* 드래그 연출: 들림(그림자 작아짐)·매달려 흔들림·내려놓을 때 찌그러짐 */
+.messenger-pet-lift{width:100%;height:100%;transform-origin:50% 8%;will-change:transform}
+.messenger-pet-lift.is-landing .messenger-pet-body svg{animation:messenger-pet-land .42s cubic-bezier(.3,1.6,.5,1)}
+@keyframes messenger-pet-land{0%{transform:scale(1.14,.8)}55%{transform:scale(.94,1.07)}100%{transform:none}}
+.messenger-pet-shadow{position:absolute;left:50%;bottom:14%;width:58%;height:10%;border-radius:50%;background:rgba(35,54,91,.45);filter:blur(3px);transform:translateX(-50%);pointer-events:none}
+.messenger-pet{filter:none}
+.messenger-pet-body svg{filter:drop-shadow(0 4px 6px rgba(35,54,91,.14))}
+@media (prefers-reduced-motion:reduce){.messenger-pet-lift.is-landing .messenger-pet-body svg{animation:none}}

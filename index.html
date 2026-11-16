@@ -9,6 +9,8 @@
   <title>스트리머 메신저</title>
   <link rel="stylesheet" href="styles.css?v=20261029-messenger-only-usage">
   <link rel="stylesheet" href="tutorial.css?v=20261116-tutorial2">
+  <link rel="stylesheet" href="tamagotchi-care.css?v=20261116-pet1">
+  <link rel="stylesheet" href="messenger-pet.css?v=20261116-pet1">
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -571,6 +573,8 @@
   <script type="module" src="js/app.js?v=20261114-ac1"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
+    import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
+    initMessengerPet();
     mountMessengerTutorial();
   </script>
 </body>

@@ -1223,6 +1223,7 @@ async function openChat(room, isOwner) {
   $('#member-action').hidden = true;
   $('#chat-title').textContent = isOwner ? '내 채팅방' : `${room.streamerNickname || '스트리머'} 채팅방`;
   $('#chat-subtitle').textContent = isOwner ? '팬별 메시지를 통합 타임라인으로 확인해요' : (room.roomType === 'admin' ? '나와 관리자만 보이는 대화' : `SOOP ${room.streamerSoopId || ''} · 나와 스트리머만 보이는 대화`);
+  document.dispatchEvent(new CustomEvent('messenger:room-opened', { detail: { room, isOwner: !!isOwner } }));
   const fanpageLink = $('#chat-fanpage-link');
   const streamerSoopId = String(room.streamerSoopId || '').trim();
   const isOwnRoom = state.isOwner === true;
@@ -4875,6 +4876,7 @@ async function discardRoom() {
 }
 
 function leaveChat() {
+  document.dispatchEvent(new CustomEvent('messenger:room-closed'));
   setMobileQuickMenuOpen(false, false);
   setAsideDrawerOpen(false, false);
   closeDialog('room-clips-dialog');
