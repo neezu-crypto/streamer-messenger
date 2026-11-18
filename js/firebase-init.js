@@ -311,6 +311,11 @@ defaultMessenger.exitTestAccount = exitTestAccount;
       search: async (query) => {
         await auth.authStateReady();
         if (!auth.currentUser) await signInAnonymously(auth);
+        // 검색하는 동안 인증 서버를 미리 깨운다(확인 전용 호출: 신청·코드를 만들지 않음, 5분에 한 번).
+        if (Date.now() - (window.__verifyWarmAt || 0) > 300000) {
+          window.__verifyWarmAt = Date.now();
+          httpsCallable(functions, 'requestStreamerVerification')({ checkOnly: true }).catch(() => {});
+        }
         const result = await soopVerifySearchFn({ query });
         return (result.data && result.data.streamers) || [];
       },
