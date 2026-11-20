@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261120-vod1">
+  <link rel="stylesheet" href="styles.css?v=20261120-fav1">
   <link rel="stylesheet" href="tutorial.css?v=20261116-tutorial2">
   <link rel="stylesheet" href="tamagotchi-care.css?v=20261116-pet1">
   <link rel="stylesheet" href="messenger-pet.css?v=20261116-pet1">
@@ -218,7 +218,7 @@
                 <button class="attach-button" id="toggle-attachment-tools" type="button" aria-label="첨부 및 영상 도구 선택" aria-expanded="false" aria-controls="attachment-tools-panel" title="갤러리 이미지, 스트리머 클립, 영상 같이보기 선택">＋</button>
                 <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="첨부 및 영상 도구" hidden>
                   <button class="attachment-tool-option" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="스트리머 갤러리에서 이미지를 골라 채팅방에 보내기"><span class="attachment-tool-icon" aria-hidden="true">▧</span><span><strong>갤러리 이미지</strong><small>사진을 골라 채팅에 보내기</small></span></button>
-                  <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 VOD 찾아 공유" title="이 채팅방 스트리머의 다시보기·클립을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 VOD</strong><small>다시보기·클립을 검색해 공유하거나 재생</small></span></button>
+                  <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 VOD 찾아 공유" title="이 채팅방 스트리머의 다시보기·클립과 팬페이지 즐겨찾기 영상을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 VOD</strong><small>다시보기·클립·즐겨찾기를 공유하거나 재생</small></span></button>
                   <button class="attachment-tool-option" id="open-room-watch-party" type="button" aria-label="영상 같이보기 예약" title="영상 링크와 재생 시간을 정해 채팅방 참여자와 같이봅니다"><span class="attachment-tool-icon clip" aria-hidden="true">◷</span><span><strong>영상 같이보기</strong><small>영상 링크를 예약하고 함께 재생</small></span></button>
                 </div>
               </div>
@@ -395,8 +395,9 @@
   <dialog class="app-dialog room-clips-dialog" id="room-clips-dialog" aria-labelledby="room-clips-title">
     <section class="dialog-card room-clips-card">
       <button class="dialog-close" id="close-room-clips" type="button" aria-label="닫기" title="VOD 검색 닫기">×</button>
-      <header class="room-clips-header"><p class="eyebrow">STREAMER VOD</p><h2 id="room-clips-title">스트리머 VOD 공유</h2><p class="dialog-copy">이 채팅방 스트리머의 다시보기·클립을 찾아 채팅에 공유하거나 채팅 도구에서 재생해요.</p></header>
-      <div class="room-clips-tabs" role="tablist" aria-label="VOD 종류"><button class="room-clips-tab is-active" id="room-clips-tab-review" type="button" role="tab" aria-selected="true" data-vod-type="review" title="스트리머의 다시보기를 검색합니다">다시보기</button><button class="room-clips-tab" id="room-clips-tab-clip" type="button" role="tab" aria-selected="false" data-vod-type="clip" title="스트리머의 클립을 검색합니다">클립</button></div>
+      <header class="room-clips-header"><p class="eyebrow">STREAMER VOD</p><h2 id="room-clips-title">스트리머 VOD 공유</h2><p class="dialog-copy">이 채팅방 스트리머의 다시보기·클립과 팬페이지 즐겨찾기 영상을 찾아 채팅에 공유하거나 채팅 도구에서 재생해요.</p></header>
+      <div class="room-clips-tabs" role="tablist" aria-label="VOD 종류"><button class="room-clips-tab is-active" id="room-clips-tab-review" type="button" role="tab" aria-selected="true" data-vod-type="review" title="스트리머의 다시보기를 검색합니다">다시보기</button><button class="room-clips-tab" id="room-clips-tab-clip" type="button" role="tab" aria-selected="false" data-vod-type="clip" title="스트리머의 클립을 검색합니다">클립</button><button class="room-clips-tab" id="room-clips-tab-favorites" type="button" role="tab" aria-selected="false" data-vod-type="favorites" title="팬페이지 즐겨찾기에 모인 영상을 봅니다">즐겨찾기</button></div>
+      <label class="room-favorites-category" id="room-favorites-category-wrap" hidden><span>카테고리</span><select id="room-favorites-category" title="즐겨찾기 카테고리를 고릅니다" aria-label="즐겨찾기 카테고리"><option value="">전체</option></select></label>
       <label class="room-market-search room-clips-search"><span aria-hidden="true">⌕</span><input id="room-clips-search" type="search" maxlength="80" placeholder="다시보기 제목 검색" autocomplete="off" aria-label="다시보기 제목 검색" title="스트리머 다시보기 제목으로 검색합니다"></label>
       <p class="room-clips-status" id="room-clips-status" role="status" aria-live="polite">최신 다시보기를 불러오는 중…</p>
       <div class="room-clips-results" id="room-clips-results" aria-live="polite"></div>
@@ -573,7 +574,7 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261120-vod3"></script>
+  <script type="module" src="js/app.js?v=20261120-fav1"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';

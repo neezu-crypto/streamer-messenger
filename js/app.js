@@ -50,10 +50,10 @@ let roomClipLoading = false;
 let roomClipQuery = '';
 let roomClipItems = [];
 let roomClipType = 'review'; // 'review'(다시보기) | 'clip'(클립)
-const ROOM_VOD_TYPE_LABEL = { review: '다시보기', clip: '클립' };
+const ROOM_VOD_TYPE_LABEL = { review: '다시보기', clip: '클립', favorites: '즐겨찾기 영상' };
 // 조사: 다시보기를/가, 클립을/이
-const ROOM_VOD_OBJ = { review: '다시보기를', clip: '클립을' };
-const ROOM_VOD_SUBJ = { review: '다시보기가', clip: '클립이' };
+const ROOM_VOD_OBJ = { review: '다시보기를', clip: '클립을', favorites: '즐겨찾기 영상을' };
+const ROOM_VOD_SUBJ = { review: '다시보기가', clip: '클립이', favorites: '즐겨찾기 영상이' };
 // 관리자 고스트 모드면 이 방의 호출에 ghost:true를 붙인다(서버가 관리자인지 다시 확인, 읽기 전용 기능만 통과).
 const call = (name, data) => api().call(name, state.ghost && data && state.room && data.roomId === state.room.roomId ? { ...data, ghost: true } : data);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -3738,21 +3738,27 @@ function renderRoomClipItems(items, append = false) {
       const image = document.createElement('img'); image.src = clip.thumbnailUrl; image.alt = ''; image.loading = 'lazy';
       image.addEventListener('error', () => image.remove(), { once: true }); thumb.appendChild(image);
     }
-    const duration = document.createElement('span'); duration.className = 'room-clip-duration'; duration.textContent = roomClipDurationLabel(clip.durationMs); thumb.appendChild(duration);
+    if (!clip.favorite) { const duration = document.createElement('span'); duration.className = 'room-clip-duration'; duration.textContent = roomClipDurationLabel(clip.durationMs); thumb.appendChild(duration); }
     const copy = document.createElement('div'); copy.className = 'room-clip-copy';
     const title = document.createElement('strong'); title.textContent = clip.title; title.title = clip.title;
-    const details = document.createElement('small'); details.textContent = [clip.uploader, clip.createdAt].filter(Boolean).join(' · ');
+    const details = document.createElement('small'); details.textContent = [clip.uploader, clip.unavailable ? '서비스 종료' : clip.createdAt].filter(Boolean).join(' · ');
     copy.append(title, details);
     const actions = document.createElement('div'); actions.className = 'room-clip-actions';
     const play = document.createElement('button'); play.type = 'button'; play.className = 'button button-quiet'; play.textContent = '도구에서 재생';
     play.title = `채팅 도구에서 ${clip.title} 재생`; play.setAttribute('aria-label', play.title);
+    if (clip.linkOnly) { play.textContent = '새 탭에서 보기'; play.title = `${clip.title} 페이지를 새 탭에서 엽니다`; play.setAttribute('aria-label', play.title); play.disabled = clip.unavailable; }
     play.addEventListener('click', () => {
+      if (clip.linkOnly) { window.open(clip.url, '_blank', 'noopener,noreferrer'); return; }
       closeDialog('room-clips-dialog');
-      if (!openRoomToolVideo({ kind: 'soop-vod-clip', clipId: clip.id, href: clip.url || roomClipCanonicalUrl(clip.id), clipTitle: clip.title })) {
+      const toolVideo = clip.favorite && clip.platform === 'youtube'
+        ? { kind: 'youtube', videoId: clip.videoId, href: clip.url }
+        : { kind: 'soop-vod-clip', clipId: clip.favorite ? clip.videoId : clip.id, href: clip.url || roomClipCanonicalUrl(clip.id), clipTitle: clip.title };
+      if (!openRoomToolVideo(toolVideo)) {
         showError({ message: `채팅 도구에서 ${ROOM_VOD_OBJ[roomClipType]} 재생할 수 없습니다.` });
       }
     });
     const party = document.createElement('button'); party.type = 'button'; party.className = 'button button-quiet'; party.textContent = '같이보기 예약';
+    if (clip.linkOnly) party.hidden = true;
     party.title = `${clip.title} 영상을 채팅방 참여자와 같이보기로 예약합니다.`;
     party.addEventListener('click', () => {
       closeDialog('room-clips-dialog');
@@ -3766,7 +3772,7 @@ function renderRoomClipItems(items, append = false) {
     share.setAttribute('aria-label', share.title);
     share.addEventListener('click', async () => {
       const lockedOut = !!(state.room && state.room.locked && !state.isOwner);
-      const url = roomClipCanonicalUrl(clip.id);
+      const url = clip.favorite ? clip.url : roomClipCanonicalUrl(clip.id);
       const text = `▶ ${clip.title}\n${url}`;
       share.disabled = true;
       const sent = await sendMessage('text', '', '', text);
@@ -3824,7 +3830,91 @@ async function fetchRoomVodsDirect(soopId, vodType, query, page) {
   return { clips, page: Number(meta.current_page) || page, total: Math.max(0, Number(meta.total) || 0), hasMore: Number(meta.current_page || page) < Number(meta.last_page || page) };
 }
 
+// 팬페이지 즐겨찾기(모든 팬페이지 공통, 관리자가 관리하는 영상 모음). 첫 쪽은 공개 파일(CDN)을 먼저 읽고,
+// 없거나 1시간이 지났을 때만 팬페이지 서버 함수를 부른다(그때 서버가 공개 파일을 다시 채운다). 다음 쪽·검색만 서버를 부른다.
+const FANPAGE_LIBRARY_FILE_BASE = 'https://storage.googleapis.com/soop-stock-market-fanpage-public/fanpage/v1/_library/';
+const FANPAGE_LIBRARY_FILE_MAX_AGE_MS = 60 * 60 * 1000;
+let roomFavoriteCategoryId = '';
+let roomFavoriteCursor = null;
+
+async function loadFanpageLibraryFile(categoryId) {
+  const name = `list-${categoryId || 'all'}`;
+  if (!/^list-[A-Za-z0-9_-]{1,80}$/.test(name)) return null;
+  try {
+    const response = await fetch(`${FANPAGE_LIBRARY_FILE_BASE}${encodeURIComponent(name)}.json`, { credentials: 'omit', signal: AbortSignal.timeout(3000) });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!body || body.v !== 1 || !(Date.now() - Number(body.builtAt || 0) < FANPAGE_LIBRARY_FILE_MAX_AGE_MS)) return null;
+    return body.library && Array.isArray(body.library.items) ? body.library : null;
+  } catch (_) { return null; }
+}
+
+function roomFavoriteItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  const platform = String(item.platform || '');
+  const videoId = String(item.videoId || '');
+  const isLinkOnly = item.sourceType === 'cinety' || platform === 'flashgame';
+  let url = '';
+  try { const parsed = new URL(String(item.url || '')); if (parsed.protocol === 'https:') url = parsed.href; } catch (_) { /* 링크 없음 */ }
+  if (platform === 'youtube' && /^[A-Za-z0-9_-]{6,20}$/.test(videoId)) url = `https://www.youtube.com/watch?v=${videoId}`;
+  else if (platform === 'soop' && /^\d{1,20}$/.test(videoId)) url = roomClipCanonicalUrl(videoId);
+  if (!url) return null;
+  let thumbnailUrl = '';
+  try {
+    const parsed = new URL(String(item.thumbnailUrl || ''));
+    if (parsed.protocol === 'https:') thumbnailUrl = parsed.href;
+  } catch (_) { /* 썸네일 없음 */ }
+  if (!thumbnailUrl && platform === 'youtube' && videoId) thumbnailUrl = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
+  const published = Date.parse(item.publishedAt || '');
+  return {
+    id: String(item.id || url), favorite: true, platform, videoId, url, thumbnailUrl,
+    linkOnly: isLinkOnly, unavailable: item.isUnavailable === true,
+    title: String(item.title || '제목 없음').replace(/\s+/g, ' ').trim().slice(0, 180),
+    uploader: isLinkOnly ? (platform === 'flashgame' ? '플래시게임' : (item.categoryName || 'SOOP 시네티'))
+      : item.sourceType === 'channel' ? `${item.channelTitle || 'YouTube 채널'} · YouTube` : (platform === 'youtube' ? 'YouTube' : 'SOOP'),
+    createdAt: Number.isFinite(published) ? new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' }).format(published) : '',
+    durationMs: 0,
+  };
+}
+
+function renderRoomFavoriteCategories(categories) {
+  const select = $('#room-favorites-category');
+  const list = Array.isArray(categories) ? categories : [];
+  const current = roomFavoriteCategoryId;
+  select.replaceChildren(new Option('전체', ''));
+  for (const category of list) {
+    const id = String(category && category.id || ''); if (!id) continue;
+    select.appendChild(new Option(String(category.name || category.title || '카테고리').slice(0, 40), id));
+  }
+  select.value = list.some((category) => String(category && category.id) === current) ? current : '';
+}
+
+async function loadRoomFavorites(query, page) {
+  const categoryId = roomFavoriteCategoryId;
+  const searchMode = Array.from(query.normalize('NFC')).length >= 2;
+  const key = `favorites\n${categoryId}\n${searchMode ? query : ''}\n${page}`;
+  const cached = roomVodCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) { roomFavoriteCursor = cached.value.cursor; return cached.value; }
+  let library = null;
+  if (!searchMode && page === 1) library = await loadFanpageLibraryFile(categoryId);
+  if (!library) {
+    library = await call('streamerFanPageVideoLibrary', {
+      action: searchMode ? 'search' : 'list', ...(searchMode ? { query } : {}),
+      categoryId, cursor: page === 1 ? null : roomFavoriteCursor, limit: 24,
+    });
+  }
+  const value = {
+    clips: (Array.isArray(library.items) ? library.items : []).map(roomFavoriteItem).filter(Boolean),
+    categories: Array.isArray(library.categories) ? library.categories : [],
+    page, total: 0, hasMore: library.hasMore === true, cursor: library.nextCursor || null,
+  };
+  roomFavoriteCursor = value.cursor;
+  roomVodCache.set(key, { value, expiresAt: Date.now() + ROOM_VOD_CACHE_TTL_MS });
+  return value;
+}
+
 async function loadRoomVods(room, vodType, query, page) {
+  if (vodType === 'favorites') return loadRoomFavorites(query, page);
   const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
   const key = `${room.roomId}\n${vodType}\n${query}\n${page}`;
   const cached = roomVodCache.get(key);
@@ -3859,9 +3949,12 @@ async function searchRoomClips({ append = false } = {}) {
     const clips = Array.isArray(result.clips) ? result.clips : [];
     roomClipItems = append ? roomClipItems.concat(clips) : clips;
     roomClipPage = Number(result.page) || page; roomClipHasMore = !!result.hasMore;
+    if (vodType === 'favorites' && !append && Array.isArray(result.categories) && result.categories.length) renderRoomFavoriteCategories(result.categories);
     renderRoomClipItems(clips, append);
     status.textContent = roomClipItems.length
-      ? (query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 ${ROOM_VOD_TYPE_LABEL[vodType]} ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
+      ? (vodType === 'favorites'
+        ? `${query && Array.from(query).length >= 2 ? '검색 결과' : '팬페이지 즐겨찾기'} ${roomClipItems.length}개 표시 중`
+        : query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 ${ROOM_VOD_TYPE_LABEL[vodType]} ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
       : (query ? `검색된 ${ROOM_VOD_SUBJ[vodType]} 없습니다.` : `등록된 ${ROOM_VOD_SUBJ[vodType]} 없습니다.`);
     more.hidden = !roomClipHasMore;
   } catch (error) {
@@ -3876,14 +3969,17 @@ async function searchRoomClips({ append = false } = {}) {
 }
 
 function setRoomVodType(type) {
-  roomClipType = type === 'clip' ? 'clip' : 'review';
+  roomClipType = type === 'clip' || type === 'favorites' ? type : 'review';
+  $('#room-favorites-category-wrap').hidden = roomClipType !== 'favorites';
   const label = ROOM_VOD_TYPE_LABEL[roomClipType];
   document.querySelectorAll('#room-clips-dialog .room-clips-tab').forEach((tab) => {
     const active = tab.dataset.vodType === roomClipType;
     tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', active ? 'true' : 'false');
   });
   const search = $('#room-clips-search');
-  search.placeholder = `${label} 제목 검색`; search.setAttribute('aria-label', `${label} 제목 검색`); search.title = `스트리머 ${label} 제목으로 검색합니다`;
+  const searchLabel = roomClipType === 'favorites' ? '즐겨찾기 영상 검색 (두 글자 이상)' : `${label} 제목 검색`;
+  search.placeholder = searchLabel; search.setAttribute('aria-label', searchLabel);
+  search.title = roomClipType === 'favorites' ? '팬페이지 즐겨찾기 전체에서 두 글자 이상으로 검색합니다' : `스트리머 ${label} 제목으로 검색합니다`;
   const more = $('#room-clips-load-more'); more.textContent = `${label} 더 보기`; more.title = `다음 ${label} 목록을 불러옵니다`;
 }
 
@@ -4003,6 +4099,11 @@ function bindRoomClipControls() {
     roomClipSearchTimer = setTimeout(() => searchRoomClips(), 400);
   });
   $('#room-clips-load-more').addEventListener('click', () => searchRoomClips({ append: true }));
+  $('#room-favorites-category').addEventListener('change', (event) => {
+    roomFavoriteCategoryId = String(event.target.value || ''); roomFavoriteCursor = null;
+    clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
+    $('#room-clips-search').value = ''; searchRoomClips();
+  });
   document.querySelectorAll('#room-clips-dialog .room-clips-tab').forEach((tab) => tab.addEventListener('click', () => {
     if (tab.dataset.vodType === roomClipType) return;
     clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;

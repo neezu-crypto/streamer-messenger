@@ -738,6 +738,10 @@
 .room-clips-tab:hover{color:#263451}
 .room-clips-tab.is-active{background:#fff;color:#263451;box-shadow:0 2px 6px rgba(38,52,81,.14)}
 .room-clips-tab:focus-visible{outline:2px solid #4d70e8;outline-offset:2px}
+.room-favorites-category{display:flex;flex:0 0 auto;align-items:center;gap:8px;margin:0;color:#5d6b85;font-size:12px;font-weight:700}
+.room-favorites-category[hidden]{display:none!important}
+.room-favorites-category select{min-height:34px;max-width:100%;padding:0 10px;border:1px solid rgba(126,148,185,.3);border-radius:10px;background:#fff;color:#263451;font:inherit;font-size:12px}
+.room-clip-badge{display:inline-block;margin-right:4px;padding:1px 6px;border-radius:999px;background:#eef2fb;color:#4c5b78;font-size:9px;font-weight:700;vertical-align:1px}
 .room-clips-status{flex:0 0 auto;margin:0;color:#7d8aa2;font-size:10px}
 .room-clips-results{display:grid;flex:1 1 auto;align-content:start;gap:8px;min-height:110px;overflow:auto;padding:1px 4px 3px 1px;overscroll-behavior:contain;scrollbar-width:thin}
 .room-clip-result{display:grid;grid-template-columns:144px minmax(0,1fr) auto;align-items:center;gap:11px;padding:8px;border:1px solid rgba(126,148,185,.18);border-radius:14px;background:rgba(255,255,255,.8)}
@@ -769,6 +773,7 @@
   .room-clip-result{grid-template-columns:96px minmax(0,1fr);gap:7px;padding:7px;border-radius:12px}
   .room-clip-copy strong{font-size:11px}
   .room-clip-copy small{font-size:9px}
+  .room-favorites-category select{flex:1 1 auto;min-height:44px;font-size:16px}
   .room-clip-actions{grid-column:1/-1;justify-content:flex-end}
   .room-clip-actions .button{min-height:30px;flex:1;padding:0 7px;font-size:9px}
 }
