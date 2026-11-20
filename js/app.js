@@ -51,6 +51,9 @@ let roomClipQuery = '';
 let roomClipItems = [];
 let roomClipType = 'review'; // 'review'(다시보기) | 'clip'(클립)
 const ROOM_VOD_TYPE_LABEL = { review: '다시보기', clip: '클립' };
+// 조사: 다시보기를/가, 클립을/이
+const ROOM_VOD_OBJ = { review: '다시보기를', clip: '클립을' };
+const ROOM_VOD_SUBJ = { review: '다시보기가', clip: '클립이' };
 // 관리자 고스트 모드면 이 방의 호출에 ghost:true를 붙인다(서버가 관리자인지 다시 확인, 읽기 전용 기능만 통과).
 const call = (name, data) => api().call(name, state.ghost && data && state.room && data.roomId === state.room.roomId ? { ...data, ghost: true } : data);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -3746,7 +3749,7 @@ function renderRoomClipItems(items, append = false) {
     play.addEventListener('click', () => {
       closeDialog('room-clips-dialog');
       if (!openRoomToolVideo({ kind: 'soop-vod-clip', clipId: clip.id, href: clip.url || roomClipCanonicalUrl(clip.id), clipTitle: clip.title })) {
-        showError({ message: `채팅 도구에서 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 재생할 수 없습니다.` });
+        showError({ message: `채팅 도구에서 ${ROOM_VOD_OBJ[roomClipType]} 재생할 수 없습니다.` });
       }
     });
     const party = document.createElement('button'); party.type = 'button'; party.className = 'button button-quiet'; party.textContent = '같이보기 예약';
@@ -3775,6 +3778,68 @@ function renderRoomClipItems(items, append = false) {
   results.appendChild(fragment);
 }
 
+// SOOP 방송국 VOD 목록은 모두에게 같은 공개 정보라 브라우저가 SOOP에 직접 요청한다(서버 호출·DB 읽기 0).
+// SOOP이 이 사이트의 직접 요청을 허용하지 않거나 실패하면 기존 서버 함수로 다시 시도한다. SOOP 쿠키는 보내지 않는다.
+const ROOM_VOD_CACHE_TTL_MS = 2 * 60 * 1000;
+const ROOM_VOD_CACHE_LIMIT = 40;
+const roomVodCache = new Map();
+
+function roomVodSafeThumb(value) {
+  try {
+    const raw = String(value || '');
+    const parsed = new URL(raw.startsWith('//') ? `https:${raw}` : raw);
+    if (parsed.protocol === 'https:' && (parsed.hostname === 'sooplive.com' || parsed.hostname.endsWith('.sooplive.com'))) return parsed.href;
+  } catch (_) { /* 잘못된 썸네일은 생략 */ }
+  return '';
+}
+
+async function fetchRoomVodsDirect(soopId, vodType, query, page) {
+  const endpoint = new URL(vodType === 'review'
+    ? `https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/vods/review`
+    : `https://chapi.sooplive.com/api/${encodeURIComponent(soopId)}/vods/clip/all`);
+  endpoint.searchParams.set('orderby', 'reg_date');
+  endpoint.searchParams.set('page', String(page));
+  endpoint.searchParams.set('field', 'title,contents,user_nick,user_id');
+  endpoint.searchParams.set('per_page', '20');
+  if (query) endpoint.searchParams.set('keyword', query);
+  const response = await fetch(endpoint, { credentials: 'omit', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(9000) });
+  if (!response.ok) throw new Error(`SOOP ${response.status}`);
+  const payload = await response.json();
+  const records = Array.isArray(payload && payload.data) ? payload.data : null;
+  if (!records) throw new Error('SOOP 응답 형식이 다릅니다.');
+  const clips = records.map((record) => {
+    const id = String(record && record.title_no || '');
+    if (!/^\d{1,20}$/.test(id)) return null;
+    return {
+      id,
+      title: String(record.title_name || (vodType === 'review' ? '제목 없는 다시보기' : '제목 없는 클립')).replace(/\s+/g, ' ').trim().slice(0, 180),
+      uploader: String(record.user_nick || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+      createdAt: String(record.reg_date || '').slice(0, 32),
+      durationMs: Math.max(0, Number(record.ucc && record.ucc.total_file_duration) || 0),
+      thumbnailUrl: roomVodSafeThumb(record.ucc && record.ucc.thumb),
+      url: roomClipCanonicalUrl(id),
+    };
+  }).filter(Boolean);
+  const meta = payload.meta || {};
+  return { clips, page: Number(meta.current_page) || page, total: Math.max(0, Number(meta.total) || 0), hasMore: Number(meta.current_page || page) < Number(meta.last_page || page) };
+}
+
+async function loadRoomVods(room, vodType, query, page) {
+  const soopId = String(room.streamerSoopId || '').trim().toLowerCase();
+  const key = `${room.roomId}\n${vodType}\n${query}\n${page}`;
+  const cached = roomVodCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  let value = null;
+  if (/^[a-z0-9]{2,30}$/.test(soopId)) {
+    try { value = await fetchRoomVodsDirect(soopId, vodType, query, page); } catch (_) { value = null; }
+  }
+  if (!value) value = await call('messengerSearchStreamerClips', { roomId: room.roomId, query, page, type: vodType });
+  roomVodCache.set(key, { value, expiresAt: Date.now() + ROOM_VOD_CACHE_TTL_MS });
+  for (const [cacheKey, entry] of roomVodCache) if (entry.expiresAt <= Date.now()) roomVodCache.delete(cacheKey);
+  while (roomVodCache.size > ROOM_VOD_CACHE_LIMIT) roomVodCache.delete(roomVodCache.keys().next().value);
+  return value;
+}
+
 async function searchRoomClips({ append = false } = {}) {
   if (!state.room || roomClipLoading) return;
   const query = append ? roomClipQuery : $('#room-clips-search').value.trim();
@@ -3784,11 +3849,11 @@ async function searchRoomClips({ append = false } = {}) {
   const status = $('#room-clips-status'); const more = $('#room-clips-load-more');
   if (!append) {
     roomClipQuery = query; roomClipPage = 0; roomClipHasMore = false; roomClipItems = [];
-    renderRoomClipItems([]); more.hidden = true; status.textContent = query ? `${ROOM_VOD_TYPE_LABEL[roomClipType]}를 검색하고 있어요…` : `최신 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오는 중…`;
+    renderRoomClipItems([]); more.hidden = true; status.textContent = query ? `${ROOM_VOD_OBJ[roomClipType]} 검색하고 있어요…` : `최신 ${ROOM_VOD_OBJ[roomClipType]} 불러오는 중…`;
   } else { more.disabled = true; more.textContent = '불러오는 중…'; }
   try {
     const vodType = roomClipType;
-    const result = await call('messengerSearchStreamerClips', { roomId: state.room.roomId, query, page, type: vodType });
+    const result = await loadRoomVods(state.room, vodType, query, page);
     if (vodType !== roomClipType) return;
     if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
     const clips = Array.isArray(result.clips) ? result.clips : [];
@@ -3797,11 +3862,11 @@ async function searchRoomClips({ append = false } = {}) {
     renderRoomClipItems(clips, append);
     status.textContent = roomClipItems.length
       ? (query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 ${ROOM_VOD_TYPE_LABEL[vodType]} ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
-      : (query ? `검색된 ${ROOM_VOD_TYPE_LABEL[vodType]}가 없습니다.` : `등록된 ${ROOM_VOD_TYPE_LABEL[vodType]}가 없습니다.`);
+      : (query ? `검색된 ${ROOM_VOD_SUBJ[vodType]} 없습니다.` : `등록된 ${ROOM_VOD_SUBJ[vodType]} 없습니다.`);
     more.hidden = !roomClipHasMore;
   } catch (error) {
     if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
-    status.textContent = error && error.message || `${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오지 못했습니다. 다시 시도해 주세요.`;
+    status.textContent = error && error.message || `${ROOM_VOD_OBJ[roomClipType]} 불러오지 못했습니다. 다시 시도해 주세요.`;
     more.hidden = !append || !roomClipHasMore;
   } finally {
     if (token === roomClipRequestToken) {
@@ -3827,7 +3892,7 @@ function openRoomClipsDialog(type = 'review') {
   clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
   setRoomVodType(typeof type === 'string' ? type : 'review');
   $('#room-clips-search').value = ''; $('#room-clips-results').replaceChildren();
-  $('#room-clips-status').textContent = `최신 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오는 중…`; $('#room-clips-load-more').hidden = true;
+  $('#room-clips-status').textContent = `최신 ${ROOM_VOD_OBJ[roomClipType]} 불러오는 중…`; $('#room-clips-load-more').hidden = true;
   openDialog('room-clips-dialog'); searchRoomClips();
 }
 
@@ -3935,7 +4000,7 @@ function bindRoomClipControls() {
   $('#room-clips-dialog').addEventListener('close', () => { roomClipRequestToken += 1; roomClipLoading = false; clearTimeout(roomClipSearchTimer); });
   $('#room-clips-search').addEventListener('input', () => {
     clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
-    roomClipSearchTimer = setTimeout(() => searchRoomClips(), 280);
+    roomClipSearchTimer = setTimeout(() => searchRoomClips(), 400);
   });
   $('#room-clips-load-more').addEventListener('click', () => searchRoomClips({ append: true }));
   document.querySelectorAll('#room-clips-dialog .room-clips-tab').forEach((tab) => tab.addEventListener('click', () => {
