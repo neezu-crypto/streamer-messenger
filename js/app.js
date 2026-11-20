@@ -49,6 +49,8 @@ let roomClipHasMore = false;
 let roomClipLoading = false;
 let roomClipQuery = '';
 let roomClipItems = [];
+let roomClipType = 'review'; // 'review'(다시보기) | 'clip'(클립)
+const ROOM_VOD_TYPE_LABEL = { review: '다시보기', clip: '클립' };
 // 관리자 고스트 모드면 이 방의 호출에 ghost:true를 붙인다(서버가 관리자인지 다시 확인, 읽기 전용 기능만 통과).
 const call = (name, data) => api().call(name, state.ghost && data && state.room && data.roomId === state.room.roomId ? { ...data, ghost: true } : data);
 const escapeText = (v) => String(v == null ? '' : v);
@@ -489,7 +491,7 @@ function applyChatTooltips(room) {
     '#fan-search': '팬 닉네임 또는 SOOP 아이디로 대화 검색하기',
     '#message-audience': '메시지를 방 전체에 보낼지 팬 한 명에게 보낼지 선택하기',
     '#direct-recipient': '메시지를 받을 팬 선택하기',
-    '#toggle-attachment-tools': '갤러리 이미지나 스트리머 클립 선택하기',
+    '#toggle-attachment-tools': '갤러리 이미지나 스트리머 다시보기·클립 선택하기',
     '#open-emote-picker': '감정표현 스티커를 채팅 메시지로 전송하기 · 단축키 E 또는 ㄷ',
     '#open-image-picker': '스트리머 갤러리에서 이미지를 골라 채팅방에 보내기',
     '#message-input': '채팅 메시지 입력하기',
@@ -3714,7 +3716,8 @@ async function exportConversation(format) {
 
 function roomClipDurationLabel(durationMs) {
   const totalSeconds = Math.max(0, Math.round(Number(durationMs || 0) / 1000));
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+  const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor(totalSeconds % 3600 / 60); const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`;
 }
 
 function roomClipCanonicalUrl(clipId) {
@@ -3743,7 +3746,7 @@ function renderRoomClipItems(items, append = false) {
     play.addEventListener('click', () => {
       closeDialog('room-clips-dialog');
       if (!openRoomToolVideo({ kind: 'soop-vod-clip', clipId: clip.id, href: clip.url || roomClipCanonicalUrl(clip.id), clipTitle: clip.title })) {
-        showError({ message: '채팅 도구에서 클립을 재생할 수 없습니다.' });
+        showError({ message: `채팅 도구에서 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 재생할 수 없습니다.` });
       }
     });
     const party = document.createElement('button'); party.type = 'button'; party.className = 'button button-quiet'; party.textContent = '같이보기 예약';
@@ -3752,17 +3755,20 @@ function renderRoomClipItems(items, append = false) {
       closeDialog('room-clips-dialog');
       openRoomWatchPartyDialog({ url: clip.url || roomClipCanonicalUrl(clip.id) });
     });
+    const vodType = roomClipType; const typeLabel = ROOM_VOD_TYPE_LABEL[vodType];
     const share = document.createElement('button'); share.type = 'button'; share.className = 'button button-primary'; share.textContent = '채팅에 공유';
     share.disabled = !!(state.room && state.room.locked && !state.isOwner);
-    share.title = share.disabled ? '채팅방이 잠겨 있어 스트리머만 공유할 수 있습니다.' : `${clip.title} 클립 링크를 채팅에 공유합니다.`;
+    share.title = share.disabled ? '채팅방이 잠겨 있어 스트리머만 공유할 수 있습니다.'
+      : `${clip.title} ${typeLabel} 링크를 채팅에 공유합니다.`;
     share.setAttribute('aria-label', share.title);
     share.addEventListener('click', async () => {
+      const lockedOut = !!(state.room && state.room.locked && !state.isOwner);
       const url = roomClipCanonicalUrl(clip.id);
       const text = `▶ ${clip.title}\n${url}`;
       share.disabled = true;
       const sent = await sendMessage('text', '', '', text);
       if (sent) closeDialog('room-clips-dialog');
-      else share.disabled = !!(state.room && state.room.locked && !state.isOwner);
+      else share.disabled = lockedOut;
     });
     actions.append(play, party, share); card.append(thumb, copy, actions); fragment.appendChild(card);
   }
@@ -3778,35 +3784,50 @@ async function searchRoomClips({ append = false } = {}) {
   const status = $('#room-clips-status'); const more = $('#room-clips-load-more');
   if (!append) {
     roomClipQuery = query; roomClipPage = 0; roomClipHasMore = false; roomClipItems = [];
-    renderRoomClipItems([]); more.hidden = true; status.textContent = query ? '클립을 검색하고 있어요…' : '최신 클립을 불러오는 중…';
+    renderRoomClipItems([]); more.hidden = true; status.textContent = query ? `${ROOM_VOD_TYPE_LABEL[roomClipType]}를 검색하고 있어요…` : `최신 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오는 중…`;
   } else { more.disabled = true; more.textContent = '불러오는 중…'; }
   try {
-    const result = await call('messengerSearchStreamerClips', { roomId: state.room.roomId, query, page });
+    const vodType = roomClipType;
+    const result = await call('messengerSearchStreamerClips', { roomId: state.room.roomId, query, page, type: vodType });
+    if (vodType !== roomClipType) return;
     if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
     const clips = Array.isArray(result.clips) ? result.clips : [];
     roomClipItems = append ? roomClipItems.concat(clips) : clips;
     roomClipPage = Number(result.page) || page; roomClipHasMore = !!result.hasMore;
     renderRoomClipItems(clips, append);
     status.textContent = roomClipItems.length
-      ? (query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 클립 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
-      : (query ? '검색된 클립이 없습니다.' : '등록된 클립이 없습니다.');
+      ? (query ? `검색 결과 ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중` : `최신 ${ROOM_VOD_TYPE_LABEL[vodType]} ${Number(result.total) || roomClipItems.length}개 · ${roomClipItems.length}개 표시 중`)
+      : (query ? `검색된 ${ROOM_VOD_TYPE_LABEL[vodType]}가 없습니다.` : `등록된 ${ROOM_VOD_TYPE_LABEL[vodType]}가 없습니다.`);
     more.hidden = !roomClipHasMore;
   } catch (error) {
     if (token !== roomClipRequestToken || !$('#room-clips-dialog').open) return;
-    status.textContent = error && error.message || '클립을 불러오지 못했습니다. 다시 시도해 주세요.';
+    status.textContent = error && error.message || `${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오지 못했습니다. 다시 시도해 주세요.`;
     more.hidden = !append || !roomClipHasMore;
   } finally {
     if (token === roomClipRequestToken) {
-      roomClipLoading = false; more.disabled = false; more.textContent = '클립 더 보기';
+      roomClipLoading = false; more.disabled = false; more.textContent = `${ROOM_VOD_TYPE_LABEL[roomClipType]} 더 보기`;
     }
   }
 }
 
-function openRoomClipsDialog() {
+function setRoomVodType(type) {
+  roomClipType = type === 'clip' ? 'clip' : 'review';
+  const label = ROOM_VOD_TYPE_LABEL[roomClipType];
+  document.querySelectorAll('#room-clips-dialog .room-clips-tab').forEach((tab) => {
+    const active = tab.dataset.vodType === roomClipType;
+    tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  const search = $('#room-clips-search');
+  search.placeholder = `${label} 제목 검색`; search.setAttribute('aria-label', `${label} 제목 검색`); search.title = `스트리머 ${label} 제목으로 검색합니다`;
+  const more = $('#room-clips-load-more'); more.textContent = `${label} 더 보기`; more.title = `다음 ${label} 목록을 불러옵니다`;
+}
+
+function openRoomClipsDialog(type = 'review') {
   if (!state.room) return;
   clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
+  setRoomVodType(typeof type === 'string' ? type : 'review');
   $('#room-clips-search').value = ''; $('#room-clips-results').replaceChildren();
-  $('#room-clips-status').textContent = '최신 클립을 불러오는 중…'; $('#room-clips-load-more').hidden = true;
+  $('#room-clips-status').textContent = `최신 ${ROOM_VOD_TYPE_LABEL[roomClipType]}를 불러오는 중…`; $('#room-clips-load-more').hidden = true;
   openDialog('room-clips-dialog'); searchRoomClips();
 }
 
@@ -3917,6 +3938,12 @@ function bindRoomClipControls() {
     roomClipSearchTimer = setTimeout(() => searchRoomClips(), 280);
   });
   $('#room-clips-load-more').addEventListener('click', () => searchRoomClips({ append: true }));
+  document.querySelectorAll('#room-clips-dialog .room-clips-tab').forEach((tab) => tab.addEventListener('click', () => {
+    if (tab.dataset.vodType === roomClipType) return;
+    clearTimeout(roomClipSearchTimer); roomClipRequestToken += 1; roomClipLoading = false;
+    setRoomVodType(tab.dataset.vodType);
+    searchRoomClips();
+  }));
 }
 
 function youtubeVideoId(href) {
@@ -4626,7 +4653,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
   if (kind === 'text' && !preserveDraft) $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
-    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text: kind === 'text' ? text : '', stickerId: kind === 'emote' ? stickerId : '', galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid });
+    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text: kind === 'text' ? text : '', stickerId: kind === 'emote' ? stickerId : '', galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid});
     if (state.room && state.room.roomId === room.roomId) {
       const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
