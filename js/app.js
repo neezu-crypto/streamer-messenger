@@ -4902,14 +4902,18 @@ function syncHighlightToggle() {
   if (!button) return;
   const usable = !!(state.room && !state.isOwner && !state.ghost && state.session && state.session.trusted);
   button.hidden = !usable;
+  $('#highlight-tool-option').hidden = !usable;
   if (!usable) state.highlightNext = false;
+  $('#highlight-chip').hidden = !state.highlightNext;
+  $('#highlight-tool-option').classList.toggle('active', !!state.highlightNext);
+  $('#highlight-tool-copy').textContent = state.highlightNext ? '켜짐 · 다시 누르면 꺼져요'
+    : `다음 메시지 1개 · 1캐시 · ${Number.isFinite(state.highlightsLeft) ? `오늘 ${state.highlightsLeft}번 남음` : '하루 3번'}`;
   button.classList.toggle('active', !!state.highlightNext);
   button.setAttribute('aria-pressed', state.highlightNext ? 'true' : 'false');
   const left = Number.isFinite(state.highlightsLeft) ? ` · 오늘 ${state.highlightsLeft}번 남음` : ' · 하루 3번';
   button.title = state.highlightNext
     ? `다음 메시지를 강조해서 보내요(1캐시)${left} · 다시 누르면 꺼져요`
     : `다음 메시지를 스트리머 화면에서 눈에 띄게 보여 줘요 · 출시 기념 1캐시${left} · 답장을 약속하지는 않아요`;
-  $('#message-input').placeholder = state.highlightNext ? '⭐ 강조해서 보낼 메시지를 입력하세요 (1캐시)' : '메시지를 입력하세요';
 }
 
 async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null, stickerId = '') {
@@ -6168,6 +6172,8 @@ function bindEvents() {
     $('#gallery-inline-progress-row').hidden = true; $('#gallery-inline-progress').value = 0; $('#gallery-inline-progress-label').textContent = '0%';
   });
   $('#send-message').addEventListener('click', () => sendMessage('text'));
+  $('#highlight-tool-option').addEventListener('click', () => { state.highlightNext = !state.highlightNext; syncHighlightToggle(); setAttachmentToolsOpen(false); if (state.highlightNext) $('#message-input').focus(); });
+  $('#highlight-chip-off').addEventListener('click', () => { state.highlightNext = false; syncHighlightToggle(); });
   $('#highlight-toggle').addEventListener('click', () => { state.highlightNext = !state.highlightNext; syncHighlightToggle(); if (state.highlightNext) $('#message-input').focus(); });
   $('#message-input').addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;

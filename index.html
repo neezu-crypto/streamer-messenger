@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261121-highlight1">
+  <link rel="stylesheet" href="styles.css?v=20261121-highlight3">
   <link rel="stylesheet" href="tutorial.css?v=20261116-tutorial2">
   <link rel="stylesheet" href="tamagotchi-care.css?v=20261116-pet1">
   <link rel="stylesheet" href="messenger-pet.css?v=20261116-pet1">
@@ -207,6 +207,7 @@
               <span class="new-message-preview-copy"><strong id="new-message-preview-sender"></strong><span id="new-message-preview-text"></span></span>
               <span class="new-message-preview-arrow" aria-hidden="true">↓</span>
             </button>
+            <div class="highlight-chip" id="highlight-chip" hidden><span>⭐ 다음 메시지 강조 켜짐 · 1캐시</span><button id="highlight-chip-off" type="button" aria-label="메시지 강조 끄기" title="메시지 강조 끄기">×</button></div>
             <div class="replying-to" id="replying-to" hidden><span id="replying-label"></span><button id="cancel-reply" type="button" aria-label="답장 취소">×</button></div>
             <div class="streamer-compose-options" id="streamer-compose-options" hidden>
               <select id="message-audience" aria-label="메시지 수신 범위"><option value="broadcast">방 전체</option><option value="direct">팬에게만</option></select>
@@ -217,6 +218,7 @@
               <div class="attachment-tools" id="attachment-tools">
                 <button class="attach-button" id="toggle-attachment-tools" type="button" aria-label="첨부 및 영상 도구 선택" aria-expanded="false" aria-controls="attachment-tools-panel" title="갤러리 이미지, 스트리머 클립, 영상 같이보기 선택">＋</button>
                 <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="첨부 및 영상 도구" hidden>
+                  <button class="attachment-tool-option highlight-tool-option" id="highlight-tool-option" type="button" aria-label="다음 메시지 강조하기 (1캐시, 하루 3번)" title="다음 메시지를 스트리머 화면에서 눈에 띄게 보여 줘요 · 출시 기념 1캐시 · 하루 3번" hidden><span class="attachment-tool-icon" aria-hidden="true">⭐</span><span><strong>메시지 강조</strong><small id="highlight-tool-copy">다음 메시지 1개 · 1캐시 · 하루 3번</small></span></button>
                   <button class="attachment-tool-option" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="스트리머 갤러리에서 이미지를 골라 채팅방에 보내기"><span class="attachment-tool-icon" aria-hidden="true">▧</span><span><strong>갤러리 이미지</strong><small>사진을 골라 채팅에 보내기</small></span></button>
                   <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 VOD 찾아 공유" title="이 채팅방 스트리머의 다시보기·클립과 팬페이지 즐겨찾기 영상을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 VOD</strong><small>다시보기·클립·즐겨찾기를 공유하거나 재생</small></span></button>
                   <button class="attachment-tool-option" id="open-room-watch-party" type="button" aria-label="영상 같이보기 예약" title="영상 링크와 재생 시간을 정해 채팅방 참여자와 같이봅니다"><span class="attachment-tool-icon clip" aria-hidden="true">◷</span><span><strong>영상 같이보기</strong><small>영상 링크를 예약하고 함께 재생</small></span></button>
@@ -575,7 +577,7 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261121-highlight1"></script>
+  <script type="module" src="js/app.js?v=20261121-highlight3"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
