@@ -1,6 +1,6 @@
 import './firebase-init.js?v=20261118-vw1';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
-import { setupFanStats } from './fan-stats-ui.js?v=20261122-fanstats1';
+import { setupFanStats } from './fan-stats-ui.js?v=20261122-pass4';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
@@ -1383,6 +1383,7 @@ function renderRoomState(room) {
   $('#open-emote-picker').disabled = room.locked && !state.isOwner;
   $('#composer-hint').textContent = room.locked && !state.isOwner ? '채팅방이 잠겨 있어 메시지를 보낼 수 없어요.' : '오래된 대화도 같은 채팅방에서 이어 볼 수 있어요.';
   $('#streamer-compose-options').hidden = !state.isOwner;
+  $('#open-scheduled-notice').hidden = !state.isOwner || !!state.ghost;
   if (state.ghost) {
     ['#message-input', '#send-message', '#open-image-picker', '#open-emote-picker'].forEach((sel) => { $(sel).disabled = true; });
     $('#composer-hint').textContent = '👻 고스트 모드에서는 메시지를 보낼 수 없어요.';
@@ -6183,7 +6184,12 @@ function bindEvents() {
   });
   $('#cancel-reply').addEventListener('click', () => { state.currentReply = null; $('#replying-to').hidden = true; });
   $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
-  setupFanStats({ call, getRoom: () => state.room, showToast });
+  const fanStatsUi = setupFanStats({ call, getRoom: () => state.room, showToast });
+  // 예약 공지 접근 경로(2026-11-22): 입력창 ＋ 도구 → 지금 쓰던 글을 예약 공지 칸에 옮겨 연다.
+  $('#open-scheduled-notice').addEventListener('click', () => {
+    setAttachmentToolsOpen(false);
+    fanStatsUi?.open({ section: 'schedule', text: $('#message-input').value });
+  });
   $('#room-menu-button').addEventListener('click', openReportDialog);
   $('#submit-report').addEventListener('click', submitReport);
   $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = await api().confirmDialog('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok || !state.room || !state.selectedFanUid) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });

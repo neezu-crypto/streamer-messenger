@@ -184,7 +184,7 @@
           <div id="fan-list" class="fan-list"></div>
           <div id="request-list" class="request-list" hidden></div>
           <div id="blocked-list" class="fan-list" hidden></div>
-          <button class="button button-quiet full-width" id="fan-stats-button" type="button" title="내 방 팬 활동 통계 보기">📊 팬 통계</button>
+          <button class="button button-quiet full-width" id="fan-stats-button" type="button" title="팬 통계·방송 알림·예약 공지 (스트리머 이용권)">📊 팬 통계·예약 공지</button>
           <button class="button button-quiet full-width" id="room-settings-button" type="button">채팅방 설정</button>
         </aside>
 
@@ -220,6 +220,7 @@
                 <button class="attach-button" id="toggle-attachment-tools" type="button" aria-label="첨부 및 영상 도구 선택" aria-expanded="false" aria-controls="attachment-tools-panel" title="갤러리 이미지, 스트리머 클립, 영상 같이보기 선택">＋</button>
                 <div class="attachment-tools-panel" id="attachment-tools-panel" role="group" aria-label="첨부 및 영상 도구" hidden>
                   <button class="attachment-tool-option highlight-tool-option" id="highlight-tool-option" type="button" aria-label="다음 메시지 강조하기 (1캐시, 하루 3번)" title="다음 메시지를 스트리머 화면에서 눈에 띄게 보여 줘요 · 출시 기념 1캐시 · 하루 3번" hidden><span class="attachment-tool-icon" aria-hidden="true">⭐</span><span><strong>메시지 강조</strong><small id="highlight-tool-copy">다음 메시지 1개 · 1캐시 · 하루 3번</small></span></button>
+                  <button class="attachment-tool-option" id="open-scheduled-notice" type="button" aria-label="예약 공지 만들기 (스트리머 이용권)" title="입력한 글을 정한 시각에 방 전체 공지로 올려요 · 스트리머 이용권" hidden><span class="attachment-tool-icon" aria-hidden="true">⏰</span><span><strong>예약 공지</strong><small>입력한 글을 정한 시각에 올리기 · 이용권</small></span></button>
                   <button class="attachment-tool-option" id="open-image-picker" type="button" aria-label="갤러리 이미지 첨부" title="스트리머 갤러리에서 이미지를 골라 채팅방에 보내기"><span class="attachment-tool-icon" aria-hidden="true">▧</span><span><strong>갤러리 이미지</strong><small>사진을 골라 채팅에 보내기</small></span></button>
                   <button class="attachment-tool-option" id="open-room-clips" type="button" aria-label="스트리머 VOD 찾아 공유" title="이 채팅방 스트리머의 다시보기·클립과 팬페이지 즐겨찾기 영상을 검색하고 채팅에 공유합니다"><span class="attachment-tool-icon clip" aria-hidden="true">▶</span><span><strong>스트리머 VOD</strong><small>다시보기·클립·즐겨찾기를 공유하거나 재생</small></span></button>
                   <button class="attachment-tool-option" id="open-room-watch-party" type="button" aria-label="영상 같이보기 예약" title="영상 링크와 재생 시간을 정해 채팅방 참여자와 같이봅니다"><span class="attachment-tool-icon clip" aria-hidden="true">◷</span><span><strong>영상 같이보기</strong><small>영상 링크를 예약하고 함께 재생</small></span></button>
@@ -358,7 +359,7 @@
   <dialog class="app-dialog fan-stats-dialog" id="fan-stats-dialog" aria-labelledby="fan-stats-title">
     <div class="dialog-card">
       <form method="dialog"><button class="dialog-close" value="cancel" aria-label="팬 통계 닫기" title="닫기">×</button></form>
-      <p class="eyebrow">FAN STATS</p><h2 id="fan-stats-title">팬 통계</h2>
+      <p class="eyebrow">STREAMER PASS</p><h2 id="fan-stats-title">스트리머 이용권</h2>
       <p class="dialog-copy">내 방 팬이 보낸 메시지를 숫자로 정리해요. 메시지 내용은 보지 않고 개수·시간만 세요.</p>
       <div id="fan-stats-body"></div>
     </div>
@@ -587,7 +588,7 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261122-fanstats1"></script>
+  <script type="module" src="js/app.js?v=20261122-pass4"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
