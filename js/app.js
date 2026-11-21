@@ -1,5 +1,6 @@
 import './firebase-init.js?v=20261118-vw1';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
+import { setupFanStats } from './fan-stats-ui.js?v=20261122-fanstats1';
 
 const api = () => window.messenger;
 const $ = (selector) => document.querySelector(selector);
@@ -489,6 +490,7 @@ function applyChatTooltips(room) {
     '#export-chat-button': `${roomName} 대화 저장하기`,
     '#room-menu-button': `${roomName} 대화 신고하기`,
     '#room-settings-button': `${roomName} 설정 열기`,
+    '#fan-stats-button': `${roomName} 팬 활동 통계 보기`,
     '#add-room-stock': '스트리머 주식시장에서 종목을 골라 채팅방 거래 시작하기',
     '#open-mini-game': '채팅방에서 사다리타기 미니게임을 열고 함께 참여하기',
     '#fan-search': '팬 닉네임 또는 SOOP 아이디로 대화 검색하기',
@@ -6181,6 +6183,7 @@ function bindEvents() {
   });
   $('#cancel-reply').addEventListener('click', () => { state.currentReply = null; $('#replying-to').hidden = true; });
   $('#room-settings-button').addEventListener('click', () => { prepareRoomSettings(); openDialog('room-settings-dialog'); });
+  setupFanStats({ call, getRoom: () => state.room, showToast });
   $('#room-menu-button').addEventListener('click', openReportDialog);
   $('#submit-report').addEventListener('click', submitReport);
   $('#member-action').addEventListener('click', async () => { if (!state.isOwner || !state.selectedFanUid) return; const ok = await api().confirmDialog('이 팬을 차단할까요? 기존 대화는 팬에게 즉시 숨겨지고, 차단 해제 후 다시 신청할 수 있습니다.'); if (!ok || !state.room || !state.selectedFanUid) return; try { await call('messengerSetMemberStatus', { roomId: state.room.roomId, uid: state.selectedFanUid, status: 'blocked' }); state.selectedFanUid = ''; $('#member-action').hidden = true; await loadStreamerLists(); renderTimeline(); } catch (error) { showError(error); } });

@@ -1280,3 +1280,20 @@
 .highlight-chip[hidden]{display:none}
 .highlight-chip button{width:28px;height:28px;border:0;border-radius:50%;background:rgba(74,53,0,.1);color:#4a3500;font-size:15px;cursor:pointer}
 @media(max-width:680px){.highlight-toggle{display:none!important}.highlight-tool-option:not([hidden]){display:flex!important}.highlight-chip button{width:36px;height:36px}}
+
+/* 팬 통계(2026-11-22) */
+.fan-stats-dialog{width:min(640px,calc(100% - 20px))}.fan-stats-dialog .dialog-card{max-height:min(88vh,860px);overflow:auto}
+.fs-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.fs-card{padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff;display:grid;gap:3px}.fs-card small{color:#7d8aa2;font-size:11px}.fs-card strong{font-size:20px;letter-spacing:-.03em}
+.fs-delta{font-size:10px;color:#8c98ad}.fs-delta.up{color:#2f9a6f}.fs-delta.down{color:#c75462}
+.fs-note{margin:12px 0;padding:11px 13px;border-radius:12px;background:#fff7e9;color:#8b7043;font-size:12px;line-height:1.6}
+.fs-locked{margin-top:16px;padding:16px;border:1px dashed rgba(91,119,229,.4);border-radius:16px;background:#f6f8ff}.fs-locked h3{margin:0 0 8px;font-size:14px}.fs-locked ul{margin:0;padding-left:18px;color:#596a88;font-size:12px;line-height:1.8;columns:2}
+.fs-locked .button{height:46px}.fs-locked .button:disabled{opacity:.55;cursor:default;transform:none}
+.fs-pass{margin:14px 0 0;color:#5873df;font-size:12px;font-weight:700}.fs-pass .text-button{min-height:32px}
+.fs-section{margin-top:18px}.fs-section h3{margin:0 0 8px;font-size:14px}.fs-section h3 small{color:#8c98ad;font-size:11px;font-weight:400;margin-left:4px}
+.fs-bars{width:100%;height:auto;display:block}.fs-bars rect{fill:#7891f2}.fs-bars text{fill:#8c98ad;font-size:12px}
+.fs-fans{margin:0;padding:0;list-style:none;display:grid;gap:2px}.fs-fan{display:flex;align-items:center;gap:10px;min-height:44px;padding:4px 6px;border-bottom:1px solid rgba(130,149,182,.13)}.fs-fan-name{flex:1;min-width:0}.fs-fan-name strong,.fs-fan-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fs-fan-name strong{font-size:12px}.fs-fan-name small{font-size:10px;color:#8c98ad}.fs-fan b{font-size:12px;color:#4f67c5}
+ol.fs-fans{counter-reset:fs}ol.fs-fans .fs-fan::before{counter-increment:fs;content:counter(fs);width:18px;text-align:right;color:#8c98ad;font-size:11px}
+.fs-split{height:12px;border-radius:999px;background:#dff4ea;overflow:hidden}.fs-split span{display:block;height:100%;background:#7891f2}
+.fs-heat-wrap{overflow-x:auto}.fs-heat{border-collapse:separate;border-spacing:2px;font-size:9px;color:#8c98ad}.fs-heat th{font-weight:400;padding:0 2px;text-align:center}.fs-heat td{width:16px;height:16px;min-width:16px;border-radius:3px;background:rgba(85,120,246,calc(.06 + var(--a) * .9))}
+.fs-month{width:100%;border-collapse:collapse;font-size:12px}.fs-month th,.fs-month td{padding:8px;border-bottom:1px solid var(--line);text-align:right}.fs-month th:first-child{text-align:left;color:#66758f}
+@media(max-width:520px){.fs-cards{grid-template-columns:1fr}.fs-card{grid-template-columns:1fr auto;align-items:center}.fs-card .fs-delta{grid-column:1/-1}.fs-locked ul{columns:1}}
