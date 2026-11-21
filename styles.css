@@ -1263,3 +1263,13 @@
 #my-rooms-button.has-new{position:relative}
 #my-rooms-button.has-new::after{content:'';position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#ff5a5f;box-shadow:0 0 0 2px #fff}
 .pinned-message-reads{flex:0 0 auto;align-self:center;padding:4px 8px;border-radius:999px;background:#edf3ff;color:#4967d5;font-size:10px;font-weight:800;white-space:nowrap}
+/* 내 메시지 강조하기 (2026-11-21) */
+.highlight-toggle{flex:0 0 auto;width:40px;height:40px;border:1px solid #e6d9a8;border-radius:50%;background:#fffaf0;font-size:17px;cursor:pointer;filter:grayscale(.85);opacity:.75}
+.highlight-toggle.active{filter:none;opacity:1;background:#fff3c4;border-color:#f0b429;box-shadow:0 0 0 3px rgba(240,180,41,.25)}
+.highlight-toggle[hidden]{display:none}
+.message-row.highlighted .message-bubble{border:2px solid #f0b429;background:#fff8df;box-shadow:0 4px 14px rgba(240,180,41,.25)}
+.message-highlight-mark{align-self:flex-start;margin:0 0 3px;padding:2px 7px;border-radius:999px;background:#f0b429;color:#4a3500;font-size:10px;font-weight:800}
+.message-row.own .message-highlight-mark{align-self:flex-end}
+.fan-item.has-highlight{box-shadow:inset 3px 0 0 #f0b429}
+.fan-highlight-star{margin-left:auto;font-size:13px}
+@media(max-width:680px){.highlight-toggle{width:44px;height:44px}}

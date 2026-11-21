@@ -1305,6 +1305,7 @@ async function openChat(room, isOwner, ghost = false) {
   $('#page-shell').classList.add('chat-open');
   $('#directory-view').hidden = true; $('#admin-view').hidden = true; $('#chat-view').hidden = false;
   $('#streamer-aside').hidden = !isOwner;
+  state.highlightNext = false; syncHighlightToggle();
   $('#toggle-streamer-aside').hidden = !isOwner;
   if (isOwner) switchAside('fans');
   $('#member-action').hidden = true;
@@ -3584,7 +3585,15 @@ async function setPinnedMessage(messageId) {
   }
 }
 
-function renderTimeline({ preservePosition = false } = {}) {
+function renderTimeline(options = {}) {
+  renderTimelineInner(options);
+  if (state.isOwner && !state.ghost && state.fans && state.fans.length) {
+    const signature = (state.messages || []).filter((m) => m.highlighted || (m.senderRole === 'streamer' && m.recipientUid)).map((m) => m.id).join(',');
+    if (signature !== state.highlightFanSignature) { state.highlightFanSignature = signature; renderFans(); }
+  }
+}
+
+function renderTimelineInner({ preservePosition = false } = {}) {
   const host = $('#timeline');
   if (linkPreviewObserver) linkPreviewObserver.disconnect();
   const oldHeight = host.scrollHeight;
@@ -4676,7 +4685,7 @@ function renderStreamerBroadcastMessage(message, bubble) {
 function renderMessage(message) {
   const isMine = message.senderUid === state.session.uid;
   const isStreamerMessage = message.senderRole === 'streamer';
-  const row = document.createElement('article'); row.className = `message-row ${isStreamerMessage ? 'streamer' : 'fan-message'}${isMine ? ' own' : ''}`;
+  const row = document.createElement('article'); row.className = `message-row ${isStreamerMessage ? 'streamer' : 'fan-message'}${isMine ? ' own' : ''}${message.highlighted && !isStreamerMessage ? ' highlighted' : ''}`;
   const senderProfile = isStreamerMessage
     ? { soopId: state.room.streamerSoopId }
     : (isMine ? (state.session.profile || {}) : (state.fans.find((fan) => fan.uid === message.senderUid) || {}).profile || {});
@@ -4688,6 +4697,11 @@ function renderMessage(message) {
   const stack = document.createElement('div'); stack.className = 'message-stack';
   if (!isMine) { const name = document.createElement('p'); name.className = 'message-name'; name.textContent = message.senderName || (isStreamerMessage ? '스트리머' : '팬'); stack.appendChild(name); }
   const bubble = document.createElement('div'); bubble.className = 'message-bubble';
+  if (message.highlighted && !isStreamerMessage) {
+    const mark = document.createElement('span'); mark.className = 'message-highlight-mark'; mark.textContent = '⭐ 강조';
+    mark.title = isMine ? '강조해서 보낸 메시지예요(스트리머 화면에서 눈에 띄게 보여요)' : '팬이 강조해서 보낸 메시지예요';
+    stack.appendChild(mark);
+  }
   if (message.kind === 'image') {
     const alt = '스트리머 갤러리 이미지';
     const { button, image: img } = createZoomableMessageImage(alt, () => getImageUrl(message.galleryImageId, true));
@@ -4785,7 +4799,16 @@ function renderFans() {
   if (keyword && !visibleFans.length) {
     const empty = document.createElement('div'); empty.className = 'fan-search-empty'; empty.textContent = '검색 결과가 없습니다.'; host.appendChild(empty); return;
   }
-  for (const fan of visibleFans) {
+  // 강조 메시지를 보낸 뒤 아직 스트리머가 그 팬에게 답하지 않았으면 맨 위에 ⭐로 보여 준다(불러온 대화 기준).
+  const pendingHighlight = new Map();
+  for (const message of state.messages || []) {
+    if (message.senderRole === 'fan' && message.highlighted) pendingHighlight.set(message.senderUid, Math.max(pendingHighlight.get(message.senderUid) || 0, Number(message.createdAt) || 0));
+  }
+  for (const message of state.messages || []) {
+    if (message.senderRole === 'streamer' && message.recipientUid && (pendingHighlight.get(message.recipientUid) || 0) <= Number(message.createdAt)) pendingHighlight.delete(message.recipientUid);
+  }
+  const orderedFans = [...visibleFans].sort((a, b) => (pendingHighlight.get(b.uid) || 0) - (pendingHighlight.get(a.uid) || 0));
+  for (const fan of orderedFans) {
     const row = document.createElement('div'); row.className = 'fan-contact-row';
     const button = document.createElement('button'); button.type = 'button'; button.className = `fan-item${state.selectedFanUid === fan.uid ? ' active' : ''}`;
     const avatar = document.createElement('span'); avatar.className = 'mini-avatar';
@@ -4793,6 +4816,7 @@ function renderFans() {
     button.title = `${profile.nickname || '팬'} 대화 선택하기`;
     if (profile.avatarUrl) { const img = document.createElement('img'); img.src = profile.avatarUrl; img.alt = ''; avatar.appendChild(img); } else avatar.textContent = (profile.nickname || '✦').slice(0, 1);
     const meta = document.createElement('span'); meta.className = 'fan-meta'; const name = document.createElement('strong'); name.textContent = profile.nickname || '팬'; const id = document.createElement('small'); id.textContent = profile.soopId ? `SOOP ${profile.soopId}` : '팬'; meta.append(name, id); button.append(avatar, meta);
+    if (pendingHighlight.has(fan.uid)) { const star = document.createElement('span'); star.className = 'fan-highlight-star'; star.textContent = '⭐'; star.title = '강조 메시지를 보냈어요 · 답장하면 사라져요'; button.appendChild(star); button.classList.add('has-highlight'); }
     button.addEventListener('click', () => { state.selectedFanUid = fan.uid; $('#member-action').hidden = false; $('#member-action').textContent = '차단'; $('#member-action').title = `${profile.nickname || '선택한 팬'} 차단`; renderFans(); renderTimeline(); });
     const roomself = document.createElement('button'); roomself.type = 'button'; roomself.className = 'fan-roomself-button'; roomself.textContent = '방셀 보내기'; roomself.setAttribute('aria-label', `${profile.nickname || '팬'}에게 방셀 보내기`); roomself.title = `${profile.nickname || '선택한 팬'}에게만 비공개 이미지 보내기`;
     roomself.addEventListener('click', (event) => {
@@ -4872,6 +4896,22 @@ function setReply(message) {
   $('#replying-to').hidden = false; $('#message-input').focus();
 }
 
+// 내 메시지 강조하기(2026-11-21): 팬이 켜면 다음 글 1개를 스트리머 화면에서 눈에 띄게 보낸다(1캐시, 하루 3번).
+function syncHighlightToggle() {
+  const button = $('#highlight-toggle');
+  if (!button) return;
+  const usable = !!(state.room && !state.isOwner && !state.ghost && state.session && state.session.trusted);
+  button.hidden = !usable;
+  if (!usable) state.highlightNext = false;
+  button.classList.toggle('active', !!state.highlightNext);
+  button.setAttribute('aria-pressed', state.highlightNext ? 'true' : 'false');
+  const left = Number.isFinite(state.highlightsLeft) ? ` · 오늘 ${state.highlightsLeft}번 남음` : ' · 하루 3번';
+  button.title = state.highlightNext
+    ? `다음 메시지를 강조해서 보내요(1캐시)${left} · 다시 누르면 꺼져요`
+    : `다음 메시지를 스트리머 화면에서 눈에 띄게 보여 줘요 · 출시 기념 1캐시${left} · 답장을 약속하지는 않아요`;
+  $('#message-input').placeholder = state.highlightNext ? '⭐ 강조해서 보낼 메시지를 입력하세요 (1캐시)' : '메시지를 입력하세요';
+}
+
 async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageText = null, audienceOverride = null, stickerId = '') {
   if (state.ghost) { showError({ message: '고스트 모드에서는 메시지를 보낼 수 없어요.' }); return; }
   if (!state.room || !state.session) return false;
@@ -4887,6 +4927,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
   const reply = state.currentReply;
   const recipientFan = recipientUid ? state.fans.find((fan) => fan.uid === recipientUid) : null;
   const messageId = api().push(api().ref(api().db, `streamerMessenger/chat/${room.roomId}/streamerTimeline`)).key;
+  const highlight = !isOwner && kind === 'text' && !preserveDraft && !!state.highlightNext;
   const senderProfile = isOwner
     ? { nickname: room.streamerNickname || '스트리머', avatarUrl: room.streamerAvatarUrl || '' }
     : (state.session.profile || {});
@@ -4897,6 +4938,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
     ...(recipientUid && recipientFan && recipientFan.profile && recipientFan.profile.nickname ? { recipientName: recipientFan.profile.nickname } : {}),
     kind, ...(kind === 'image' ? { galleryImageId: imageId } : kind === 'roomself' ? { roomselfImageId: imageId } : kind === 'emote' ? { stickerId } : { text }),
     scope: isOwner ? (recipientUid ? (reply && reply.id ? 'reply' : 'direct') : 'broadcast') : 'fan', pending: true,
+    ...(highlight ? { highlighted: true } : {}),
     ...(reply && reply.id ? { replyToId: reply.id, replyToUid: reply.senderUid } : {}),
   };
   state.optimisticMessages.push(message);
@@ -4905,10 +4947,16 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
   if (kind === 'text' && !preserveDraft) $('#message-input').value = '';
   state.currentReply = null; $('#replying-to').hidden = true;
   try {
-    await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, kind, text: kind === 'text' ? text : '', stickerId: kind === 'emote' ? stickerId : '', galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid});
+    if (highlight) { state.highlightNext = false; syncHighlightToggle(); }
+    const sendResult = await call('messengerSendMessage', { roomId: room.roomId, clientMessageId: messageId, highlight, kind, text: kind === 'text' ? text : '', stickerId: kind === 'emote' ? stickerId : '', galleryImageId: kind === 'image' ? imageId : '', roomselfImageId: kind === 'roomself' ? imageId : '', recipientUid, replyToId: reply && reply.id, replyToUid: reply && reply.senderUid});
     if (state.room && state.room.roomId === room.roomId) {
       const optimistic = state.optimisticMessages.find((item) => item.id === messageId);
       if (optimistic) { optimistic.pending = false; renderTimeline(); }
+    }
+    if (highlight && sendResult) {
+      state.highlightsLeft = Number(sendResult.highlightsLeft);
+      syncHighlightToggle();
+      showToast(`⭐ 강조해서 보냈어요 · 남은 캐시 ${Number(sendResult.remainingCash) || 0} · 오늘 강조 ${state.highlightsLeft}번 남음`);
     }
     return true;
   } catch (error) {
@@ -4916,6 +4964,7 @@ async function sendMessage(kind = 'text', imageId = '', targetUid = '', messageT
       state.optimisticMessages = state.optimisticMessages.filter((item) => item.id !== messageId);
       state.messages = state.messages.filter((item) => item.id !== messageId);
       if (kind === 'text' && !preserveDraft && !$('#message-input').value) $('#message-input').value = text;
+      if (highlight) { state.highlightNext = true; syncHighlightToggle(); }
       renderTimeline();
     }
     showError(error);
@@ -6119,6 +6168,7 @@ function bindEvents() {
     $('#gallery-inline-progress-row').hidden = true; $('#gallery-inline-progress').value = 0; $('#gallery-inline-progress-label').textContent = '0%';
   });
   $('#send-message').addEventListener('click', () => sendMessage('text'));
+  $('#highlight-toggle').addEventListener('click', () => { state.highlightNext = !state.highlightNext; syncHighlightToggle(); if (state.highlightNext) $('#message-input').focus(); });
   $('#message-input').addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
     event.preventDefault(); sendMessage('text');
