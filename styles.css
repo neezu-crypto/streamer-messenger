@@ -1254,3 +1254,12 @@
 .admin-usage-table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:13px;scrollbar-width:thin}.admin-usage-table{width:100%;min-width:520px;border-collapse:collapse;background:rgba(255,255,255,.7);font-size:10px}.admin-usage-table th,.admin-usage-table td{padding:9px 10px;border-bottom:1px solid rgba(126,148,185,.14);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.admin-usage-table th{background:#f3f6fc;color:#697893;font-size:9px}.admin-usage-table th:first-child,.admin-usage-table td:first-child{text-align:left}.admin-usage-table tbody tr:last-child td{border-bottom:0}.admin-usage-table tbody td:last-child{color:#526fdb;font-weight:750}.admin-usage-footnote,.admin-usage-sources{margin:0;color:#8591a6;font-size:9px;line-height:1.6}.admin-usage-sources a{color:#526fdb;text-decoration:underline;text-underline-offset:2px}
 @media(max-width:700px){.admin-tabs button{flex:1 1 calc(33.333% - 7px)}.admin-usage-tool{gap:11px}.admin-usage-tool .admin-list-heading{align-items:flex-start}.admin-usage-tool .admin-list-heading>.button{flex:0 0 auto;padding:8px;font-size:10px}.admin-usage-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.admin-usage-summary article,.admin-usage-cost-grid article{padding:11px}.admin-usage-summary strong,.admin-usage-cost-grid strong,.admin-usage-storage strong{font-size:16px}.admin-usage-storage{grid-template-columns:minmax(0,1fr);gap:7px}.admin-usage-storage>div{padding:10px}.admin-usage-table{min-width:600px}}
 .ghost-banner{background:#eef0ff;color:#4f5fa8}
+/* 참여방 NEW·방송 중, 공지 읽음 수 (2026-11-21) */
+.my-room-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}
+.my-room-badges:empty{display:none}
+.my-room-new{padding:2px 6px;border-radius:999px;background:#ff5a5f;color:#fff;font-size:10px;font-weight:800;letter-spacing:.04em}
+.my-room-live{padding:2px 6px;border-radius:999px;background:#ffe9ea;color:#d93a42;font-size:10px;font-weight:800}
+.my-room-live[hidden]{display:none}
+#my-rooms-button.has-new{position:relative}
+#my-rooms-button.has-new::after{content:'';position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#ff5a5f;box-shadow:0 0 0 2px #fff}
+.pinned-message-reads{flex:0 0 auto;align-self:center;padding:4px 8px;border-radius:999px;background:#edf3ff;color:#4967d5;font-size:10px;font-weight:800;white-space:nowrap}

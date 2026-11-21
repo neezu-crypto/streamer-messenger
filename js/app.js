@@ -774,6 +774,7 @@ function syncHeader() {
   $('#create-room-button').title = hasRoom ? '내 채팅방으로 입장합니다' : '내 채팅방을 만들고 입장합니다';
   $('#my-rooms-button').hidden = !session.trusted;
   $('#my-rooms-count').textContent = String(state.myRooms.length);
+  $('#my-rooms-button').classList.toggle('has-new', state.myRooms.some(roomHasNew));
   $('#my-rooms-button').setAttribute('aria-label', `참여 중인 방 ${state.myRooms.length}개 빠른 이동`);
   $('#my-rooms-button').title = `참여 중인 방 ${state.myRooms.length}개 빠른 이동`;
   syncMobileQuickActionPlacement();
@@ -802,6 +803,50 @@ async function loadMyRooms(force = false) {
   finally { if (state.myRoomsPromise === request) state.myRoomsPromise = null; }
 }
 
+//  참여방 NEW·방송 중 표시(2026-11-21)
+//  - NEW: 서버가 준 lastActivityAt(스트리머의 전체 글·나에게 쓴 답장 시각)이 이 브라우저에서 방을 마지막으로 연 시각보다 늦으면 표시.
+//    마지막으로 연 시각은 이 브라우저 localStorage에만 둔다.
+//  - 방송 중: 브라우저가 SOOP 공개 방송국 정보를 직접 읽는다(로그인 정보 미전송), 탭당 2분 기억.
+const ROOM_SEEN_KEY = 'streamerMessenger.roomSeen.v1';
+function roomSeenMap() { try { return JSON.parse(localStorage.getItem(ROOM_SEEN_KEY) || '{}') || {}; } catch (_) { return {}; } }
+function markRoomSeen(roomId) {
+  if (!roomId) return;
+  const map = roomSeenMap(); map[roomId] = Date.now();
+  try { localStorage.setItem(ROOM_SEEN_KEY, JSON.stringify(map)); } catch (_) {}
+  const room = state.myRooms.find((item) => item.roomId === roomId);
+  if (room) syncHeader();
+}
+function roomHasNew(room) {
+  const at = Number(room && room.lastActivityAt) || 0;
+  if (!at) return false;
+  const seen = Number(roomSeenMap()[room.roomId]) || Number(room.joinedAt) || 0;
+  return at > seen;
+}
+const LIVE_CACHE_KEY = 'streamerMessenger.liveCache.v1';
+const LIVE_CACHE_MS = 2 * 60 * 1000;
+const liveRequests = new Map();
+function fetchStreamerLive(soopId) {
+  const id = String(soopId || '').trim().toLowerCase();
+  if (!/^[a-z0-9_]{2,30}$/.test(id)) return Promise.resolve(false);
+  let cache = {}; try { cache = JSON.parse(sessionStorage.getItem(LIVE_CACHE_KEY) || '{}') || {}; } catch (_) {}
+  const hit = cache[id];
+  if (hit && Date.now() - hit.at < LIVE_CACHE_MS) return Promise.resolve(!!hit.live);
+  if (liveRequests.has(id)) return liveRequests.get(id);
+  const request = fetch(`https://chapi.sooplive.com/api/${encodeURIComponent(id)}/station`, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(6000) })
+    .then((response) => response.ok ? response.json() : null)
+    .then((payload) => {
+      const live = !!(payload && payload.broad && payload.broad.broad_no);
+      let next = {}; try { next = JSON.parse(sessionStorage.getItem(LIVE_CACHE_KEY) || '{}') || {}; } catch (_) {}
+      next[id] = { live, at: Date.now() };
+      try { sessionStorage.setItem(LIVE_CACHE_KEY, JSON.stringify(next)); } catch (_) {}
+      return live;
+    })
+    .catch(() => false)
+    .finally(() => liveRequests.delete(id));
+  liveRequests.set(id, request);
+  return request;
+}
+
 function renderMyRooms() {
   const host = $('#my-rooms-list');
   host.replaceChildren();
@@ -821,6 +866,17 @@ function renderMyRooms() {
     details.append(name, soopId);
     const status = document.createElement('span'); status.className = `my-room-status${room.visibility === 'private' ? ' private' : ''}`;
     status.textContent = room.visibility === 'private' ? '🔒 비공개' : '바로 이동';
+    const badges = document.createElement('span'); badges.className = 'my-room-badges';
+    if (roomHasNew(room)) {
+      const fresh = document.createElement('span'); fresh.className = 'my-room-new'; fresh.textContent = 'NEW';
+      fresh.title = '마지막으로 들어간 뒤 스트리머의 새 글이 있어요';
+      badges.appendChild(fresh);
+    }
+    const live = document.createElement('span'); live.className = 'my-room-live'; live.textContent = '● 방송 중'; live.hidden = true;
+    live.title = '지금 SOOP에서 방송 중이에요';
+    badges.appendChild(live);
+    fetchStreamerLive(room.streamerSoopId).then((isLive) => { if (live.isConnected) live.hidden = !isLive; });
+    details.appendChild(badges);
     button.append(avatar, details, status);
     button.addEventListener('click', () => { closeDialog('my-rooms-dialog'); selectRoom(room); });
     entry.appendChild(button);
@@ -867,7 +923,7 @@ function renderRooms() {
       const lock = document.createElement('span'); lock.className = 'room-lock'; lock.textContent = '🔒'; lock.setAttribute('aria-hidden', 'true');
       top.append(lock);
     }
-    const desc = document.createElement('p'); desc.className = 'room-description'; desc.textContent = '스트리머가 신청을 확인한 뒤 대화에 초대해요.';
+    const desc = document.createElement('p'); desc.className = 'room-description'; desc.textContent = '스트리머가 운영 중이면 바로, 아니면 신청 확인 뒤 들어가요.';
     const foot = document.createElement('div'); foot.className = 'room-card-foot';
     const badge = document.createElement('span'); badge.className = `room-state-pill${room.visibility === 'private' ? ' private' : ''}${room.locked ? ' locked' : ''}`; badge.textContent = room.locked ? '잠금' : (room.visibility === 'private' ? '비공개방' : '공개방');
     const count = document.createElement('span'); count.textContent = room.visibility === 'private' ? '참여 인원 비공개' : `${room.memberCount || 0}명 참여`;
@@ -1223,6 +1279,7 @@ async function selectRoom(room, resolvedRoomState = null) {
 async function openChat(room, isOwner, ghost = false) {
   state.ghost = !!ghost; if (!ghost) state.ghostSnapshot = null;
   state.room = room; state.isOwner = isOwner; state.selectedFanUid = ''; state.currentReply = null;
+  if (!ghost) markRoomSeen(room && room.roomId);
   if (state.session?.uid && (state.session.trusted || state.session.isVerifiedStreamer || state.session.isTestAccount)) {
     loadOwnedEmoteIds(state.session.uid).catch((error) => console.warn('보유 스티커를 미리 불러오지 못했습니다.', error));
   }
@@ -3465,7 +3522,8 @@ function renderPinnedMessage() {
     card.addEventListener('click', () => setPinnedMessage(''));
   } else card.setAttribute('role', 'note');
 
-  const badge = document.createElement('span'); badge.className = 'pinned-message-badge'; badge.textContent = '📌 고정 메시지';
+  const badge = document.createElement('span'); badge.className = 'pinned-message-badge'; badge.textContent = '📢 공지';
+  syncNoticeRead(pointer.messageId);
   const copy = document.createElement('span'); copy.className = 'pinned-message-copy';
   const sender = document.createElement('strong'); sender.className = 'pinned-message-sender';
   const details = state.pinnedMessageDetails;
@@ -3477,12 +3535,33 @@ function renderPinnedMessage() {
   else preview.textContent = details.text || '메시지 내용이 없습니다.';
   copy.append(sender, preview);
   card.append(badge, copy);
+  if (state.isOwner && state.noticeReadState && state.noticeReadState.noticeId === pointer.messageId) {
+    const reads = document.createElement('span'); reads.className = 'pinned-message-reads';
+    reads.textContent = `읽은 팬 ${state.noticeReadState.readCount}명`;
+    reads.title = '이 공지를 본 팬 수예요(누가 읽었는지는 남기지 않아요)';
+    card.appendChild(reads);
+  }
   if (details && details.kind === 'image' && details.galleryImageId) {
     const image = document.createElement('img'); image.className = 'pinned-message-image'; image.alt = '고정된 갤러리 이미지'; image.loading = 'lazy';
     getImageUrl(details.galleryImageId).then((url) => { if (url && card.isConnected && state.pinnedMessagePointer?.messageId === pointer.messageId) image.src = url; });
     card.appendChild(image);
   }
   host.appendChild(card);
+}
+
+// 공지 읽음: 팬은 공지 하나당 한 번만 서버에 알리고(서버가 중복을 다시 거름), 스트리머는 읽은 수만 받아 온다.
+function syncNoticeRead(noticeId) {
+  const room = state.room;
+  if (!room || !noticeId || state.ghost) return;
+  const key = `${room.roomId}:${noticeId}`;
+  state.noticeReadSent = state.noticeReadSent || new Set();
+  if (state.noticeReadSent.has(key)) return;
+  state.noticeReadSent.add(key);
+  call('messengerMarkNoticeRead', { roomId: room.roomId }).then((result) => {
+    if (!state.room || state.room.roomId !== room.roomId) return;
+    state.noticeReadState = { noticeId: String(result && result.noticeId || ''), readCount: Number(result && result.readCount) || 0 };
+    if (state.isOwner) renderPinnedMessage();
+  }).catch((error) => { state.noticeReadSent.delete(key); console.warn('공지 읽음 처리를 하지 못했습니다.', error); });
 }
 
 async function setPinnedMessage(messageId) {
