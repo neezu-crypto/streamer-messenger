@@ -1199,7 +1199,14 @@ async function selectRoom(room, resolvedRoomState = null) {
     }
     await settleChatFullscreenRequest(fullscreenAttempt, false);
     state.room = room;
-    $('#application-title').textContent = `${room.streamerNickname || '스트리머'}에게 대화 신청`;
+    // 스트리머가 이미 방에 들어온 적이 있으면 검수 없이 바로 입장(서버가 다시 판정)
+    state.roomAutoJoin = result.autoJoin === true;
+    const autoJoin = state.roomAutoJoin;
+    $('#application-title').textContent = autoJoin ? `${room.streamerNickname || '스트리머'} 채팅방 들어가기` : `${room.streamerNickname || '스트리머'}에게 대화 신청`;
+    $('#application-help').textContent = autoJoin ? '스트리머가 운영 중인 채팅방이라 승인 없이 바로 들어가요.' : '스트리머가 프로필을 확인한 뒤 승인해요.';
+    $('#application-intro-wrap').hidden = autoJoin;
+    $('#submit-application').textContent = autoJoin ? '바로 들어가기' : '신청 보내기';
+    $('#submit-application').title = autoJoin ? '승인 없이 이 채팅방에 바로 참여합니다' : '스트리머에게 대화 신청을 보냅니다';
     $('#application-password-wrap').hidden = room.visibility !== 'private';
     $('#application-password').value = '';
     $('#application-intro').value = '';
@@ -4988,8 +4995,16 @@ async function submitApplication() {
   if (!state.room) return;
   const errorEl = $('#application-error'); errorEl.hidden = true;
   try {
-    await call('messengerApplyToRoom', { roomId: state.room.roomId, password: $('#application-password').value, intro: $('#application-intro').value });
-    closeDialog('application-dialog'); showError({ message: '대화 신청을 보냈습니다. 스트리머가 확인하면 알려드릴게요.' });
+    const result = await call('messengerApplyToRoom', { roomId: state.room.roomId, password: $('#application-password').value, intro: state.roomAutoJoin ? '' : $('#application-intro').value });
+    closeDialog('application-dialog');
+    if (result && result.status === 'approved') {
+      // 바로 입장: 참여방 목록에 넣고 채팅방을 연다.
+      const room = state.room;
+      upsertRoom(room);
+      await selectRoom(room);
+      return;
+    }
+    showError({ message: '대화 신청을 보냈습니다. 스트리머가 확인하면 알려드릴게요.' });
   } catch (error) { errorEl.textContent = error.message || '신청을 보내지 못했습니다.'; errorEl.hidden = false; }
 }
 

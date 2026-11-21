@@ -150,7 +150,7 @@
       <div class="welcome-copy">
         <p class="eyebrow">SOOP STREAMER MESSENGER</p>
         <h1>방송 밖에서도,<br><span>편하게 이어지는 대화.</span></h1>
-        <p class="welcome-text">SOOP 닉네임·ID 등 공개 프로필 정보만으로 대화를 신청해요.<br>추가 민감정보 입력 없이 스트리머 승인 후 이용할 수 있어요.<br>다른 팬의 메시지는 서로 보이지 않습니다.</p>
+        <p class="welcome-text">SOOP 닉네임·ID 등 공개 프로필 정보만으로 대화를 신청해요.<br>추가 민감정보 입력 없이 이용할 수 있어요. 스트리머가 운영 중인 방은 바로 들어가고, 아직 열지 않은 방은 승인 후 들어가요.<br>다른 팬의 메시지는 서로 보이지 않습니다.</p>
       </div>
       <div class="privacy-note"><span class="privacy-icon">◈</span><span><strong>공개 프로필만으로 이용</strong><small>SOOP 닉네임·ID로 신청 · 민감정보 추가 입력 없음</small><small>오래된 대화도 같은 채팅방에서 이어 볼 수 있어요</small></span></div>
       <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -343,7 +343,7 @@
       <p class="eyebrow">CHAT REQUEST</p><h2 id="application-title">대화 신청</h2>
       <p class="dialog-copy" id="application-help">스트리머가 프로필을 확인한 뒤 승인해요.</p>
       <div id="application-password-wrap" hidden><label class="field-label" for="application-password">방 비밀번호</label><input class="text-input" id="application-password" type="password" autocomplete="off"></div>
-      <label class="field-label" for="application-intro">소개 또는 신청 사유 <span class="optional">선택</span></label><textarea class="text-input" id="application-intro" maxlength="500" rows="4" placeholder="스트리머에게 전할 내용을 적어주세요"></textarea>
+      <div id="application-intro-wrap"><label class="field-label" for="application-intro">소개 또는 신청 사유 <span class="optional">선택</span></label><textarea class="text-input" id="application-intro" maxlength="500" rows="4" placeholder="스트리머에게 전할 내용을 적어주세요"></textarea></div>
       <button class="button button-primary full-width" id="submit-application" type="button">신청 보내기</button>
       <button class="button button-quiet full-width" id="ghost-enter" type="button" hidden title="참여 기록 없이 대화 읽기·쓰기 없이 채팅방 기능만 확인합니다">👻 관리자 고스트로 기능만 보기</button>
       <p class="dialog-error" id="application-error" hidden></p>
@@ -574,7 +574,7 @@
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261120-fav1"></script>
+  <script type="module" src="js/app.js?v=20261121-autojoin1"></script>
   <script type="module">
     import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
