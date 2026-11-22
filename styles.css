@@ -1117,7 +1117,9 @@
   }
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   /* 모바일: 이름표가 있는 버튼은 아이콘 옆에 한 줄로(글자가 세로로 잘리지 않게) */
-  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button:has(.room-tools-quick-label){width:auto;min-width:31px;flex:0 0 auto;grid-auto-flow:column;gap:4px;padding:0 8px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button:has(.room-tools-quick-label){width:auto;min-width:31px;flex:0 0 auto;grid-auto-flow:column;gap:3px;padding:0 6px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-label{font-size:11px}
+  body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button:has(.room-tools-quick-label) svg{width:14px;height:14px}
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-button[aria-pressed="true"]{border-color:rgba(91,119,225,.34);background:#eaf0ff;color:#526fd7}
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-quick-home[aria-pressed="true"],
   body.messenger-chat-open .room-tools-sticky-slot .room-tools-pip-bar .room-tools-quick-button[hidden]{display:none!important}
