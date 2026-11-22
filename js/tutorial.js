@@ -140,12 +140,14 @@ function fanStep(step, ctx = {}) {
   const go = (n, extra) => fanStep(n, Object.assign({}, ctx, extra));
   if (step === 0) {
     const grid = el('div', 'tutorial-room-grid');
+    grid.dataset.tooltipBelow = '';
     [['🐑', STREAMER, '공개방 · 팬 128명', true], ['🦊', '여우비', '비공개방', false], ['🐧', '펭펭', '공개방 · 팬 54명', false]].forEach(([icon, name, sub, target]) => {
       const card = button('', `room-card tutorial-room-card${target ? ' tutorial-target' : ''}`, () => {
         if (!target) { card.classList.add('tutorial-shake'); schedule(400, () => card.classList.remove('tutorial-shake')); return; }
         go(1);
       });
       card.append(el('span', 'tutorial-room-icon', icon), el('strong', '', name), el('small', 'muted', sub));
+      card.title = target ? `${name} 채팅방을 열어 봐요` : `연습에서는 ${STREAMER} 채팅방을 골라 주세요`;
       grid.append(card);
     });
     stage.append(grid);

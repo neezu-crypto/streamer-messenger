@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f8ff">
   <meta name="description" content="공개 프로필로 스트리머와 대화하는 메신저">
   <title>스트리머 메신저</title>
-  <link rel="stylesheet" href="styles.css?v=20261122-fanstats1">
+  <link rel="stylesheet" href="styles.css?v=20261122-ui4">
   <link rel="stylesheet" href="tutorial.css?v=20261116-tutorial2">
   <link rel="stylesheet" href="tamagotchi-care.css?v=20261116-pet1">
   <link rel="stylesheet" href="messenger-pet.css?v=20261116-pet1">
@@ -32,7 +32,7 @@
     <div class="topbar-actions">
       <button class="icon-button" id="notification-button" type="button" aria-label="브라우저 알림 켜기" title="브라우저 알림 설정을 엽니다"><svg class="notification-bell-icon" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button>
       <button class="profile-button" id="profile-button" type="button">로그인</button>
-      <button class="button button-quiet my-rooms-button" id="my-rooms-button" type="button" aria-label="참여 중인 방 빠른 이동" title="참여 중인 방 빠른 이동" hidden><span class="my-rooms-button-icon" aria-hidden="true">↔</span><span class="my-rooms-button-label">참여방</span><span class="my-rooms-count" id="my-rooms-count">0</span></button>
+      <button class="button button-quiet my-rooms-button" id="my-rooms-button" type="button" aria-label="내가 들어간 채팅방 목록" title="내가 들어간 채팅방으로 바로 이동합니다" hidden><span class="my-rooms-button-label">내가 들어간 방</span><span class="my-rooms-count" id="my-rooms-count">0</span></button>
       <button class="button button-primary" id="create-room-button" type="button" hidden><span class="desktop-action-label" id="create-room-desktop-label">내 채팅방</span><span class="mobile-action-label" id="create-room-mobile-label">내 채팅방</span></button>
       <button class="icon-button admin-tab-button" id="admin-tab-button" type="button" hidden aria-label="관리자" title="관리자"><span class="desktop-action-label">관리자</span><span class="mobile-admin-icon" aria-hidden="true">⚙</span></button>
       <button class="icon-button mobile-quick-menu-trigger" id="toggle-mobile-quick-menu" type="button" aria-expanded="false" aria-controls="mobile-quick-menu" aria-label="빠른 메뉴 열기" title="계정, 방 이동, 앱 설정과 채팅방 기능을 엽니다" hidden><span aria-hidden="true">⋯</span></button>
@@ -42,15 +42,15 @@
 
   <div class="room-tools-sticky-slot" id="room-tools-sticky-slot" hidden>
     <div class="room-tools-pip-bar" id="room-tools-pip-bar">
-      <button class="room-tools-quick-button room-tools-quick-home" type="button" data-room-tool-quick-home aria-label="도구 선택" title="채팅 도구 선택" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg></button>
+      <button class="room-tools-quick-button room-tools-quick-home" type="button" data-room-tool-quick-home aria-label="도구 선택" title="채팅 도구 선택" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.4"/><rect x="14" y="4" width="6" height="6" rx="1.4"/><rect x="4" y="14" width="6" height="6" rx="1.4"/><rect x="14" y="14" width="6" height="6" rx="1.4"/></svg><span class="room-tools-quick-label">전체</span></button>
       <button class="room-tools-pip-drag-handle" id="room-tools-pip-drag-handle" type="button" aria-label="채팅 도구 패널 이동. 제목 또는 흰색 테두리를 끌거나 방향키로 이동합니다" title="제목이나 흰색 테두리를 잡고 끌어 채팅 도구 패널을 이동합니다. 방향키로도 움직일 수 있어요"><span class="room-tools-pip-grip" aria-hidden="true">⠿</span><span id="room-tools-pip-title">채팅 도구</span><span class="room-tools-pip-drag-hint">드래그 이동</span></button>
-      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="market" aria-label="주식시장" title="주식시장" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19.5h16M5 16l4.2-4.4 3.2 2.7 6.6-7"/><path d="M15.8 7.3H19v3.2"/></svg></button>
-      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="mini-game" aria-label="미니게임" title="미니게임" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="8.5" cy="8.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg></button>
-      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="video" aria-label="영상" title="영상" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></button>
-      <button class="room-tools-quick-button room-tools-party-quick-button" type="button" data-room-tool-quick-launch="party" aria-label="영상 같이보기 열기" title="영상 같이보기를 예약하거나 참여합니다" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.2 2"/></svg></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="market" aria-label="주식시장" title="주식시장" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19.5h16M5 16l4.2-4.4 3.2 2.7 6.6-7"/><path d="M15.8 7.3H19v3.2"/></svg><span class="room-tools-quick-label">주식</span></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="mini-game" aria-label="미니게임" title="미니게임" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="8.5" cy="8.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="8.5" cy="15.5" r="1"/><circle cx="15.5" cy="15.5" r="1"/></svg><span class="room-tools-quick-label">게임</span></button>
+      <button class="room-tools-quick-button" type="button" data-room-tool-quick-launch="video" aria-label="영상" title="영상" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="m10 9 5 3-5 3z"/></svg><span class="room-tools-quick-label">영상</span></button>
+      <button class="room-tools-quick-button room-tools-party-quick-button" type="button" data-room-tool-quick-launch="party" aria-label="영상 같이보기 열기" title="영상 같이보기를 예약하거나 참여합니다" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.2 2"/></svg><span class="room-tools-quick-label">같이보기</span></button>
       <div class="room-tools-video-quick-actions" id="room-tools-video-quick-actions" role="group" aria-label="영상 모드 및 재생 도구" hidden>
-        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="personal" aria-label="개인 영상 보기" title="개인 영상 보기" aria-pressed="true"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></button>
-        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="party" aria-label="같이보기" title="같이보기" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="11" rx="2.5"/><path d="m9 8.5 4 2.5-4 2.5z"/><path d="M8 19h11a2 2 0 0 0 2-2V9"/></svg></button>
+        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="personal" aria-label="개인 영상 보기" title="개인 영상 보기" aria-pressed="true"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg><span class="room-tools-quick-label">개인</span></button>
+        <button class="room-tools-quick-button room-tools-video-mode-button" type="button" data-room-tool-video-mode="party" aria-label="같이보기" title="같이보기" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="11" rx="2.5"/><path d="m9 8.5 4 2.5-4 2.5z"/><path d="M8 19h11a2 2 0 0 0 2-2V9"/></svg><span class="room-tools-quick-label">같이</span></button>
         <a class="room-tools-quick-button room-tools-video-original-button" id="room-tools-video-open-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="현재 영상 원본을 새 탭에서 엽니다" title="현재 영상 원본을 새 탭에서 엽니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg></a>
         <button class="room-tools-quick-button room-tools-video-close-button" id="room-tools-video-close" type="button" aria-label="개인 영상 재생 닫기" title="개인 영상 재생을 닫습니다" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </div>
@@ -193,10 +193,10 @@
             <button class="back-button" id="back-to-directory" type="button" aria-label="채팅방 목록으로">‹</button>
             <button class="aside-toggle-button" id="toggle-streamer-aside" type="button" aria-expanded="false" aria-controls="streamer-aside" aria-label="대화 관리 열기" title="대화 관리 열기" hidden><span class="aside-toggle-icon" aria-hidden="true">☰</span><span class="mobile-action-label">대화 관리</span><span class="aside-toggle-count" id="aside-toggle-count" hidden>0</span></button>
             <div class="chat-avatar" id="chat-avatar">✦</div>
-            <div class="chat-title-wrap"><h2 id="chat-title">채팅방</h2><p id="chat-subtitle">스트리머와 대화해요</p></div>
+            <div class="chat-title-wrap"><div class="chat-title-line"><h2 id="chat-title">채팅방</h2><span class="room-state-pill" id="room-state-pill">공개방</span></div><p id="chat-subtitle">스트리머와 대화해요</p></div>
             <button class="icon-button mobile-room-tools-trigger" id="toggle-mobile-room-tools" type="button" aria-expanded="false" aria-controls="room-tools-sticky-slot" aria-label="채팅 도구 열기" title="채팅 도구를 표시합니다" hidden><span aria-hidden="true">▤</span><span class="mobile-room-tools-live-dot" id="mobile-room-tools-live-dot" aria-hidden="true" hidden></span></button>
             <button class="icon-button chat-fullscreen-button" id="toggle-chat-fullscreen" type="button" aria-label="채팅방 전체화면으로 보기" title="채팅방 전체화면으로 보기" hidden><span aria-hidden="true">⛶</span></button>
-            <div class="chat-header-actions"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="사다리 미니게임 시작 또는 진행 중인 게임으로 이동" title="방 소유자는 게임을 시작하고, 모든 참여자는 진행 중인 게임으로 이동합니다"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><span class="room-state-pill" id="room-state-pill">공개방</span><button class="button button-quiet export-trigger" id="export-chat-button" type="button">대화 저장</button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고">⚑</button></div>
+            <div class="chat-header-actions"><button class="button button-quiet chat-donation-link" id="chat-donation-link" type="button" aria-label="스트리머에게 SOOP 후원하기" title="스트리머에게 SOOP 후원하기" hidden><span aria-hidden="true">♥</span><span class="donation-shortcut-wide"> 후원하기</span><span class="donation-shortcut-compact">후원</span></button><button class="button button-danger" id="member-action" type="button" hidden>차단</button><details class="chat-more" id="chat-more"><summary class="button button-quiet chat-more-trigger" aria-label="채팅방 메뉴 더보기" title="미니게임, 팬페이지, 대화 저장, 신고 메뉴를 엽니다">⋯</summary><div class="chat-more-box" role="menu"><button class="button button-quiet mini-game-trigger" id="open-mini-game" type="button" aria-label="사다리 미니게임 시작 또는 진행 중인 게임으로 이동" title="방 소유자는 게임을 시작하고, 모든 참여자는 진행 중인 게임으로 이동합니다"><span aria-hidden="true">🎲</span><span class="mini-game-trigger-label"> 미니게임</span></button><a class="button button-quiet chat-fanpage-link" id="chat-fanpage-link" target="_blank" rel="noopener noreferrer" aria-label="스트리머 팬페이지 열기" title="스트리머 팬페이지 열기" hidden><span class="fanpage-shortcut-wide">팬페이지 ↗</span><span class="fanpage-shortcut-compact" aria-hidden="true">홈↗</span></a><button class="button button-quiet export-trigger" id="export-chat-button" type="button" title="이 채팅방 대화를 파일로 저장합니다">대화 저장</button><button class="icon-button" id="room-menu-button" type="button" aria-label="대화 신고" title="이 채팅방 대화를 신고합니다">⚑ <span class="chat-more-label">신고</span></button></div></details></div>
           </div>
           <div class="lock-banner ghost-banner" id="ghost-banner" hidden><span>👻</span><span>관리자 고스트 모드 · 대화 읽기·쓰기 없이 기능만 확인해요. 쓰기 기능은 서버가 막아요.</span></div>
           <div class="lock-banner" id="lock-banner" hidden><span>🔒</span><span>채팅방이 잠겨 있어 스트리머만 메시지를 보낼 수 있어요.</span></div>
@@ -583,14 +583,19 @@
   </aside>
 
   <div class="page-busy-overlay" id="room-entry-overlay" role="status" aria-live="polite" hidden>
-    <div class="page-busy-card"><span class="loading-spinner" aria-hidden="true"></span><strong>입장하는 중…</strong></div>
+    <div class="room-entry-skeleton" aria-hidden="true">
+      <div class="res-head"><span class="res-avatar" id="room-entry-avatar"></span><div><strong id="room-entry-name">채팅방</strong><i></i></div></div>
+      <div class="res-body"><i class="res-b l"></i><i class="res-b r"></i><i class="res-b l w"></i><i class="res-b r s"></i></div>
+      <div class="res-input"></div>
+    </div>
+    <p class="room-entry-status"><span class="loading-spinner" aria-hidden="true"></span><strong>입장하는 중…</strong></p>
   </div>
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="js/devbar-links.js"></script>
-  <script type="module" src="js/app.js?v=20261122-pass4"></script>
+  <script type="module" src="js/app.js?v=20261122-ui5"></script>
   <script type="module">
-    import { mountMessengerTutorial } from './js/tutorial.js?v=20261116-tutorial2';
+    import { mountMessengerTutorial } from './js/tutorial.js?v=20261122-tip1';
     import { initMessengerPet } from './js/messenger-pet.js?v=20261116-pet1';
     initMessengerPet();
     mountMessengerTutorial();

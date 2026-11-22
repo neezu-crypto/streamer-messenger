@@ -369,6 +369,8 @@
   .room-tools-quick-button{display:grid;width:25px;height:25px;flex:0 0 25px;place-items:center;padding:0;border:1px solid rgba(126,148,185,.2);border-radius:8px;background:rgba(255,255,255,.72);color:#667895;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
   .room-tools-quick-button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .room-tools-quick-button:hover,.room-tools-quick-button:focus-visible{border-color:rgba(91,119,225,.38);color:#526fd7;outline:0}
+  .room-tools-pip-bar .room-tools-quick-button:has(.room-tools-quick-label){width:auto;flex:0 0 auto;grid-auto-flow:column;gap:3px;padding:0 7px}
+  .room-tools-quick-label{font-size:10.5px;font-weight:700;line-height:1;white-space:nowrap}
   .room-tools-quick-button[aria-pressed="true"]{border-color:rgba(91,119,225,.22);background:#eaf0ff;color:#526fd7;box-shadow:inset 0 0 0 1px rgba(91,119,225,.08)}
   .room-tools-video-quick-actions{display:flex;align-items:center;gap:2px;flex:0 0 auto;margin-left:1px;padding-left:5px;border-left:1px solid rgba(126,148,185,.2)}
   .room-tools-video-quick-actions[hidden]{display:none!important}
@@ -814,6 +816,7 @@
 .room-watch-party-error{position:absolute;right:10px;bottom:42px;left:10px;z-index:3;margin:0;padding:5px 8px;background:rgba(127,29,29,.92);font-size:9px}
 .room-watch-party-player{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:inherit;aspect-ratio:auto}
 .room-watch-party-player:empty::after{display:grid;width:100%;height:100%;place-items:center;background:radial-gradient(ellipse at 50% 42%,#1c3a5b,#0b1424 72%);color:rgba(226,238,255,.48);content:"영상 재생을 준비하고 있어요";font-size:11px;font-weight:700}
+.room-watch-party-panel[data-watch-party-status="empty"] .room-watch-party-player:empty::after{content:"예약된 같이보기가 없어요"}.room-watch-party-panel[data-watch-party-status="pending"] .room-watch-party-player:empty::after{content:"승인을 기다리고 있어요"}.room-watch-party-panel[data-watch-party-status="scheduled"] .room-watch-party-player:empty::after{content:"예약 시간이 되면 재생돼요"}.room-watch-party-panel[data-watch-party-status="ended"] .room-watch-party-player:empty::after{content:"같이보기가 끝났어요"}.room-watch-party-panel[data-watch-party-status="cancelled"] .room-watch-party-player:empty::after{content:"같이보기가 취소됐어요"}
 .room-watch-party-player iframe{position:relative;z-index:1}
 .room-watch-party-dialog{width:min(500px,calc(100vw - 26px));max-width:500px;max-height:min(90dvh,760px);padding:0;overflow:auto}
 .room-watch-party-dialog .dialog-card{padding:30px 25px 22px}
@@ -1316,3 +1319,32 @@ ol.fs-fans{counter-reset:fs}ol.fs-fans .fs-fan::before{counter-increment:fs;cont
 .fs-heat-wrap{overflow-x:auto}.fs-heat{border-collapse:separate;border-spacing:2px;font-size:9px;color:#8c98ad}.fs-heat th{font-weight:400;padding:0 2px;text-align:center}.fs-heat td{width:16px;height:16px;min-width:16px;border-radius:3px;background:rgba(85,120,246,calc(.06 + var(--a) * .9))}
 .fs-month{width:100%;border-collapse:collapse;font-size:12px}.fs-month th,.fs-month td{padding:8px;border-bottom:1px solid var(--line);text-align:right}.fs-month th:first-child{text-align:left;color:#66758f}
 @media(max-width:520px){.fs-cards{grid-template-columns:1fr}.fs-card{grid-template-columns:1fr auto;align-items:center}.fs-card .fs-delta{grid-column:1/-1}.fs-locked ul{columns:1}}
+
+/* 방 상단 정리(2026-11-22): 후원만 바로 보이고 나머지는 ⋯ 더보기, 공개 상태는 방 이름 옆 */
+.chat-title-line{display:flex;align-items:center;gap:7px;min-width:0}.chat-title-line h2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-title-line .room-state-pill{padding:3px 7px;font-size:9px}
+.chat-more{position:relative}.chat-more>summary{list-style:none;display:grid;place-items:center;min-width:34px;height:34px;padding:0 9px;font-size:16px;cursor:pointer}.chat-more>summary::-webkit-details-marker{display:none}
+.chat-more-box{position:absolute;right:0;top:40px;z-index:20;display:grid;gap:2px;min-width:160px;padding:6px;border:1px solid rgba(126,148,185,.22);border-radius:14px;background:#fff;box-shadow:0 14px 34px rgba(31,48,83,.16)}
+.chat-more-box>*{display:flex!important;justify-content:flex-start;gap:6px;width:100%;height:auto!important;min-height:36px;padding:8px 10px!important;border:0!important;border-radius:9px!important;background:transparent!important;box-shadow:none!important;color:#3a4766!important;font-size:12px!important;text-align:left}
+.chat-more-box>[hidden]{display:none!important}
+.chat-more-box>*:hover{background:#f1f4ff!important}
+.chat-more-label{font-size:12px}
+@media(max-width:680px){.chat-more{display:none}.chat-more-label{display:none}}
+.room-join-open{background:#e8f7ef;color:#2f8a5c}.room-join-apply{background:#f1f3f8;color:#69748c}
+.room-description{min-height:0}.room-description.is-active{color:#2f8a5c;font-weight:700}.room-description.is-active::before{content:"● ";font-size:9px}
+.fan-empty-guide{display:flex;flex-direction:column;gap:10px;padding:14px 4px;color:#53617d;font-size:12px}.fan-empty-guide strong{font-size:13px;color:#2c3956}
+.fan-empty-guide ol{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.5;color:#6a7690}
+.fan-empty-actions{display:grid;gap:6px}.fan-empty-actions .button{width:100%;min-height:38px}
+
+/* 입장 대기 뼈대 화면(2026-11-22) */
+#room-entry-overlay{align-content:center;justify-items:center;gap:14px;background:rgba(236,241,252,.82)}
+.room-entry-skeleton{display:flex;flex-direction:column;width:min(640px,calc(100vw - 24px));height:min(460px,calc(100vh - 140px));border-radius:22px;background:#fff;box-shadow:0 16px 44px rgba(26,42,77,.14);overflow:hidden}
+.res-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #eef1f7}.res-head strong{display:block;font-size:14px}.res-head i{display:block;width:150px;height:9px;margin-top:6px;border-radius:5px;background:#eef2f8}
+.res-avatar{width:40px;height:40px;border-radius:14px;background:#e9eefa;overflow:hidden}.res-avatar img{width:100%;height:100%;object-fit:cover}
+.res-body{flex:1;display:flex;flex-direction:column;gap:12px;padding:22px}
+.res-b{display:block;width:46%;height:34px;border-radius:14px;background:linear-gradient(90deg,#eef2f8 25%,#f7f9fd 50%,#eef2f8 75%);background-size:200% 100%;animation:res-shine 1.4s linear infinite}
+.res-b.r{align-self:flex-end;width:34%}.res-b.w{width:60%;height:54px}.res-b.s{width:24%}
+.res-input{height:44px;margin:0 16px 16px;border:1px solid #e6ebf5;border-radius:14px}
+.room-entry-status{display:flex;align-items:center;gap:10px;margin:0;color:#4b5874;font-size:13px}
+@keyframes res-shine{to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.res-b{animation:none}}

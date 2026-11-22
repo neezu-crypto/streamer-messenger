@@ -37,7 +37,8 @@ let roomToolsPipPreferences = loadRoomToolsPipPreferences();
 const state = { session: null, rooms: [], myRooms: [], myRoomsUid: '', myRoomsLoaded: false, myRoomsPromise: null, room: null, pendingStreamerRoom: null, streamerLinkHandled: false, autoRoomEnsureUid: '', autoRoomEnsurePromise: null, isOwner: false, chatFullscreenOwned: false, chatFullscreenRecovery: false, chatAppFullscreenFallback: false, selectedFanUid: '', fanSearchQuery: '', fans: [], blockedFans: [], applications: [], knownApplicationUids: new Set(), unseenApplicationUids: new Set(), unseenApplicationRoomId: '', asideTab: 'fans', applicationStatusUnsubscribers: [], ownerApplicationsUnsubscribe: null, ownerApplicationsRoomId: '', messages: [], olderMessages: [], olderPrivateMessages: [], olderBroadcastMessages: [], liveMessages: [], hasOlderMessages: false, hasOlderPrivateMessages: false, hasOlderBroadcastMessages: false, olderMessagesExhausted: false, olderPrivateMessagesExhausted: false, olderBroadcastMessagesExhausted: false, archivedMessageMore: { owner: null, private: null, broadcast: null }, loadingOlderMessages: false, optimisticMessages: [], unsubscribers: [], galleryImages: new Map(), galleryStreamerId: '', galleryTargetUid: '', imageUrls: new Map(), roomselfUrls: new Map(), roomselfTargetUid: '', linkPreviewCache: new Map(), roomMarketStocks: {}, roomMarketQuotes: {}, roomMarketPriceHistory: {}, roomMarketInvalidStockIds: new Set(), roomMarketSparklineSeeded: new Set(), roomMarketQuoteUnsubscribers: new Map(), roomMarketStockCatalog: [], roomMarketSelectedStockId: '', roomMarketTrading: false, pinnedMessagePointer: null, pinnedMessageDetails: null, pinnedMessageLoading: false, pinnedMessageLoadToken: 0, pinActionPending: false, miniGame: null, miniGameSelectedLane: -1, miniGameSelectedId: '', miniGameMutationPending: false, miniGameCollapsed: false, roomToolsPipCollapsed: false, roomToolsPipWidth: roomToolsPipPreferences ? roomToolsPipPreferences.width : ROOM_TOOLS_PIP_BASE_WIDTH, activeRoomTool: '', roomToolTabKeys: '', renderedMiniGameId: '', roomVideoSourceCard: null, currentReply: null, newMessagePreview: null, activeView: 'directory', mobileRoomToolsOpen: true, seenMessageIds: new Set(), regenerateRoomPassword: false };
 state.mobileRoomToolsOpen = loadMobileRoomToolsOpenPreference();
 let archivedInitialLoadRoomId = '';
-state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && !!(roomToolsPipPreferences && roomToolsPipPreferences.collapsed);
+// 저장된 설정이 없으면 PC에서는 접힌 채로 시작해 방 상단 버튼을 가리지 않는다(2026-11-22).
+state.roomToolsPipCollapsed = isDesktopRoomToolsPip() && (!roomToolsPipPreferences || roomToolsPipPreferences.collapsed);
 let roomToolsSlideResizeObserver = null;
 let lastMiniGamePathAnimationKey = '';
 Object.assign(state, { roomVideoMode: 'personal', watchParty: null, watchPartyServerOffset: 0, watchPartyTimer: 0, watchPartyStartTimer: 0, watchPartyEndTimer: 0, watchPartyArmedId: '', watchPartyPlayingId: '', watchPartyMutationPending: false, watchPartyInitialLoad: true });
@@ -175,6 +176,13 @@ function isMobileChatLayout() {
 function isActiveMobileChat() {
   return isMobileChatLayout() && state.activeView === 'chat' && !!state.room;
 }
+
+// ⋯ 더보기: 항목을 누르거나 바깥을 누르면 닫는다(2026-11-22).
+document.addEventListener('click', (event) => {
+  const more = document.getElementById('chat-more');
+  if (!more || !more.open) return;
+  if (!more.contains(event.target) || event.target.closest('.chat-more-box > *')) more.open = false;
+});
 
 function syncMobileQuickActionPlacement() {
   const isMobile = isMobileChatLayout();
@@ -567,7 +575,10 @@ function showTooltip(target) {
     const margin = 8;
     const left = Math.min(Math.max(margin, targetRect.left + (targetRect.width - tooltipRect.width) / 2), window.innerWidth - tooltipRect.width - margin);
     const above = targetRect.top - tooltipRect.height - 9;
-    const top = above >= margin ? above : Math.min(targetRect.bottom + 9, window.innerHeight - tooltipRect.height - margin);
+    const below = Math.min(targetRect.bottom + 9, window.innerHeight - tooltipRect.height - margin);
+    // 위쪽 안내 문구를 가리지 않도록 아래에 띄우는 요소(체험 카드 등, 2026-11-22)
+    const preferBelow = !!target.closest('[data-tooltip-below]') && targetRect.bottom + 9 + tooltipRect.height <= window.innerHeight - margin;
+    const top = preferBelow ? below : above >= margin ? above : below;
     tooltipNode.style.left = `${left}px`;
     tooltipNode.style.top = `${Math.max(margin, top)}px`;
   });
@@ -747,7 +758,35 @@ function renderStreamerAvatar(host, src, nickname) {
 
 function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 function closeDialog(id) { const dialog = document.getElementById(id); if (dialog && dialog.open) dialog.close(); }
-function setRoomEntryLoading(loading) { $('#room-entry-overlay').hidden = !loading; }
+// 입장 대기 화면(2026-11-22): 작은 '입장하는 중…' 대신 방 이름과 빈 말풍선 뼈대를 먼저 보여 준다.
+function setRoomEntryLoading(loading, room = null) {
+  const overlay = $('#room-entry-overlay');
+  if (loading) {
+    $('#room-entry-name').textContent = (room && room.streamerNickname) || '채팅방';
+    const avatar = $('#room-entry-avatar'); avatar.replaceChildren();
+    const src = room && (room.streamerAvatarUrl || (room.streamerSoopId ? avatarUrl(room.streamerSoopId) : ''));
+    if (src) { const img = document.createElement('img'); img.src = src; img.alt = ''; avatar.appendChild(img); }
+  }
+  overlay.hidden = !loading;
+}
+
+// 미리 깨우기(2026-11-22): 들어간 방이 있거나 내 방이 있으면 입장 때 쓰는 서버 함수를 미리 깨운다.
+// 탭마다 10분에 한 번만. 서버는 로그인만 확인하고 DB는 읽지 않는다.
+const WARMUP_KEY = 'streamerMessenger.warmupAt';
+const WARMUP_GAP_MS = 10 * 60 * 1000;
+function warmRoomFunctions(session, hasOwnRoom) {
+  if (!session || !session.trusted || state.ghost) return;
+  const joined = state.myRooms.length > 0;
+  if (!joined && !hasOwnRoom) return;
+  let last = 0;
+  try { last = Number(sessionStorage.getItem(WARMUP_KEY)) || 0; } catch (_) {}
+  if (Date.now() - last < WARMUP_GAP_MS) return;
+  try { sessionStorage.setItem(WARMUP_KEY, String(Date.now())); } catch (_) {}
+  const names = ['messengerLoadArchivedMessages'];
+  if (joined) names.push('messengerGetRoomState');
+  if (hasOwnRoom) names.push('messengerListFans', 'messengerListApplications');
+  for (const name of names) api().call(name, { warmup: true }).catch(() => {});
+}
 
 function syncHeader() {
   const session = state.session || {};
@@ -776,9 +815,10 @@ function syncHeader() {
   $('#create-room-button').title = hasRoom ? '내 채팅방으로 입장합니다' : '내 채팅방을 만들고 입장합니다';
   $('#my-rooms-button').hidden = !session.trusted;
   $('#my-rooms-count').textContent = String(state.myRooms.length);
+  warmRoomFunctions(session, hasRoom);
   $('#my-rooms-button').classList.toggle('has-new', state.myRooms.some(roomHasNew));
-  $('#my-rooms-button').setAttribute('aria-label', `참여 중인 방 ${state.myRooms.length}개 빠른 이동`);
-  $('#my-rooms-button').title = `참여 중인 방 ${state.myRooms.length}개 빠른 이동`;
+  $('#my-rooms-button').setAttribute('aria-label', `내가 들어간 채팅방 ${state.myRooms.length}개`);
+  $('#my-rooms-button').title = `내가 들어간 채팅방 ${state.myRooms.length}개로 바로 이동합니다`;
   syncMobileQuickActionPlacement();
 }
 
@@ -925,17 +965,38 @@ function renderRooms() {
       const lock = document.createElement('span'); lock.className = 'room-lock'; lock.textContent = '🔒'; lock.setAttribute('aria-hidden', 'true');
       top.append(lock);
     }
-    const desc = document.createElement('p'); desc.className = 'room-description'; desc.textContent = '스트리머가 운영 중이면 바로, 아니면 신청 확인 뒤 들어가요.';
+    // 목록 카드(2026-11-22): 같은 설명 대신 입장 방식과 최근 활동을 보여 준다.
+    const desc = document.createElement('p'); desc.className = 'room-description';
+    const activity = roomActivityLabel(room.lastPostDay);
+    desc.textContent = activity || '아직 스트리머 글이 없어요';
+    desc.classList.toggle('is-active', !!activity);
     const foot = document.createElement('div'); foot.className = 'room-card-foot';
-    const badge = document.createElement('span'); badge.className = `room-state-pill${room.visibility === 'private' ? ' private' : ''}${room.locked ? ' locked' : ''}`; badge.textContent = room.locked ? '잠금' : (room.visibility === 'private' ? '비공개방' : '공개방');
+    const badge = document.createElement('span');
+    const join = room.locked ? ['locked', '잠금'] : room.visibility === 'private' ? ['private', '비밀번호 필요'] : room.openJoin ? ['open', '바로 입장'] : ['apply', '신청 필요'];
+    badge.className = `room-state-pill room-join-${join[0]}${room.visibility === 'private' ? ' private' : ''}${room.locked ? ' locked' : ''}`; badge.textContent = join[1];
+    badge.title = { locked: '스트리머가 방을 잠가 지금은 들어갈 수 없어요', private: '스트리머가 알려 준 비밀번호로 들어가요', open: '승인 없이 바로 들어갈 수 있어요', apply: '스트리머가 신청을 확인한 뒤 들어가요' }[join[0]];
     const count = document.createElement('span'); count.textContent = room.visibility === 'private' ? '참여 인원 비공개' : `${room.memberCount || 0}명 참여`;
     foot.append(badge, count); button.append(top, desc, foot);
     button.addEventListener('click', () => selectRoom(room)); list.appendChild(button);
   }
 }
 
+// KST 날짜 문자열 → '오늘 글 있음' 등. 30일 넘으면 표시하지 않는다.
+function roomActivityLabel(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) return '';
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86400000);
+  if (days < 0 || days > 30) return '';
+  return days === 0 ? '오늘 스트리머 글 있음' : days === 1 ? '어제 스트리머 글 있음' : `${days}일 전 스트리머 글`;
+}
+
+// 최근 글이 있는 방 → 바로 입장 방 → 참여 인원 → 이름 순(2026-11-22).
 function sortRooms() {
-  state.rooms.sort((a, b) => String(a.streamerNickname).localeCompare(String(b.streamerNickname), 'ko'));
+  const recent = (room) => (roomActivityLabel(room.lastPostDay) ? String(room.lastPostDay) : '');
+  state.rooms.sort((a, b) => recent(b).localeCompare(recent(a))
+    || Number(!!b.openJoin) - Number(!!a.openJoin)
+    || (Number(b.memberCount) || 0) - (Number(a.memberCount) || 0)
+    || String(a.streamerNickname).localeCompare(String(b.streamerNickname), 'ko'));
 }
 
 function upsertRoom(room) {
@@ -1216,7 +1277,7 @@ async function openLinkedStreamerRoomFast() {
 async function enterGhostRoom(room) {
   if (!state.session || !state.session.isAdmin || !room) return;
   closeDialog('application-dialog');
-  setRoomEntryLoading(true);
+  setRoomEntryLoading(true, room);
   try {
     const snap = await api().call('messengerAdminGhostRoom', { roomId: room.roomId });
     state.ghostSnapshot = snap;
@@ -1231,7 +1292,7 @@ async function selectRoom(room, resolvedRoomState = null) {
   if (!state.session || (!state.session.trusted && !state.session.isTestAccount)) { openDialog('auth-dialog'); return; }
   // requestFullscreen must run directly in the room-selection gesture, before the server check awaits.
   const fullscreenAttempt = beginChatFullscreenRequest();
-  setRoomEntryLoading(true);
+  setRoomEntryLoading(true, room);
   try {
     const result = resolvedRoomState || await call('messengerGetRoomState', { roomId: room.roomId });
     if (result.blocked) {
@@ -1747,6 +1808,7 @@ function renderRoomWatchParty() {
     statusText.textContent = '같이보기 영상이 없습니다.';
     countdown.textContent = '';
     details.textContent = '영상 링크를 등록해 채팅방 참여자와 함께 재생해 보세요.';
+    $('#room-watch-party-caption').textContent = '영상을 예약하면 참여자와 함께 볼 수 있어요.';
     [join, sync, finish, replay, approve, cancel, open].forEach((button) => { button.hidden = true; });
     create.hidden = false;
     error.hidden = true;
@@ -1770,6 +1832,13 @@ function renderRoomWatchParty() {
     ? `${title} · 대기 ${Number.isInteger(requestedDelay) ? requestedDelay : 60}초 · 신청: ${party.createdByName || '참여자'}`
     : `${title} · 예약: ${new Date(Number(party.startsAt)).toLocaleString('ko-KR')} · 등록: ${party.createdByName || '참여자'}`;
 
+  const caption = $('#room-watch-party-caption');
+  if (caption) caption.textContent = {
+    pending: '스트리머가 승인하면 함께 볼 수 있어요.',
+    scheduled: '예약한 시간에 모두 같은 장면부터 재생돼요.',
+    active: '모두 같은 장면을 보고 있어요.',
+    ended: '같이보기가 끝났어요. 아래에서 다시 볼 수 있어요.',
+  }[status] || '같이보기가 취소됐어요.';
   if (status === 'pending') {
     statusText.textContent = '스트리머 승인 대기 중';
     countdown.textContent = '승인되면 설정한 대기 시간이 시작돼요.';
@@ -3611,10 +3680,11 @@ function renderTimelineInner({ preservePosition = false } = {}) {
     return;
   }
   const historyReady = state.isOwner ? state.timelineLoaded && state.timelineLoaded.owner : state.timelineLoaded && state.timelineLoaded.private && state.timelineLoaded.broadcast;
-  if (historyReady) {
+  // 대화가 있을 때만 시작 표시(2026-11-22): '오래된 대화가 없습니다'가 대화 없음으로 읽히던 문제.
+  if (historyReady && (state.loadingOlderMessages || state.hasOlderMessages || (state.messages || []).length)) {
     const status = document.createElement('div');
     status.className = 'timeline-history-status';
-    status.textContent = state.loadingOlderMessages ? '이전 대화를 불러오는 중…' : state.hasOlderMessages ? '위로 스크롤해 이전 대화를 불러오세요' : '오래된 대화가 없습니다.';
+    status.textContent = state.loadingOlderMessages ? '이전 대화를 불러오는 중…' : state.hasOlderMessages ? '위로 스크롤해 이전 대화를 불러오세요' : '여기가 대화의 시작이에요';
     host.appendChild(status);
   }
   let messages = state.messages || [];
@@ -4786,10 +4856,37 @@ async function loadStreamerLists() {
   } catch (error) { showError(error); }
 }
 
+// 팬이 없을 때 다음 행동 안내(2026-11-22): 링크 공유 → 신청 승인 → 첫 공지.
+function renderFansEmptyGuide(host) {
+  host.className = 'fan-list fan-empty-guide';
+  const title = document.createElement('strong'); title.textContent = '아직 승인된 팬이 없어요';
+  const steps = document.createElement('ol');
+  for (const text of ['방 링크를 방송·SNS에 공유해요', '신청 탭에서 팬을 승인해요', '모두에게 첫 공지를 남겨요']) {
+    const li = document.createElement('li'); li.textContent = text; steps.appendChild(li);
+  }
+  const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'button button-primary';
+  copy.textContent = '방 링크 복사'; copy.title = '팬이 바로 이 채팅방을 찾아오는 링크를 복사합니다';
+  copy.addEventListener('click', async () => {
+    const soopId = String(state.room && state.room.streamerSoopId || '').toLowerCase();
+    const url = `${location.origin}${location.pathname}?streamer=${encodeURIComponent(soopId)}`;
+    try { await navigator.clipboard.writeText(url); showToast('방 링크를 복사했어요.'); }
+    catch (_) { window.prompt('아래 링크를 복사해 주세요.', url); }
+  });
+  const notice = document.createElement('button'); notice.type = 'button'; notice.className = 'button button-quiet';
+  notice.textContent = '첫 공지 쓰기'; notice.title = '메시지 입력창으로 이동해 모두에게 보낼 글을 씁니다';
+  notice.addEventListener('click', () => {
+    const audience = document.getElementById('message-audience');
+    if (audience && audience.querySelector('option[value="broadcast"]')) { audience.value = 'broadcast'; audience.dispatchEvent(new Event('change')); }
+    const input = document.querySelector('.chat-composer textarea'); if (input) input.focus();
+  });
+  const actions = document.createElement('div'); actions.className = 'fan-empty-actions'; actions.append(copy, notice);
+  host.append(title, steps, actions);
+}
+
 function renderFans() {
   const host = $('#fan-list'); host.replaceChildren();
   const activeFans = state.fans.filter((fan) => fan.status === 'active');
-  if (!activeFans.length) { host.textContent = '아직 승인된 팬이 없습니다.'; host.className = 'fan-list muted'; return; }
+  if (!activeFans.length) { renderFansEmptyGuide(host); return; }
   host.className = 'fan-list';
   const all = document.createElement('button'); all.className = `fan-item${state.selectedFanUid ? '' : ' active'}`; all.type = 'button'; all.textContent = '모든 팬 대화';
   all.title = '모든 팬과의 대화를 함께 표시하기';
@@ -5147,6 +5244,27 @@ async function openOwnRoom() {
   // This is also reached after automatic session restoration; in that case the browser may reject
   // fullscreen and the in-chat control provides a user-gesture fallback.
   const fullscreenAttempt = beginChatFullscreenRequest();
+  // 속도(2026-11-22): 이미 아는 내 방이면 방 준비 호출을 기다리지 않고 바로 연다(호출은 뒤에서 처리).
+  const knownRoom = state.session && state.session.ownRoom;
+  if (knownRoom && knownRoom.roomId) {
+    setRoomEntryLoading(true, knownRoom);
+    try {
+      const background = call('messengerEnsureRoom').then((result) => {
+        if (!state.session || !result || !result.room) return;
+        state.session.ownRoom = result.room; syncHeader(); upsertRoom(result.room);
+        if (state.room && state.room.roomId === result.room.roomId) state.room = { ...state.room, ...result.room };
+      }).catch((error) => console.warn('채팅방 상태를 새로 확인하지 못했습니다.', error));
+      subscribeOwnerApplications(knownRoom);
+      const enteredFullscreen = await settleChatFullscreenRequest(fullscreenAttempt, true);
+      await openChat(knownRoom, true);
+      notifyChatFullscreenFallback(enteredFullscreen);
+      void background;
+    } catch (error) {
+      await settleChatFullscreenRequest(fullscreenAttempt, false);
+      showError(error);
+    } finally { setRoomEntryLoading(false); }
+    return;
+  }
   setRoomEntryLoading(true);
   try {
     const result = await call('messengerEnsureRoom');
