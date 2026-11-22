@@ -778,14 +778,19 @@ function warmRoomFunctions(session, hasOwnRoom) {
   if (!session || !session.trusted || state.ghost) return;
   const joined = state.myRooms.length > 0;
   if (!joined && !hasOwnRoom) return;
-  let last = 0;
-  try { last = Number(sessionStorage.getItem(WARMUP_KEY)) || 0; } catch (_) {}
-  if (Date.now() - last < WARMUP_GAP_MS) return;
-  try { sessionStorage.setItem(WARMUP_KEY, String(Date.now())); } catch (_) {}
   const names = ['messengerLoadArchivedMessages'];
   if (joined) names.push('messengerGetRoomState');
   if (hasOwnRoom) names.push('messengerListFans', 'messengerListApplications');
-  for (const name of names) api().call(name, { warmup: true }).catch(() => {});
+  // 함수마다 10분에 한 번(내 방 정보와 들어간 방 목록이 따로 도착해도 빠지지 않게).
+  let stamps = {};
+  try { stamps = JSON.parse(sessionStorage.getItem(WARMUP_KEY) || '{}') || {}; } catch (_) { stamps = {}; }
+  if (typeof stamps !== 'object') stamps = {};
+  const now = Date.now();
+  const due = names.filter((name) => now - (Number(stamps[name]) || 0) >= WARMUP_GAP_MS);
+  if (!due.length) return;
+  for (const name of due) stamps[name] = now;
+  try { sessionStorage.setItem(WARMUP_KEY, JSON.stringify(stamps)); } catch (_) {}
+  for (const name of due) api().call(name, { warmup: true }).catch(() => {});
 }
 
 function syncHeader() {
