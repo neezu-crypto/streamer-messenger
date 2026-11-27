@@ -1,4 +1,4 @@
-import './firebase-init.js?v=20261128-kit2';
+import './firebase-init.js?v=20261128-kit3';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
 import { setupFanStats } from './fan-stats-ui.js?v=20261122-pass4';
 

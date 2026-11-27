@@ -11,10 +11,9 @@
 //   await login.isLoggedIn();           // Google·카카오 계정 또는 인증 스트리머면 true
 //
 // 브라우저 알림창(alert·confirm)은 쓰지 않는다. 안내는 창 안 상태 문구로만 보인다.
-import {
-  GoogleAuthProvider, linkWithPopup, signInAnonymously, signInWithCustomToken, signInWithPopup,
-} from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
-import { httpsCallable } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js';
+// Firebase 함수는 화면과 같은 SDK 판본을 써야 한다(판본이 다르면 auth 객체를 못 알아봄).
+// sdk 옵션을 주면 그것을, 없으면 12.16.0을 필요할 때 불러온다.
+const SDK_BASE = 'https://www.gstatic.com/firebasejs/12.16.0/';
 
 const CSS = `
 .sk-login{width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:0;border:0;border-radius:20px;background:var(--sk-login-bg,#fffdfa);color:var(--sk-login-ink,#28253e);box-shadow:0 24px 60px #0005;font:15px/1.6 system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif}
@@ -49,11 +48,17 @@ export function createSeriesLogin({
   verifySearchFunction = 'streamerFanPageVerifySearch', soopSearchScript = './soop-verify-search.js?v=20261118-svs1',
   title = '계정 로그인', intro = 'Google·카카오 계정이나 스트리머 인증으로 로그인해요. 시리즈 전체에서 같은 계정을 써요.',
   onChange = () => {},
+  beforeSwitch = null, // 다른 계정으로 전환하기 직전에 할 일(예: 지금 계정의 접속 표시 정리)
+  sdk = null, // { GoogleAuthProvider, linkWithPopup, signInAnonymously, signInWithCustomToken, signInWithPopup, httpsCallable }
   reloadAfterSwitch = false, // 다른 계정으로 전환하면 새로고침(로그인 시점에 상태를 한 번만 계산하는 서비스용)
   reloadAfterVerify = false, // 스트리머 인증 완료(같은 UID)에도 새로고침
 } = {}) {
   if (!auth || !functions) throw new Error('createSeriesLogin: auth·functions가 필요해요.');
-  const call = (name) => httpsCallable(functions, name);
+  const lib = sdk ? Promise.resolve(sdk) : Promise.all([import(`${SDK_BASE}firebase-auth.js`), import(`${SDK_BASE}firebase-functions.js`)])
+    .then(([a, f]) => ({ ...a, httpsCallable: f.httpsCallable }));
+  let L = null; lib.then((x) => { L = x; }).catch((e) => console.error('로그인 SDK를 불러오지 못했어요:', e));
+  // 팝업은 클릭 직후 바로 열어야 막히지 않으므로, 이미 불러온 SDK(L)를 기다림 없이 쓴다.
+  const call = (name) => async (data) => (L || await lib).httpsCallable(functions, name)(data);
   const linkGoogleAccount = call('linkGoogleAccount');
   const linkKakaoAccount = call('linkKakaoAccount');
   const requestStreamerVerification = call('requestStreamerVerification');
@@ -159,20 +164,21 @@ export function createSeriesLogin({
   async function loginWithGoogle() {
     busy(true); status('Google 로그인 창을 기다리고 있어요.');
     try {
-      const provider = new GoogleAuthProvider();
+      const provider = new (L || await lib).GoogleAuthProvider();
       if (auth.currentUser?.isAnonymous) {
-        try { await linkWithPopup(auth.currentUser, provider); }
+        try { await (L || await lib).linkWithPopup(auth.currentUser, provider); }
         catch (error) {
           if (error?.code !== 'auth/credential-already-in-use' && error?.code !== 'auth/email-already-in-use') throw error;
           busy(false);
           if (!(await confirmSwitch('이미 연결된 Google 계정이에요. 그 계정으로 이어서 할까요?' + SWITCH_NOTE))) { status(''); return; }
           busy(true);
-          await signInWithPopup(auth, new GoogleAuthProvider()); // 이미 다른 계정에 연결된 Google → 그 계정으로 전환
+          if (beforeSwitch) await beforeSwitch();
+          await (L || await lib).signInWithPopup(auth, new (L || await lib).GoogleAuthProvider()); // 이미 다른 계정에 연결된 Google → 그 계정으로 전환
           await linkGoogleAccount();
           await done({ switched: true });
           return;
         }
-      } else await signInWithPopup(auth, provider);
+      } else await (L || await lib).signInWithPopup(auth, provider);
       await linkGoogleAccount();
       await done();
     } catch (error) {
@@ -194,7 +200,8 @@ export function createSeriesLogin({
           if (result.data?.action === 'switch') {
             busy(false);
             if (!(await confirmSwitch('이미 연결된 카카오 계정이에요. 그 계정으로 이어서 할까요?' + SWITCH_NOTE))) { status(''); return; }
-            await signInWithCustomToken(auth, result.data.customToken);
+            if (beforeSwitch) await beforeSwitch();
+            await (L || await lib).signInWithCustomToken(auth, result.data.customToken);
             await done({ switched: true });
             return;
           }
@@ -212,10 +219,10 @@ export function createSeriesLogin({
     busy(true); status('스트리머 인증 상태를 확인하고 있어요.');
     try {
       await auth.authStateReady();
-      if (!auth.currentUser) await signInAnonymously(auth);
+      if (!auth.currentUser) await (L || await lib).signInAnonymously(auth);
       const result = await requestStreamerVerification({ ...data, source });
       const p = result.data || {};
-      if (p.action === 'switch' && p.customToken) { await signInWithCustomToken(auth, p.customToken); await done({ switched: true }); return; }
+      if (p.action === 'switch' && p.customToken) { if (beforeSwitch) await beforeSwitch(); await (L || await lib).signInWithCustomToken(auth, p.customToken); await done({ switched: true }); return; }
       if (p.action === 'already-verified' || p.action === 'auto-approved') { await done({ verified: true }); return; }
       const expiresAt = Number(p.verificationCodeExpiresAt) || 0;
       const liveCode = p.verificationCode && expiresAt > Date.now() ? p.verificationCode : '';
@@ -278,7 +285,7 @@ export function createSeriesLogin({
       },
       search: async (query) => {
         await auth.authStateReady();
-        if (!auth.currentUser) await signInAnonymously(auth);
+        if (!auth.currentUser) await (L || await lib).signInAnonymously(auth);
         const r = await searchFn({ query });
         return (r.data && r.data.streamers) || [];
       },
