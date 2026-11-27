@@ -1,4 +1,4 @@
-import './firebase-init.js?v=20261128-kit3';
+import './firebase-init.js?v=20261128-kit4';
 import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 
 const SELF_GAME_ID = 'streamerMessenger';

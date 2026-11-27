@@ -9,7 +9,7 @@ import {
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js';
-import { createSeriesLogin } from './series-login.js?v=20261128-kit3';
+import { createSeriesLogin } from './series-login.js?v=20261128-kit4';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js';
 
 // Firebase Web App 설정은 기존 streamer-gallery Web App과 공유해 UID와 로그인 계정이 동일하게 유지된다.
