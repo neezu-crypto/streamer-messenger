@@ -1,4 +1,4 @@
-import './firebase-init.js?v=20261118-vw1';
+import './firebase-init.js?v=20261128-kit2';
 import { loadMessengerStickerCatalog, applyStickerArt } from './emote-catalog.js';
 import { setupFanStats } from './fan-stats-ui.js?v=20261122-pass4';
 
@@ -756,7 +756,10 @@ function renderStreamerAvatar(host, src, nickname) {
   host.appendChild(img);
 }
 
-function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
+// 로그인·스트리머 인증 창은 시리즈 공통 부품이 띄운다(2026-11-28).
+function openDialog(id) {
+  if (id === 'auth-dialog' || id === 'verification-dialog') { window.messengerLogin?.open(id === 'verification-dialog' ? { streamer: true } : {}); return; }
+  const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 function closeDialog(id) { const dialog = document.getElementById(id); if (dialog && dialog.open) dialog.close(); }
 // 입장 대기 화면(2026-11-22): 작은 '입장하는 중…' 대신 방 이름과 빈 말풍선 뼈대를 먼저 보여 준다.
 function setRoomEntryLoading(loading, room = null) {
@@ -1540,9 +1543,6 @@ function loadOwnedEmoteIds(uid) {
 async function openEmotePicker() {
   if (!state.room || !state.session) return;
   if (!state.session.trusted && !state.session.isVerifiedStreamer && !state.session.isTestAccount) {
-    const authDialog = $('#auth-dialog');
-    authDialog.classList.add('emote-auth-entry');
-    authDialog.addEventListener('close', () => authDialog.classList.remove('emote-auth-entry'), { once: true });
     openDialog('auth-dialog');
     return;
   }
@@ -6022,52 +6022,6 @@ function showNewMessageNotification(message) {
   n.onclick = () => { window.focus(); n.close(); };
 }
 
-async function handleStreamerVerification(mode) {
-  const status = $('#verification-status');
-  const note = $('#verification-note');
-  const codeButton = $('#verification-note-code');
-  status.hidden = false;
-  const payload = mode === 'check' ? { checkOnly: true } : mode === 'renew' ? {} : {
-    nickname: $('#verification-nickname').value.trim(),
-    soopId: $('#verification-soop-id').value.trim(),
-  };
-  if (mode === 'submit' && (!payload.nickname || !/^[a-z0-9]{2,20}$/.test(payload.soopId))) {
-    status.textContent = '닉네임과 SOOP 아이디(영문 소문자/숫자 2~20자)를 확인해주세요.';
-    return;
-  }
-  const previousText = codeButton.textContent.trim();
-  const previousCode = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(previousText) ? previousText : '';
-  try {
-    const result = await api().requestStreamerVerification(payload);
-    if (result.action === 'already-verified' || result.action === 'auto-approved') {
-      note.hidden = true;
-      status.textContent = '스트리머 인증이 완료됐어요. 새로고침하면 방을 만들 수 있습니다.';
-      return;
-    }
-    if (result.action === 'switch') {
-      note.hidden = true;
-      status.textContent = '기존 인증 계정 전환이 승인됐어요. 원래 계정에서 다시 로그인해주세요.';
-      return;
-    }
-    const canSendNote = result.noteEligible === true || (!result.isSwitch && result.noteEligible !== false);
-    note.hidden = !canSendNote;
-    status.textContent = result.isSwitch
-      ? (canSendNote
-        ? '기존 인증 스트리머의 SOOP 아이디로 쪽지 코드를 보내면 확인 후 기존 계정으로 자동 전환됩니다.'
-        : '계정 전환 신청은 관리자 수동 확인이 필요합니다.')
-      : 'SOOP 쪽지의 발신자 아이디와 코드를 대조해 자동 승인합니다.';
-    if (!canSendNote) return;
-    const code = Number(result.verificationCodeExpiresAt) > Date.now()
-      ? result.verificationCode || (mode === 'check' ? previousCode : '') : '';
-    codeButton.textContent = code || '코드 없음';
-    codeButton.disabled = !code;
-    $('#verification-note-status').textContent = code ? '' : '코드가 없거나 만료됐어요. 새 코드를 발급해주세요.';
-    codeButton.onclick = async () => {
-      try { await navigator.clipboard.writeText(code); $('#verification-note-status').textContent = '복사했어요. 쪽지 본문에 붙여넣어 보내주세요.'; }
-      catch (_) { $('#verification-note-status').textContent = '코드를 선택해 직접 복사해주세요.'; }
-    };
-  } catch (error) { status.textContent = error.message || '인증 요청을 처리하지 못했습니다.'; }
-}
 
 function bindEvents() {
   bindRoomToolControls();
@@ -6324,12 +6278,6 @@ function bindEvents() {
   $('#message-audience').addEventListener('change', () => { $('#direct-recipient').hidden = $('#message-audience').value !== 'direct'; });
   document.querySelectorAll('.aside-tab').forEach((button) => button.addEventListener('click', () => switchAside(button.dataset.listTab)));
   $('#notification-button').addEventListener('click', enableNotifications);
-  $('#google-login').addEventListener('click', async () => { try { await api().loginGoogle(); closeDialog('auth-dialog'); } catch (error) { showError(error); } });
-  $('#kakao-login').addEventListener('click', async () => { try { await api().loginKakao(); closeDialog('auth-dialog'); } catch (error) { showError(error); } });
-  $('#verify-streamer').addEventListener('click', () => { closeDialog('auth-dialog'); openDialog('verification-dialog'); });
-  $('#verification-submit').addEventListener('click', () => handleStreamerVerification('submit'));
-  $('#verification-check').addEventListener('click', () => handleStreamerVerification('check'));
-  $('#verification-renew').addEventListener('click', () => handleStreamerVerification('renew'));
   $('#save-profile').addEventListener('click', saveProfile);
   $('#profile-soop-id').addEventListener('input', updateProfilePreview);
   $('#generic-close').addEventListener('click', () => closeDialog('generic-dialog'));

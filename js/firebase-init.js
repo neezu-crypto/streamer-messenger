@@ -9,6 +9,7 @@ import {
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js';
+import { createSeriesLogin } from './series-login.js?v=20261128-kit2';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app-check.js';
 
 // Firebase Web App 설정은 기존 streamer-gallery Web App과 공유해 UID와 로그인 계정이 동일하게 유지된다.
@@ -211,6 +212,15 @@ async function requestStreamerVerification(data) {
   return result;
 }
 
+// 로그인 창은 시리즈 공통 부품(series-kit login-modal, 2026-11-28). 로그인·인증 뒤 세션만 다시 읽는다(새로고침 없음).
+const seriesLogin = createSeriesLogin({
+  auth, functions, source: 'streamer-messenger',
+  intro: '기존 자매 서비스 계정으로 로그인할 수 있어요. 스트리머 인증은 로그인 없이도 신청할 수 있어요.',
+  soopSearchScript: './js/soop-verify-search.js?v=20261118-svs1',
+  onChange: (user) => refreshSession(user || auth.currentUser),
+});
+window.messengerLogin = seriesLogin;
+
 window.messenger = {
   auth, db, sharedDb, stockDb, marketDb, marketAccountPath, state, ref, get, set, push, onValue, query, orderByKey, orderByChild,
   limitToFirst, limitToLast, startAt, endAt, endBefore, serverTimestamp,
@@ -298,42 +308,3 @@ async function exitTestAccount() {
 defaultMessenger.enterTestAccount = enterTestAccount;
 defaultMessenger.exitTestAccount = exitTestAccount;
 
-// 스트리머 인증 신청: SOOP 검색을 기본 방식으로(2026-11-18). 기존 입력칸은 "직접 입력하기"로 남긴다.
-// 검색은 팬페이지 서버의 streamerFanPageVerifySearch(로그인 필요, 사용자별 횟수 제한)를 함께 쓴다.
-{
-  const soopVerifySearchFn = httpsCallable(functions, 'streamerFanPageVerifySearch');
-  const attachSoopVerifySearchTo = (nicknameId, soopIdId, steps) => {
-    if (!document.getElementById(nicknameId) || !document.getElementById(soopIdId)) return;
-    window.attachSoopVerifySearch({
-      nicknameInput: nicknameId,
-      soopIdInput: soopIdId,
-      steps,
-      search: async (query) => {
-        await auth.authStateReady();
-        if (!auth.currentUser) await signInAnonymously(auth);
-        // 검색하는 동안 인증 서버를 미리 깨운다(확인 전용 호출: 신청·코드를 만들지 않음, 5분에 한 번).
-        if (Date.now() - (window.__verifyWarmAt || 0) > 300000) {
-          window.__verifyWarmAt = Date.now();
-          httpsCallable(functions, 'requestStreamerVerification')({ checkOnly: true }).catch(() => {});
-        }
-        const result = await soopVerifySearchFn({ query });
-        return (result.data && result.data.streamers) || [];
-      },
-    });
-  };
-  const attachAll = () => {
-  attachSoopVerifySearchTo('verification-nickname', 'verification-soop-id', {
-      root: 'verification-dialog',
-      isPending: () => !document.getElementById('verification-note').hidden,
-      afterSelect: ['verification-submit'],
-      pendingOnly: ['verification-check'],
-    });
-  };
-  if (window.attachSoopVerifySearch) attachAll();
-  else {
-    const script = document.createElement('script');
-    script.src = new URL('./soop-verify-search.js?v=20261118-svs1', import.meta.url).href;
-    script.onload = attachAll;
-    document.head.appendChild(script);
-  }
-}
